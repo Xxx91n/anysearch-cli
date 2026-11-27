@@ -162,6 +162,7 @@ export interface SavePageResult {
 
 /** The two things a session may turn into a page read. */
 export type FetchTicketKind = "search" | "user";
+export const HTTP_TICKET_PREFIX = "http:";
 
 /** One search-result row, read back through its `m:<id>` handle. */
 export interface FetchHandleRow {
@@ -1572,7 +1573,7 @@ export class SqliteSessionStore implements SessionStore {
   async saveFetchTickets(sessionId: string, kind: FetchTicketKind, values: readonly string[]): Promise<void> {
     const cleaned = values.map((v) => v.trim()).filter(Boolean).map((v) => {
       if (kind !== "user") return v;
-      const marker = v.startsWith("http:") ? "http:" : "";
+      const marker = v.startsWith(HTTP_TICKET_PREFIX) ? HTTP_TICKET_PREFIX : "";
       return marker + normalizeUrlIdentity(marker ? v.slice(5) : v);
     });
     const valid = cleaned.filter((v) => {
@@ -1580,7 +1581,7 @@ export class SqliteSessionStore implements SessionStore {
       // User values are scheme-less identities; `http:<identity>` marks the
       // scheme the user actually pasted. Non-http(s) schemes and values without
       // a resolvable dotted host are dropped.
-      const identity = v.startsWith("http:") ? v.slice(5) : v;
+      const identity = v.startsWith(HTTP_TICKET_PREFIX) ? v.slice(HTTP_TICKET_PREFIX.length) : v;
       if (identity.startsWith("m:")) return false;
       const parsed = parseWebUrl(identity);
       return parsed !== null && parsed.hostname.includes(".");

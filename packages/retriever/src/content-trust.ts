@@ -194,6 +194,12 @@ export function hostMatchesEntry(entry: string, host: string): boolean {
   return normalized.length > 0 && (bareHost === normalized || bareHost.endsWith("." + normalized));
 }
 
+/** Same host after folding case, trailing dots and a leading www. */
+export function sameHostname(a: string, b: string): boolean {
+  const norm = (host: string) => host.toLowerCase().replace(/\.$/, "").replace(/^\./, "").replace(/^www\./, "");
+  return norm(a) === norm(b);
+}
+
 /** True when either host is the other or a subdomain of it (same site). */
 export function hostsSameSite(a: string, b: string): boolean {
   return hostMatchesEntry(a, b) || hostMatchesEntry(b, a);

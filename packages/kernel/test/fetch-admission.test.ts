@@ -90,6 +90,9 @@ assert(fetchCredentialHit("https://example.com/sk-abcdefghijklmnop/x", "example.
 assert(fetchCredentialHit("https://example.com/AbCdEfGhIjKlMnOpQrStUvWxYz012345+abc",
   "example.com/AbCdEfGhIjKlMnOpQrStUvWxYz012345+abc"),
   "an unpadded base64-shaped path with a symbol is rejected");
+assert(fetchCredentialHit("https://example.com/ghp_AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+  "example.com/ghp_AbCdEfGhIjKlMnOpQrStUvWxYz012345"),
+  "a GitHub-token-shaped path is rejected");
 assert(fetchCredentialHit("https://example.com/?x-api-key=550e8400-e29b-41d4-a716-446655440000",
   "example.com/?x-api-key=550e8400-e29b-41d4-a716-446655440000"), "x-api-key is rejected");
 assert(!fetchCredentialHit("https://example.com/posts/2026/05/hello-world", "example.com/posts/2026/05/hello-world"),

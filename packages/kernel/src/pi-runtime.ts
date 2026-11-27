@@ -839,18 +839,17 @@ export class PiAgentRuntime {
    */
   private async archiveReround(results: unknown[], signal?: AbortSignal): Promise<void> {
     const ids = await indexSearchResults(this.archive, results, signal);
-    if (!ids || signal?.aborted || !this.fetchEligible()) return;
-    const store = this.archive!.store as FetchStorePort;
-    if (!await writeSearchTickets(store, this.archive!.sessionId, ids)) {
-      return; // no ticket means no handle: the model must not see an unusable one.
-    }
-    // The writer accepted these results; the search tool stamps the same fields.
+    if (!ids || signal?.aborted) return;
     const items = results as Array<{ handle?: string; archiveRowId?: number }>;
+    // Row ids are unconditional; only a usable fetch ticket adds the handle.
     ids.forEach((id, index) => {
-      if (typeof id === "number" && id > 0 && items[index]) {
-        items[index].handle = searchHandle(id);
-        items[index].archiveRowId = id;
-      }
+      if (typeof id === "number" && id > 0 && items[index]) items[index].archiveRowId = id;
+    });
+    if (!this.fetchEligible()) return;
+    const store = this.archive!.store as FetchStorePort;
+    if (!await writeSearchTickets(store, this.archive!.sessionId, ids)) return;
+    ids.forEach((id, index) => {
+      if (typeof id === "number" && id > 0 && items[index]) items[index].handle = searchHandle(id);
     });
   }
 

@@ -7,7 +7,7 @@
 import Exa from "exa-js";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
 import { FETCH_PAGE_MAX_CHARS, type FetchEnvelope, type FetchFailure, type FetchPage, type FetchProvider, type FetchRequest } from "../fetch-contract";
-import { hostsSameSite } from "../content-trust";
+import { sameHostname } from "../content-trust";
 import { normalizeUrlIdentity, parseWebUrl } from "../url-identity";
 import { callExaMcpTool } from "./exa-free-arm";
 import { PROVIDER_FACTS } from "./provider-facts";
@@ -65,7 +65,7 @@ function readingEnvelope(provider: string, reading: Reading): FetchEnvelope {
 }
 
 function isRedirectTo(wanted: URL, got: URL): boolean {
-  return hostsSameSite(wanted.hostname, got.hostname)
+  return sameHostname(wanted.hostname, got.hostname)
     && wanted.pathname.replace(/\/+$/, "") === got.pathname.replace(/\/+$/, "")
     && wanted.search === got.search;
 }
@@ -230,10 +230,9 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
         }
       }
     } else if (docs.length === 0) {
-      const bodyLines = lines.slice(0, takeTrailingErrors(0, lines.length));
-      const onlyErrors = bodyLines.every((line) => !line.trim() || /^\s*Error fetching\s/i.test(line));
-      const body = bodyLines.join("\n").trim();
-      if (body && !onlyErrors) pages.push({ url: requested[0]!, text: body });
+      const body = lines.join("\n").trim();
+      const nonBlank = lines.filter((line) => line.trim()).length;
+      if (body && nonBlank >= 3) pages.push({ url: requested[0]!, text: body });
     }
   }
 
