@@ -146,6 +146,10 @@ function sourceNote(id: string, sources: Extract<CredentialSources, { status: "r
 /**
  * Providers cancelled 那一行：引擎真问了、到点没等回来的臂。不是失败，也不是
  * 没问。空表返回 undefined，所以健康路径一个字都不多。
+ *
+ * 文案只写「到时限了」：`ans search` 不传 caller signal，引擎里也没有第二个掐臂
+ * 的原因。等 CLI 真接上中断（引擎把到点和调用方 abort 记进同一个
+ * providersCancelled），这里就得把原因当参数传进来，不能再写死。
  */
 export function formatProvidersCancelledLine(providersCancelled: readonly string[]): string | undefined {
   if (providersCancelled.length === 0) return undefined;
