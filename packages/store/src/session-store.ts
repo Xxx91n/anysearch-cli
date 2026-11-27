@@ -270,9 +270,12 @@ export interface MemoryHit {
   /** Preview. A content-arm hit carries the matched section (length follows the section); without one it carries the page opening, 4000 characters at most. */
   content: string;
   /**
-   * Score of the arm that recalled this hit (bigger is better). Absent when the
-   * lane has no score to give: a content-arm hit is ordered by section fusion,
-   * not by a number. `recall_memory` serializes the absent case as `null`.
+   * The recalling arm's score, lower is better: FTS hands back
+   * `freshness_factor(bm25(...))` (bm25 is negative, more negative = better
+   * match) and the vector arms hand back `-cosine`. Values are comparable only
+   * within one arm, not across arms. Absent when the lane has no score to give:
+   * a content-arm hit is ordered by section fusion, not by a number, and
+   * `recall_memory` serializes that as `null`.
    */
   rank?: number;
   // arm provenance ("fts" | "content" | "entity" | "vector" | "relation" | "semantic"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
@@ -2298,16 +2301,19 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // idempotent backfill for rows missing an embedding (write failures, pre-rename upgrade, model re-embed).
-  async backfillEmbeddings(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number }> {
+  // `skipped` is a row with nothing to embed (empty title and snippet). It is not a
+  // failure: no retry or network fix would change it, so it stays out of `failed`
+  // and out of the caller's exit code.
+  async backfillEmbeddings(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number; skipped: number }> {
     const rows = this.db.prepare(
       "SELECT r.id, r.title, r.snippet FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL AND r.archived = 0" +
       (limit ? " LIMIT " + Math.max(1, Math.floor(limit)) : "")
     ).all() as Array<{ id: number; title: string | null; snippet: string | null }>;
-    let embedded = 0, failed = 0;
+    let embedded = 0, failed = 0, skipped = 0;
     if (!dryRun) {
       for (const r of rows) {
         const text = ((r.title ?? "") + " " + (r.snippet ?? "")).trim();
-        if (!text) { failed++; continue; }
+        if (!text) { skipped++; continue; }
         const v = await embedText(text, "passage");
         if (!v) { failed++; continue; }
         this.db.prepare("INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding, model) VALUES (?, ?, ?)")
@@ -2315,7 +2321,7 @@ export class SqliteSessionStore implements SessionStore {
         embedded++;
       }
     }
-    return { scanned: rows.length, embedded, failed };
+    return { scanned: rows.length, embedded, failed, skipped };
   }
   // ---- turn older episodes into semantic memories (D2/D4) + reversible forgetting (D5) ----
 

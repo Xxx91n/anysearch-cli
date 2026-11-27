@@ -512,15 +512,16 @@ export function searchChunkPages(
   const outsideText = new Map<number, string>();
   const outsideBest = [...bestSection.values()].filter((id) => keyword.outsideAt.has(id));
   if (outsideBest.length > 0) {
-    const previewFrom = db.prepare(
-      "SELECT substr(r.content, ? + 1, " + MATCH_PREVIEW_MAX_CHARS + ") AS text " +
-        "FROM retrieval_chunks s JOIN retrieval_results r ON r.id = s.page_id WHERE s.id = ?",
-    );
-    for (const sectionId of outsideBest) {
-      const at = keyword.outsideAt.get(sectionId)!;
-      const row = previewFrom.get(at, sectionId) as { text: string | null } | undefined;
-      if (row?.text) outsideText.set(sectionId, row.text);
-    }
+    // One statement for every section: each hit position goes in as a pair, so
+    // substr cuts inside SQLite and only the previews cross into JS.
+    const pairs = outsideBest.map((sectionId) => [sectionId, keyword.outsideAt.get(sectionId)!] as const);
+    const previews = db.prepare(
+      "WITH outside(section_id, at) AS (VALUES " + pairs.map(() => "(?, ?)").join(", ") + ") " +
+        "SELECT o.section_id AS id, substr(r.content, o.at + 1, " + MATCH_PREVIEW_MAX_CHARS + ") AS text " +
+        "FROM outside o JOIN retrieval_chunks s ON s.id = o.section_id " +
+        "JOIN retrieval_results r ON r.id = s.page_id",
+    ).all(...pairs.flat()) as Array<{ id: number; text: string | null }>;
+    for (const row of previews) if (row.text) outsideText.set(row.id, row.text);
   }
   const hits: ChunkPageHit[] = [];
   for (const pageId of pageIds) {

@@ -1,13 +1,10 @@
 // @anysearch-cli/embedding is an OPTIONAL PEER (peerDependencies +
-// peerDependenciesMeta.optional; its optionalDependencies form was migrated
-// away because npm auto-installing a heavy optional runtime broke installs).
-// The vector arm is a capability, not
-// a requirement. When the package is absent from the install closure (peer not
-// installed), the arm is absent: embedText ≡ null, telemetry all-zero +
-// absent:true — a legal FTS-only state, never a throw.
-// fail-open semantics are preserved end-to-end.
-// consolidate dedup degrades to jaccard-only (decideOp null-cos branch,
-// THETA_JAC=0.80) when this arm is absent — see packages/store/src/consolidate.ts.
+// peerDependenciesMeta.optional), so a missing install leaves the vector arm
+// absent instead of broken: embedText ≡ null, telemetry all-zero + absent:true,
+// a legal FTS-only state that never throws. fail-open semantics are preserved
+// end-to-end. consolidate dedup degrades to jaccard-only (decideOp null-cos
+// branch, THETA_JAC=0.80) when this arm is absent — see
+// packages/store/src/consolidate.ts.
 //
 // cosineSimilarity is pure math — inlined here (dot product over L2-normalized
 // vectors) so scoring never statically depends on the optional package.

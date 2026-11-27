@@ -53,7 +53,15 @@ export interface OpRecord {
 }
 
 export type MemoryArmLabel = "fts" | "content" | "entity" | "vector" | "relation" | "semantic";
-/** Arms this evaluation measures. `content` is excluded: no case writes a page body. */
+/**
+ * Arms this evaluation measures. `content` is deliberately outside: no case
+ * writes a page body, and an n=0 arm would trip the weakest-link warning and
+ * shift the beta correction for the other four. The arm still runs, and a hit it
+ * recalls counts as strong evidence in `isWeak` below — that call classifies
+ * evidence (a keyword hit on a page body is a literal hit), it does not measure
+ * the arm. When a case starts writing a body, add content here and to
+ * NON_ANCHOR_MEMORY_ARMS; the pin test fails until it has a critical role.
+ */
 export type MeasuredMemoryArm = Exclude<MemoryArmLabel, "content">;
 export const MEMORY_ARM_ROLES: Record<MeasuredMemoryArm, "anchor" | "critical" | "observational"> = {
   fts: "anchor",
@@ -63,9 +71,7 @@ export const MEMORY_ARM_ROLES: Record<MeasuredMemoryArm, "anchor" | "critical" |
   semantic: "critical",
 };
 /**
- * The measured non-anchor arms. content is known to the type but the evaluation
- * cases never write a page body, so it stays out: an n=0 arm would trip the
- * weakest-link warning and change the beta correction for the other four.
+ * The measured non-anchor arms; see MeasuredMemoryArm for why content is absent.
  */
 export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MeasuredMemoryArm, "fts">[] = [
   "entity",
@@ -357,9 +363,7 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             const hits = await store.searchMemory(op.query, op.limit ?? 20);
             const texts = hits.map((h) => hitText(h));
             // weak = hit with neither the FTS nor the content arm (vector/entity-only
-            // recall). The content half is not exercised yet: no golden case writes
-            // a page body. Weak hits are answer-layer abstain evidence and do not
-            // count toward precision budgets.
+            // recall); see MeasuredMemoryArm for why content is not measured.
             const isWeak = (h: unknown): boolean => { const a = (h as { arms?: string[] }).arms; return Array.isArray(a) && a.length > 0 && !a.includes("fts") && !a.includes("content"); };
             const strongHits = hits.filter((h) => !isWeak(h));
             const fails: string[] = [];

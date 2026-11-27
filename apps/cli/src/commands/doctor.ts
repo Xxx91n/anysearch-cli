@@ -100,7 +100,8 @@ export interface DoctorOptions {
 
 const BACKFILL_COMMAND = "ans memory backfill-vectors";
 
-function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): string {
+/** 正文块向量这一行的四态和说明。积压判定只在这里算一次，state 和 detail 不会走散。 */
+function chunkBacklogReport(backlog: ChunkVectorBacklog, chunkModel: string): { state: "ready" | "unconfigured"; detail: string } {
   const facts = [`已补 ${backlog.embedded} 块 / 待补 ${backlog.pending} 块`];
   if (chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {
     facts.push("按任意模型统计（embedding 包用不了：没装或加载失败）");
@@ -131,7 +132,9 @@ function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): st
   } else {
     repair = "没有积压";
   }
-  return facts.join("；") + "。" + repair;
+  // 缺块、待补块或缺 embedding 包都是待补能力，不是坏掉。
+  const state = needsBlocks || needsVectors || chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? "unconfigured" : "ready";
+  return { state, detail: facts.join("；") + "。" + repair };
 }
 
 function errorText(error: unknown): string {
@@ -1177,15 +1180,13 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
             detail: "库里还没有可读的块表或正文列（新库还没被会话库补全，或是旧库）；下次 ans 打开时建表，老正文跑 ans memory backfill-vectors 补块",
           });
         } else {
+          const chunk = chunkBacklogReport(backlog, chunkModel);
           report.add({
             layer: "data",
             name: "正文块向量",
-            // 缺块或缺 embedding 包都是待补能力，不是坏掉。
-            state: backlog.pagesWithoutChunks > 0 || backlog.pending > 0 || chunkModel === EMBEDDING_MODEL_UNAVAILABLE
-              ? "unconfigured"
-              : "ready",
+            state: chunk.state,
             mode: "offline",
-            detail: chunkBacklogDetail(backlog, chunkModel),
+            detail: chunk.detail,
           });
         }
       } catch (error) {

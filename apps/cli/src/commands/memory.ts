@@ -6,7 +6,7 @@ import { createEngineForActiveDomain } from "../db";
 
 interface MemoryStore {
   vectorTelemetry(): Promise<{ absent: boolean }>;
-  backfillEmbeddings(dryRun?: boolean, limit?: number): Promise<{ scanned: number; embedded: number; failed: number }>;
+  backfillEmbeddings(dryRun?: boolean, limit?: number): Promise<{ scanned: number; embedded: number; failed: number; skipped: number }>;
   backfillChunkVectors(dryRun?: boolean, limit?: number): Promise<{ scanned: number; embedded: number; failed: number; rebuiltPages: number; rebuildFailed: number }>;
   // reversible active forgetting (archive + undo).
   scanArchive(opts?: { limit?: number }): Array<{ id: number; entity: string | null; reason: string }>;
@@ -53,7 +53,9 @@ export async function runMemory(args: string[]): Promise<number> {
         " block(s) pending embedding (no writes; --limit ignored)\n");
       return 0;
     }
-    process.stdout.write("backfilled" + r.embedded + "/" + r.scanned + " vector(s)" + (r.failed > 0 ? " (" + r.failed + " failed)" : "") + "\n");
+    process.stdout.write("backfilled" + r.embedded + "/" + r.scanned + " vector(s)" +
+      (r.failed > 0 ? " (" + r.failed + " failed)" : "") +
+      (r.skipped > 0 ? " (" + r.skipped + " skipped: nothing to embed)" : "") + "\n");
     process.stdout.write("chunk index: rebuilt " + chunks.rebuiltPages + " page(s); backfilled " +
       chunks.embedded + "/" + chunks.scanned + " block vector(s)" +
       (chunks.failed > 0 ? " (" + chunks.failed + " failed)" : "") +
@@ -70,9 +72,12 @@ export async function runMemory(args: string[]): Promise<number> {
             "and any proxy/firewall, or pre-seed the cache dir (ANYSEARCH_MODEL_CACHE, default ~/.ans/models) " +
             "from a connected host; run ans doctor to confirm the vector arm is present.\n"
       );
-      // A row whose title and snippet are both empty counts as failed too, and
-      // no network fix or retry will change that.
-      process.stderr.write("note: an entry with an empty title and snippet also counts as failed; it has nothing to embed and needs no retry.\n");
+    }
+    // Rows with an empty title and snippet have nothing to embed. They are
+    // counted apart from failures and leave the exit code alone.
+    if (r.skipped > 0) {
+      process.stderr.write("note: " + r.skipped + " entr" + (r.skipped === 1 ? "y" : "ies") +
+        " had an empty title and snippet (nothing to embed); skipped, not failed, no retry needed.\n");
     }
     if (r.failed > 0 || chunks.failed > 0 || chunks.rebuildFailed > 0) return 1;
     return 0;
