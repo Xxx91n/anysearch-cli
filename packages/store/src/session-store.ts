@@ -189,14 +189,14 @@ const PAGE_SNIPPET_CHARS = 4000;
 
 /**
  * SQLite stores `datetime('now')` as "YYYY-MM-DD HH:MM:SS" (UTC). The recall
- * JSON speaks ISO-8601; convert only that shape and leave anything else alone,
- * so a pre-formatted value is never mangled.
+ * JSON speaks ISO-8601; parse the SQLite shape and leave unparseable values
+ * alone, so a pre-formatted value is never mangled.
  */
 function sqliteTimestampToIso(value: string | null | undefined): string | null {
   if (!value) return null;
   const ms = parseSqliteUtc(value);
   if (!Number.isFinite(ms)) return value;
-  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+  return new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
 }
 
 // equal-conflict review channel row (flag, don't silently pick).
@@ -279,7 +279,7 @@ export interface MemoryHit {
 export interface ArmProvenance {
   // common fusion provenance shape fields.
   instance: "memory";
-  labels: string[];      // parallel to lists/weights; arm order: fts, entity, vector, relation, semantic
+  labels: string[];      // parallel to lists/weights; the arms actually present (fts first)
   lists: string[][];     // rowid strings per arm, rank order
   weights: number[];
   fusedIds: string[];    // full fused id order (pre-limit, pre-secret-filter)
@@ -655,6 +655,7 @@ export class SqliteSessionStore implements SessionStore {
   // durable `pending` count (chunkVectorBacklog / `ans doctor`).
   private readonly chunkVectorQueue: number[] = [];
   private chunkVectorDraining = false;
+  private closed = false;
   private static readonly CHUNK_VECTOR_QUEUE_MAX = 64;
   // relation extraction + arm telemetry (report-only, never gated).
   // alert-on-silence — event write failures and bootstrap degradation are counted.
@@ -1260,12 +1261,12 @@ export class SqliteSessionStore implements SessionStore {
    */
   private contentArmRows(query: string, limit: number, queryVector: Float32Array | null, model: string | null): MemoryHit[] {
     if (query.trim().length === 0) return [];
-    return searchChunkPages(this.db, query, limit, queryVector, model).map((h) => ({
+    return searchChunkPages(this.db, query, limit, queryVector, model).map((h, i) => ({
       rowid: h.pageId,
       sessionId: h.sessionId,
       role: h.title ?? "",
       content: h.matchText ?? h.snippet ?? "",
-      rank: -h.order,
+      rank: -i,
     }));
   }
 
@@ -1274,7 +1275,7 @@ export class SqliteSessionStore implements SessionStore {
     const facts = new Map<number, { url: string; createdAt: string; hasBody: boolean }>();
     if (ids.length === 0) return facts;
     const rows = this.db.prepare(
-      "SELECT id, url, created_at AS createdAt, " + HAS_PAGE_BODY_EXPR + " AS hasBody FROM retrieval_results WHERE id IN (" +
+      "SELECT r.id, r.url, r.created_at AS createdAt, " + HAS_PAGE_BODY_EXPR + " AS hasBody FROM retrieval_results r WHERE r.id IN (" +
       ids.map(() => "?").join(", ") + ") AND valid_until IS NULL AND quarantine IS NULL " +
       "AND archived = 0 AND superseded_by IS NULL",
     ).all(...ids) as Array<{ id: number; url: string; createdAt: string; hasBody: number }>;
@@ -1720,7 +1721,12 @@ export class SqliteSessionStore implements SessionStore {
   // page id and leaves its work in the durable pending count.
   private enqueueChunkVectors(pageId: number): void {
     if (this.chunkVectorQueue.includes(pageId)) return;
-    if (this.chunkVectorQueue.length >= SqliteSessionStore.CHUNK_VECTOR_QUEUE_MAX) return;
+    if (this.chunkVectorQueue.length >= SqliteSessionStore.CHUNK_VECTOR_QUEUE_MAX) {
+      // The page is written; only its vectors wait for the durable backlog.
+      writeStderrSafe("[warn] chunk-vector queue full; row " + pageId +
+        " left for ans memory backfill-vectors\n");
+      return;
+    }
     this.chunkVectorQueue.push(pageId);
     void this.drainChunkVectors();
   }
@@ -1737,8 +1743,9 @@ export class SqliteSessionStore implements SessionStore {
     try {
       while (this.chunkVectorQueue.length > 0) {
         const pageId = this.chunkVectorQueue.shift()!;
+        if (this.closed) { this.chunkVectorQueue.length = 0; break; }
         try {
-          if (this.db.open) await this.embedChunksForPage(pageId);
+          await this.embedChunksForPage(pageId);
         } catch { /* fail-open: stays pending */ }
       }
     } finally {
@@ -1813,7 +1820,6 @@ export class SqliteSessionStore implements SessionStore {
     let scanned = 0;
     let embedded = 0;
     let failed = 0;
-    const failedIds = new Set<number>();
     let afterChunkId = 0;
     for (;;) {
       // Walk by chunk id, so a batch of failures does not re-read the same
@@ -1825,7 +1831,6 @@ export class SqliteSessionStore implements SessionStore {
       const result = await this.embedChunkRows(rows, model);
       embedded += result.embedded;
       failed += result.failed.length;
-      for (const id of result.failed) failedIds.add(id);
       // The window grows by the known failures, so a batch with none embedded
       // still advances; only --limit stops it early.
       if (limit !== undefined) break;
@@ -3523,7 +3528,7 @@ export class SqliteSessionStore implements SessionStore {
       // still closes content or snippet counterparts.
       const protect = hasPageBody(row) ? "" : NO_PAGE_BODY_SQL;
       this.db
-        .prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE session_id = ? AND entity = ? AND id != ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0" + protect)
+        .prepare("UPDATE retrieval_results AS r SET valid_until = datetime('now') WHERE r.session_id = ? AND r.entity = ? AND r.id != ? AND r.valid_until IS NULL AND r.quarantine IS NULL AND r.archived = 0" + protect)
         .run(row.session_id, row.entity, id);
     } else {
       this.db.prepare("UPDATE retrieval_results SET quarantine = 'resolved_drop' WHERE id = ?").run(id);
@@ -3534,6 +3539,8 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   close(): void {
+    this.closed = true;
+    this.chunkVectorQueue.length = 0;
     this.db.close();
   }
 }

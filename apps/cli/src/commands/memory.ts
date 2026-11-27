@@ -24,7 +24,7 @@ function printHelp(): void {
       " forget [--dry-run|--apply] [--limit N] Archive stale, never-accessed episodes",
       "  forget --undo <logId>                   Restore an archived episode (idempotent)",
       "",
-      "--dry-run reports counts without writing; --limit caps pages/blocks per run. Exit 0 on full completion,",
+      "--dry-run reports the whole archive without writing and ignores --limit; --limit caps a real run's pages/blocks. Exit 0 on full completion,",
       "exit 1 when a row or block failed to embed, or a page could not be rebuilt.",
       "",
     ].join("\n") + "\n"

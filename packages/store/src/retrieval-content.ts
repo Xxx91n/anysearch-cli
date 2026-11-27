@@ -8,10 +8,10 @@ export interface PageBodyRow {
 /**
  * SQL expression: the row has a page body. `length` is the code-point length
  * SQLite already uses elsewhere, so "has body" means the same thing in SQL as
- * `hasPageBody` does in JS. Parenthesized so it can be composed with OR, and
- * unqualified: use it only where one joined table has a `content` column.
+ * `hasPageBody` does in JS. Qualified with `r.content`, so it is safe in joins;
+ * every query using it must alias `retrieval_results` as `r`.
  */
-export const HAS_PAGE_BODY_EXPR = "(content IS NOT NULL AND length(content) > 0)";
+export const HAS_PAGE_BODY_EXPR = "(r.content IS NOT NULL AND length(r.content) > 0)";
 
 /** SQL condition: the row has no page body (snippet-only tier). */
 export const NO_PAGE_BODY_SQL = " AND NOT " + HAS_PAGE_BODY_EXPR;

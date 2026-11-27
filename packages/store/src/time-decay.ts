@@ -147,8 +147,8 @@ export function invalidateOldRecords(
   // body writers leave it off because a new version should win.
   const protect = opts.protectContent ? NO_PAGE_BODY_SQL : "";
   db.prepare(
-    "UPDATE retrieval_results SET valid_until = datetime('now') " +
-    "WHERE url = ? AND id != ? AND valid_until IS NULL " +
-    "AND archived = 0 AND quarantine IS NULL" + protect
+    "UPDATE retrieval_results AS r SET valid_until = datetime('now') " +
+    "WHERE r.url = ? AND r.id != ? AND r.valid_until IS NULL " +
+    "AND r.archived = 0 AND r.quarantine IS NULL" + protect
   ).run(entityKey, newRecordId);
 }

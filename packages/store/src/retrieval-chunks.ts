@@ -27,7 +27,11 @@ const LIVE_PAGE_SQL =
 
 /** How many candidates each lane may bring before the section fusion. */
 const CANDIDATE_SLACK = 4;
-/** Block-vector scan ceiling; a real index is future work, this is the bound. */
+/**
+ * Block-vector scan ceiling: the lane reads the newest blocks only. Past this
+ * count older pages stay keyword-only; a real vector index is future work and
+ * `ans doctor` reports the truncation.
+ */
 const VECTOR_SCAN_MAX = 2_000;
 /** Preview cap for a matched section in recall JSON. */
 const MATCH_PREVIEW_MAX_CHARS = 1000;
@@ -138,7 +142,7 @@ export function ensureChunksForPage(db: Database.Database, pageId: number): Ensu
  * lost). A heading-only page stores `blocks = 0` and is not retried forever.
  */
 const PAGES_NEEDING_CHUNKS_SQL =
-  HAS_PAGE_BODY_EXPR + " AND" + LIVE_PAGE_SQL +
+  HAS_PAGE_BODY_EXPR + " AND " + LIVE_PAGE_SQL +
   " AND NOT EXISTS (SELECT 1 FROM retrieval_page_chunks p WHERE p.page_id = r.id AND p.blocks = 0)" +
   " AND (NOT EXISTS (SELECT 1 FROM retrieval_chunks c WHERE c.page_id = r.id AND c.level = " + LEVEL_SECTION + ")" +
   " OR NOT EXISTS (SELECT 1 FROM retrieval_chunks c WHERE c.page_id = r.id AND c.level = " + LEVEL_BLOCK + ")" +
@@ -361,8 +365,10 @@ function keywordSections(db: Database.Database, query: string, limit: number): n
     for (const page of pages) {
       const sections = sectionMap.get(page.id);
       if (!sections || sections.length === 0) continue;
+      // The hit can land on a heading line or in trimmed whitespace between
+      // sections; then there is no honest section to point at, so skip it.
       const hit = sections.find((s) => page.at >= s.startOffset && page.at < s.startOffset + s.chars);
-      push((hit ?? sections[0]!).sectionId);
+      if (hit) push(hit.sectionId);
       if (out.length >= fetchLimit) break;
     }
   }

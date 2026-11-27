@@ -166,6 +166,31 @@ async function main() {
     assert(!(sectionHit?.content ?? "").includes("填"), "content is not the page opening");
     assert((sectionHit?.content ?? "").length <= 1001, "the matched section preview is capped");
 
+    // ---- equal RRF score: the row with a body wins, both paths -----------
+    const tieSnippet = (await store.saveResultsWithIds(session.id, [{
+      url: "https://example.com/tie-snippet",
+      title: "snippet tie",
+      snippet: "zzboth alpha",
+      source: "exa",
+    }]))[0]!;
+    const tieBody = await store.savePage(session.id, {
+      url: "https://example.com/tie-body",
+      title: "body tie",
+      content: "## T\n\nzzboth alpha",
+      source: "exa",
+    });
+    const tieQuery = "zzboth";
+    const singleTie = await store.searchMemory(tieQuery, 5);
+    const singleIds = singleTie.map((h) => Number(h.rowid));
+    assert(singleIds.indexOf(Number(tieBody.id)) < singleIds.indexOf(Number(tieSnippet)),
+      "single query: a body hit outranks an equal snippet hit");
+    const tieBodyHit = singleTie.find((h) => h.rowid === tieBody.id)!;
+    assert(tieBodyHit.arms?.includes("content") === true, "the body hit carries the content arm");
+    const multiTie = await store.searchMemoryMulti([tieQuery], 5);
+    const multiIds = multiTie.map((h) => Number(h.rowid));
+    assert(multiIds.indexOf(Number(tieBody.id)) < multiIds.indexOf(Number(tieSnippet)),
+      "multi-query path: a body hit outranks an equal snippet hit");
+
     // ---- block vectors fill in the background, search never waits --------
     assert((readChunkVectorBacklogFile(dbPath)?.pending ?? 0) > 0, "after the write, blocks still owe vectors (durable backlog)");
     const vectorOnly = "数据湖方案";

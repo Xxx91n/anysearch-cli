@@ -55,7 +55,9 @@ export interface OpRecord {
 export type MemoryArmLabel = "fts" | "content" | "entity" | "vector" | "relation" | "semantic";
 export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "observational"> = {
   fts: "anchor",
-  content: "observational", // known to the type, not measured until a golden case writes a body
+  // Placeholder role: content is known to the type but has no golden case yet,
+  // and NON_ANCHOR_MEMORY_ARMS deliberately leaves it out of the measurement.
+  content: "observational",
   entity: "critical",
   vector: "critical",
   relation: "critical",
