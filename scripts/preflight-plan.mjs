@@ -255,8 +255,9 @@ function rootReaders(file) {
  * list. A declaration or manifest that cannot be read or parsed makes this return
  * null, so no caller silently drops a package and everything that depends on it:
  * the push gate answers broken, and CI runs every lane. A directory without a
- * package.json, or a manifest without a name, is not a package: it is skipped,
- * and the plan reports a change under it as broken.
+ * package.json is not a package, so a change under it belongs to no package. A
+ * manifest without a name is not a package either, and the plan reports a change
+ * under it as broken: the manifest is damaged, not merely absent.
  *
  * @param {string} root
  * @returns {{ name: string, dir: string, deps: string[] }[] | null}

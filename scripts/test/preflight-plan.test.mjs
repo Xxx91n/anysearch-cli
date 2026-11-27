@@ -263,8 +263,8 @@ test("separators and ./- prefixes do not escape the boundary", () => {
 });
 
 test("codeOwnership keeps docs out of the unowned list", () => {
-  // If a docs file counted as unowned, a doc next to a package change would
-  // run the whole suite.
+  // If a docs file counted as unowned, a doc next to a package change would skip
+  // the whole change instead of running that package.
   const { touched, unowned } = codeOwnership(
     ["apps/dsh-plugin/src/index.ts", "docs/limitations.md", "turbo.json"],
     readWorkspace(root),
@@ -424,7 +424,7 @@ test("a workspace with no pnpm-workspace.yaml is a broken gate", () => {
   }
 });
 
-test("an unreadable pnpm-workspace.yaml reads as no workspace, not a crash", () => {
+test("an unreadable pnpm-workspace.yaml answers broken instead of crashing", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-unreadable-"));
   try {
     // A directory where the file belongs: reading it throws, which must not escape,
