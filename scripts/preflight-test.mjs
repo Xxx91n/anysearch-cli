@@ -349,7 +349,9 @@ if (timedOut) {
 } else if (interrupted) {
   process.exitCode = interrupted;
 } else if (status !== 0) {
-  const lines = lastLines(output, 100);
+  // A run whose file never finished still has its in-memory tail; show that
+  // rather than nothing.
+  const lines = lastLines(output ?? readTail(), 100);
   if (lines.length > 0) {
     console.error(`\n[preflight] last ${lines.length} line(s) of the run:`);
     for (const line of lines) console.error(line);
@@ -409,9 +411,13 @@ function planRun() {
 }
 
 // turbo names a failed task on its summary line, e.g. "Failed: @scope/app#test".
+// The summary is the last line, so the last match wins: a package that prints a
+// line starting "Failed:" must not be named instead of the task that failed.
 function failedTask(output) {
-  const match = /^Failed:\s*(.+)$/m.exec(output.replace(/\u001b\[[0-9;]*m/g, ""));
-  return match ? match[1].trim() : null;
+  const plain = output.replace(/\u001b\[[0-9;]*m/g, "");
+  let failed = null;
+  for (const match of plain.matchAll(/^Failed:\s*(.+)$/gm)) failed = match[1].trim();
+  return failed;
 }
 
 function readStdin() {
@@ -499,11 +505,13 @@ function reportKeptTestHome({ home }, write = writeStderr) {
   write(`[preflight] test home kept for inspection: ${home}`);
 }
 
-// Where the whole run's output went. The default is the sync writer, because the
-// gate may exit right after the line; a caller that lets the event loop drain
-// passes console.error, the same rule as the kept-home line.
+// Where the run's output went. The default is the sync writer, because the gate
+// may exit right after the line; a caller that lets the event loop drain passes
+// console.error, the same rule as the kept-home line. A file the stream failed to
+// finish is named as incomplete — it is not the whole run.
 function reportRunOutput(handle, write = writeStderr) {
-  if (handle?.file) write(`[preflight] full output: ${handle.file}`);
+  if (!handle?.file) return;
+  write(`[preflight] ${handle.failed ? "incomplete output file" : "full output"}: ${handle.file}`);
 }
 
 // Design: pin the reporter to spec — the total is read from the summary line it
@@ -578,14 +586,30 @@ function openDump() {
 }
 
 // Wait for the file to flush. A handle that never opened resolves at once, and a
-// stream that never finishes must not hold the gate's answer forever.
+// stream that never finishes must not hold the gate's answer forever — but a cap
+// that wins means the file is incomplete, so it is marked as such and read as no
+// file at all.
 function closeDump(handle) {
   if (!handle?.stream || handle.failed) return Promise.resolve();
   return new Promise((resolve) => {
-    const done = () => resolve();
-    handle.stream.once("error", done);
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(cap);
+      resolve();
+    };
+    const cap = setTimeout(() => {
+      if (settled) return;
+      handle.failed = true;
+      done();
+    }, 2000);
+    cap.unref();
+    handle.stream.once("error", () => {
+      handle.failed = true;
+      done();
+    });
     handle.stream.end(done);
-    setTimeout(done, 2000).unref();
   });
 }
 
