@@ -271,13 +271,14 @@ Rules behind the table:
   both search tools report it: the content JSON and `structuredContent` carry
   `providersCancelled` beside `providersQueried`, so an arm that was asked and
   then cut off cannot be read as an arm that never ran. The same two halves
-  carry `partial` and `deadlineMs` (the resolved budget the engine ran this call
-  with), always present, so a host can tell a shortened pool from a complete one
-  without matching on text. `search_web` reads `partial` off its one fanout;
+  carry `partial` and `deadlineMs` (the budget each fanout runs with), always
+  present, so a host can tell a shortened pool from a complete one without
+  matching on text. `search_web` reads `partial` off its one fanout;
   `research_web` reads it off the whole call — any completed round that was cut
   makes the merged pool short, so `partial` is true even when the last round
-  came back whole — and it is false when no round completed. `deadlineMs` is the
-  call's budget on both tools: a number, even before any round runs. Zero queried
+  came back whole — and it is false when no round completed. `deadlineMs` is a
+  per-round budget, not a cap on the call: a multi-round `research_web` call can
+  wait up to the round count times that long. Zero queried
   providers is not an outage, and a cancelled provider never counts as an
   answered one, so a search with any cancelled arm cannot abstain: when nothing
   came back the verdict is `cancelled` — or `failed` when every queried arm failed — never a

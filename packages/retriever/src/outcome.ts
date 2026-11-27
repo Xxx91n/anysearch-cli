@@ -12,9 +12,9 @@ export const SEARCH_OUTCOMES = ["answer", "failed", "cancelled", "abstain", "emp
 export type SearchOutcome = (typeof SEARCH_OUTCOMES)[number];
 
 /**
- * The pool was cut short: at least one arm was asked but not waited for. The
- * engine records only which arms were cut; every surface (CLI, --json, MCP)
- * asks this one function, so "partial" cannot mean two different things.
+ * One fanout was cut short: at least one arm was asked but not waited for. The
+ * engine records only which arms were cut. This judges a single fanout; a tool
+ * that merges several rounds decides the call-level answer itself.
  */
 export function isPartialPool(providersCancelled: readonly string[]): boolean {
   return providersCancelled.length > 0;

@@ -230,7 +230,9 @@ export class RetroaererdEngine {
   // per-request cap: tests shrink it, eval raises it, and `ans search --deadline`
   // passes the terminal's choice; absent is 4s.
   private gate: SufficiencyGate;
-  private requestTimeoutMs: number;
+  // Public and readonly so a directly built engine can report the budget it
+  // runs with; `createEngine` also copies it into CompositionResult.
+  readonly requestTimeoutMs: number;
 
   // decision 1C: constructor accepts providers array.
   // decision 2A: optional BudgetLedger + sessionId for per-call billing.

@@ -29,7 +29,7 @@ const fakeSpan: any = {
   finish: () => {},
 };
 
-function makeEngine(envelopes: FusedEnvelope[], requestTimeoutMs = 4000): CompositionResult {
+function makeEngine(envelopes: FusedEnvelope[], requestTimeoutMs?: number): CompositionResult {
   let i = 0;
   return {
     retriever: { search: async (_q: Query) => envelopes[Math.min(i++, envelopes.length - 1)] },
@@ -39,7 +39,7 @@ function makeEngine(envelopes: FusedEnvelope[], requestTimeoutMs = 4000): Compos
     } as unknown as SessionStore,
     observation: { recordOperation: async (_o: any, cb: any) => cb(fakeSpan) },
     providerBuildErrors: {},
-    requestTimeoutMs,
+    ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
   } as unknown as CompositionResult;
 }
 
@@ -94,7 +94,7 @@ async function main() {
     const res = await captureHandlers(makeEngine([cut], 500)).research_web({ question: "q", depth: "brief" });
     assert(res?.isError !== true, "3: a cut research call is not an error");
     assert(res?.structuredContent?.partial === true, "3: research_web says the pool was cut");
-    assert(res?.structuredContent?.deadlineMs === 500, "3: research_web carries the call's budget");
+    assert(res?.structuredContent?.deadlineMs === 500, "3: research_web carries the engine's per-round budget");
     const doc = JSON.parse(String(res?.content?.[0]?.text));
     assert(doc.partial === true, "3: text half agrees on partial");
     assert(doc.deadlineMs === 500, "3: text half agrees on deadlineMs");
@@ -113,11 +113,21 @@ async function main() {
     });
     const res = await captureHandlers(makeEngine([round1, round2], 3000)).research_web({ question: "q", depth: "standard" });
     assert(res?.structuredContent?.partial === true, "4: one cut round makes the whole call partial");
-    assert(res?.structuredContent?.deadlineMs === 3000, "4: the budget belongs to the call, not the round");
+    assert(res?.structuredContent?.deadlineMs === 3000, "4: the budget is the engine's per-round budget");
     assert(
       JSON.stringify(res?.structuredContent?.providersCancelled) === JSON.stringify([]),
       "4: the arm list is still last-round only, so partial and the list answer different questions",
     );
+  }
+
+  // 5. A hand-built CompositionResult without the budget field: the surface
+  // still reports a number (the engine's default), never a dropped key.
+  {
+    const whole = envelope({});
+    const res = await captureHandlers(makeEngine([whole])).search_web({ query: "q" });
+    assert(res?.structuredContent?.deadlineMs === 4000, "5: a missing budget falls back to the engine default");
+    const doc = JSON.parse(String(res?.content?.[0]?.text));
+    assert(doc.deadlineMs === 4000, "5: the text half keeps the key too");
   }
 
   console.log("--- mcp partial/deadline tests: " + passed + " passed, " + failed + " failed ---");

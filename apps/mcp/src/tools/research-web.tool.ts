@@ -7,7 +7,7 @@
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { DEFAULT_REQUEST_TIMEOUT_MS, KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, reportedDeadlineMs, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec, pickUnseenUrlResults, type ProviderErrorClass } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
@@ -61,7 +61,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         // Any completed round that was cut short means the merged pool is
         // missing results, even when the last round came back whole. The arm
         // list stays last-round only; this flag is the call-level fact.
-        let anyPoolCut = false;
+        let partial = false;
         let rounds = 0;
         // Failure metadata is aggregated across rounds and exposed once on
         // the merged result — an arm that failed in any round counts, so this
@@ -103,7 +103,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // round abstain and sufficiency describe.
             lastRoundQueried = queriedProviders;
             lastRoundCancelled = cancelledProviders;
-            if (cancelledProviders.length > 0) anyPoolCut = true;
+            if (cancelledProviders.length > 0) partial = true;
             const roundFailed = envelope.metadata?.providersFailed ?? [];
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
@@ -151,9 +151,6 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               ...(eng.calibration ? { calibration: eng.calibration } : {}),
             });
           }
-          // The call-level fact: one cut round is enough, because every round's
-          // results land in the pool this tool returns.
-          const partial = anyPoolCut;
           const lastRound = allResults.slice(-10);
           // The last completed round's marker and arm state — the same round
           // sufficiency describes, never a union across rounds. An interrupted
@@ -190,7 +187,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
               partial,
-              deadlineMs: eng.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+              deadlineMs: reportedDeadlineMs(eng.requestTimeoutMs),
               // Same record as structuredContent: some hosts read only this text half.
               credentialSources: eng.credentialSources ?? null,
               // resolved vertical routing (query-level spec, applied to every round).
@@ -221,10 +218,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // The same two fields the content JSON carries.
             providersQueried: lastRoundQueried,
             providersCancelled: lastRoundCancelled,
-            // Both always present; deadlineMs is the call's budget whatever
-            // the rounds did.
+            // Both always present. deadlineMs is the per-round budget, so a
+            // multi-round call can wait up to rounds times that long.
             partial,
-            deadlineMs: eng.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+            deadlineMs: reportedDeadlineMs(eng.requestTimeoutMs),
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };

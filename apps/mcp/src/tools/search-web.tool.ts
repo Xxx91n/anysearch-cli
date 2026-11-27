@@ -7,7 +7,7 @@
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { DEFAULT_REQUEST_TIMEOUT_MS, KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, reportedDeadlineMs, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec, isPartialPool } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
@@ -108,10 +108,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               // went away. Paired with providersQueried, so neither case reads as
               // an arm that never ran.
               providersCancelled: cancelledProviders,
-              // The budget the engine ran this call with; the same number as
-              // the CLI's requestTimeoutMs, reported under the ticket's name.
               partial,
-              deadlineMs: eng.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+              // The budget the engine gave this fanout.
+              deadlineMs: reportedDeadlineMs(eng.requestTimeoutMs),
               // Some hosts give the model only this text half, so the credential
               // record goes in both halves.
               credentialSources: eng.credentialSources ?? null,
@@ -168,7 +167,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             // Both always present so a host never confuses "complete" with
             // "field missing".
             partial,
-            deadlineMs: eng.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+            deadlineMs: reportedDeadlineMs(eng.requestTimeoutMs),
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };
