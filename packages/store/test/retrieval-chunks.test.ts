@@ -462,7 +462,7 @@ async function main() {
       const left = rawFtsLost.prepare(
         "SELECT COUNT(*) AS n FROM retrieval_chunks_fts WHERE rowid = ?",
       ).get(ftsLostBlock.id) as { n: number };
-      assert.equal(left.n, 0, "the block row survives its index row");
+      assert(left.n === 0, "the block row survives its index row");
     } finally {
       rawFtsLost.close();
     }
@@ -483,7 +483,7 @@ async function main() {
       const back = rawFtsBack.prepare(
         "SELECT COUNT(*) AS n FROM retrieval_chunks_fts WHERE rowid IN (" + rebuiltBlocks.map(() => "?").join(", ") + ")",
       ).get(...rebuiltBlocks.map((r) => r.id)) as { n: number };
-      assert.equal(back.n, rebuiltBlocks.length, "every rebuilt block has its index row back");
+      assert(back.n === rebuiltBlocks.length, "every rebuilt block has its index row back");
     } finally {
       rawFtsBack.close();
     }
