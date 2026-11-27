@@ -20,6 +20,30 @@ export function isPartialPool(providersCancelled: readonly string[]): boolean {
   return providersCancelled.length > 0;
 }
 
+/** The two facts a surface reports about a shortened pool. */
+export interface PoolCoverage {
+  /** At least one arm was asked and not waited for. */
+  readonly partial: boolean;
+  /** The budget the engine ran with; null when no engine wrote one. */
+  readonly deadlineMs: number | null;
+}
+
+/**
+ * Read a shortened pool off the envelope in one place. `partial` and
+ * `deadlineMs` always travel together (the boolean says the pool was cut, the
+ * number says what cut it), so every surface reads the pair here instead of
+ * deriving it again. `null` is a legitimate input: `research_web` asks it about
+ * a round that may not have completed.
+ */
+export function poolCoverage(
+  envelope: { metadata?: { providersCancelled?: readonly string[]; deadlineMs?: number } } | null | undefined,
+): PoolCoverage {
+  return {
+    partial: isPartialPool(envelope?.metadata?.providersCancelled ?? []),
+    deadlineMs: envelope?.metadata?.deadlineMs ?? null,
+  };
+}
+
 /**
  * Everything the judgment needs. The arm lists, the result count and the answer
  * count are what the envelope will carry; `domainActive` and `gateDropped` are

@@ -8,7 +8,7 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
-import { buildVerticalSpec, isPartialPool, pickUnseenUrlResults, type ProviderErrorClass } from "@anysearch-cli/retriever";
+import { buildVerticalSpec, pickUnseenUrlResults, poolCoverage, type ProviderErrorClass } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.js";
@@ -57,9 +57,6 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
         // round cut short by the caller is `interrupted`'s story.
         let lastRoundQueried: string[] = [];
         let lastRoundCancelled: string[] = [];
-        // The same last-round rule: the budget this call ran on, as the last
-        // completed round reported it. Null when no round finished.
-        let lastRoundDeadlineMs: number | null = null;
         let lastEnvelope: any = null;
         let rounds = 0;
         // Failure metadata is aggregated across rounds and exposed once on
@@ -102,7 +99,6 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // round abstain and sufficiency describe.
             lastRoundQueried = queriedProviders;
             lastRoundCancelled = cancelledProviders;
-            lastRoundDeadlineMs = envelope.metadata?.deadlineMs ?? null;
             const roundFailed = envelope.metadata?.providersFailed ?? [];
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
@@ -150,9 +146,11 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               ...(eng.calibration ? { calibration: eng.calibration } : {}),
             });
           }
-          // #651: derived from the same last-round arm state the tool already
-          // reports, so "partial" never disagrees with providersCancelled.
-          const partial = isPartialPool(lastRoundCancelled);
+          // Derived from the same last-round envelope the tool already reports,
+          // so "partial" never disagrees with providersCancelled. A call with no
+          // completed round reads partial=false and deadlineMs=null, matching
+          // its null outcome.
+          const coverage = poolCoverage(lastEnvelope);
           const lastRound = allResults.slice(-10);
           // The last completed round's marker and arm state — the same round
           // sufficiency describes, never a union across rounds. An interrupted
@@ -188,8 +186,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               // The last completed round's arm state, never a union.
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
-              partial,
-              deadlineMs: lastRoundDeadlineMs,
+              partial: coverage.partial,
+              deadlineMs: coverage.deadlineMs,
               // Same record as structuredContent: some hosts read only this text half.
               credentialSources: eng.credentialSources ?? null,
               // resolved vertical routing (query-level spec, applied to every round).
@@ -220,10 +218,10 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // The same two fields the content JSON carries.
             providersQueried: lastRoundQueried,
             providersCancelled: lastRoundCancelled,
-            // #651: always present. deadlineMs is null only when no round
-            // finished, which `outcome: null` already says.
-            partial,
-            deadlineMs: lastRoundDeadlineMs,
+            // Always present. deadlineMs is null only when no round finished,
+            // which `outcome: null` already says.
+            partial: coverage.partial,
+            deadlineMs: coverage.deadlineMs,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };

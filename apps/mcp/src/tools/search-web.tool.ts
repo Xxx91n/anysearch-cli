@@ -8,7 +8,7 @@
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
 import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
-import { buildVerticalSpec, isPartialPool } from "@anysearch-cli/retriever";
+import { buildVerticalSpec, poolCoverage } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.js";
@@ -73,10 +73,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           const queriedProviders = envelope.metadata?.providersQueried ?? [];
           const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
           const failedProviders = envelope.metadata?.providersFailed ?? [];
-          // #651: "the pool was cut short" and "what budget it ran on", derived
-          // once from the engine's own record and reported on both halves.
-          const partial = isPartialPool(cancelledProviders);
-          const deadlineMs = envelope.metadata?.deadlineMs ?? null;
+          // "The pool was cut short" and "what budget it ran on", derived once
+          // from the engine's own record and reported on both halves.
+          const coverage = poolCoverage(envelope);
           const providerErrorClasses = envelope.metadata?.providerErrorClasses;
           const providerErrorRetryAfter = envelope.metadata?.providerErrorRetryAfterSeconds;
           if (outcome === "failed") {
@@ -111,8 +110,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               // went away. Paired with providersQueried, so neither case reads as
               // an arm that never ran.
               providersCancelled: cancelledProviders,
-              partial,
-              deadlineMs,
+              partial: coverage.partial,
+              deadlineMs: coverage.deadlineMs,
               // Some hosts give the model only this text half, so the credential
               // record goes in both halves.
               credentialSources: eng.credentialSources ?? null,
@@ -166,10 +165,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             // inferred from which other fields are missing.
             providersQueried: queriedProviders,
             providersCancelled: cancelledProviders,
-            // #651: the boolean and the budget this call ran with, both always
+            // The boolean and the budget this call ran with, both always
             // present so a host never confuses "complete" with "field missing".
-            partial,
-            deadlineMs,
+            partial: coverage.partial,
+            deadlineMs: coverage.deadlineMs,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
           };
