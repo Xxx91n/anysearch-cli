@@ -148,7 +148,12 @@ if (into) {
   if (mustHitUrls.length > 0 && bc.stability_class !== "controlled" && bc.stability_class !== "frozen-spec") {
     fail(next + " carries mustHitUrls but no controlled|frozen-spec stability_class — ship-gate would reject the row; anchor the URL or fix the badcase first");
   }
-  const docsToml = parseToml(readFileSync(DOCS_TOML, "utf8"));
+  let docsToml;
+  try {
+    docsToml = parseToml(readFileSync(DOCS_TOML, "utf8"));
+  } catch (err) {
+    fail("cannot read domains/docs.toml: " + (err.code ?? err.message));
+  }
   const allowlist = docsToml.sources?.urlAllowlist;
   if (!Array.isArray(allowlist) || allowlist.some((h) => typeof h !== "string")) {
     fail("cannot read sources.urlAllowlist from domains/docs.toml");
