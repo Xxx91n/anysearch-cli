@@ -11,7 +11,7 @@
 // rows are dropped and the SHA-256 of the pre-compaction row set is preserved in `compaction`.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { GOLDEN_FILE } from "./golden-file";
+import { GOLDEN_FILE } from "./corpus-files";
 
 export const LOOKS_LEDGER_SCHEMA = "anysearch/eval-looks@2";
 export const LOOKS_LEDGER_LEGACY_SCHEMA = "anysearch/eval-looks@1";

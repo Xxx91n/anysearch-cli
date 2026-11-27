@@ -8,7 +8,8 @@ import {
   type GoldenScope,
 } from "./docs-golden";
 
-export const GOLDEN_FILE = "eval-golden.json";
+// Re-exported so the executors and tests keep one import site for the corpus.
+export { GOLDEN_FILE } from "./corpus-files";
 
 export function isLiveScope(scope: unknown): scope is GoldenScope {
   return scope === "live" || scope === "both";
