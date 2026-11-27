@@ -282,13 +282,14 @@ const STATUS_PROBLEM = {
 };
 
 // What a push of this checkout would run: one mode line and one wait-budget
-// line per mode the gate's plan can answer with.
+// line per answer `pushPreview` can give.
 //
-// Design: the keys are `planPreflight`'s own mode names — a mode that turns up
-// there and not here reads as "cannot tell", never as a healthy line — and the
-// words stay the ticket's: 提示 reads advisory, 增量 reads incremental, 整套 reads
-// full. The two lines sit under one key so neither can be printed without the
-// other.
+// Design: the keys are the plan's own mode names, plus `unknown` for a change set
+// git cannot name; `broken` never reaches this table, because the caller prints
+// the gate's own blocked/reason/fix for it — a mode that turns up in the plan and
+// not here reads as "cannot tell", never as a healthy line. The words stay the
+// ticket's: 提示 reads advisory, 增量 reads incremental, 整套 reads full, and the two
+// lines sit under one key so neither can be printed without the other.
 const PACKAGE_MODE = "mode: incremental — a change inside a package runs that package and every package that depends on it";
 const PACKAGE_WAIT =
   "wait budget: up to 600s for the packages this push runs (store alone measures about 4m15s); set the calling tool's timeout to 0 or at least 600";
