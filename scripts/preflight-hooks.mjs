@@ -99,9 +99,7 @@ function commandLines(text) {
  * status can follow.
  *
  * Design: this parse feeds the `runs:` line, the mode's `--full` test and the
- * script status reports on. `isOurs` matches more loosely on purpose — a hook we
- * wrote badly is still ours, and install has to be able to repair it instead of
- * refusing it as someone else's.
+ * script status reports on, so those three cannot disagree about one exec line.
  */
 function gateCommandOf(command) {
   const match = (command ?? "").match(GATE_COMMAND);
