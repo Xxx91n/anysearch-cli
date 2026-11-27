@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createEngine } from "../src/composition";
+import { createEngine, reportedDeadlineMs } from "../src/composition";
 import { resolveSearchCredentials } from "@anysearch-cli/store";
 
 function closeResult(r: { store: unknown; observation: { close?: () => void } }) {
@@ -155,6 +155,12 @@ try {
   const hugeClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: 3_000_000_000, requestTimeoutCapMs: 3_000_000_000 });
   assert.equal(hugeClock.requestTimeoutMs, 2_147_483_647, "超过引擎上限的值和 cap 都夹到 2^31-1，不把 RangeError 甩给调用方");
   closeResult(hugeClock);
+
+  const retriever = { search: async () => { throw new Error("not run"); }, requestTimeoutMs: 9000 };
+  assert.equal(reportedDeadlineMs({ requestTimeoutMs: 4000, retriever }), 9000, "结果的包装器报了预算就用它");
+  for (const bad of [0, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(reportedDeadlineMs({ requestTimeoutMs: 4000, retriever: { ...retriever, requestTimeoutMs: bad } }), 4000, "包装器报 0/NaN/Infinity 时回落结果自己的预算（传的是 " + String(bad) + "）");
+  }
 
   // Best-effort diagnostic: a broken stderr must not crash the fail-open
   // build. Sync arm — write() throws. The failure has to be a real one, so the

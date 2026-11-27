@@ -359,8 +359,12 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
 }
 
 /** The budget to report for one fanout: the engine's own, the result's copy, then 4s. */
-export function reportedDeadlineMs(eng: { requestTimeoutMs?: number; retriever?: RetrieverPort }): number {
-  return eng.retriever?.requestTimeoutMs ?? eng.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+export function reportedDeadlineMs(eng: Pick<CompositionResult, "requestTimeoutMs" | "retriever">): number {
+  const positive = (ms: unknown): ms is number => typeof ms === "number" && Number.isFinite(ms) && ms > 0;
+  const retrieverMs = eng.retriever?.requestTimeoutMs;
+  if (positive(retrieverMs)) return retrieverMs;
+  if (positive(eng.requestTimeoutMs)) return eng.requestTimeoutMs;
+  return DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
 export function createEngine(
