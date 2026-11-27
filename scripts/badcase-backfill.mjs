@@ -17,7 +17,10 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
 
-const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
+// Tests point ANS_BACKFILL_ROOT at a temp fixture tree.
+const ROOT = process.env.ANS_BACKFILL_ROOT
+  ? resolve(process.env.ANS_BACKFILL_ROOT)
+  : resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BADCASES = join(ROOT, "eval-badcases.json");
 const GOLDEN = join(ROOT, "eval-golden.json");
 const COVERAGE = join(ROOT, "eval-looks.coverage.json");
