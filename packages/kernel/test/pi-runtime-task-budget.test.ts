@@ -47,6 +47,7 @@ class ScopeLedger implements BudgetLedgerPort {
 
 // A retriever that records the scopes its queries carried.
 class ScopeRetriever implements RetrieverPort {
+  readonly requestTimeoutMs = 7000;
   queries: Array<{ sessionId?: string; taskBudget?: { taskId: string } }> = [];
   async search(q: Query): Promise<FusedEnvelope> {
     this.queries.push({ sessionId: q.sessionId, taskBudget: q.taskBudget ? { taskId: q.taskBudget.taskId } : undefined });
@@ -154,6 +155,7 @@ async function main() {
     // directly proves the scope rides along, which is what routes the
     // engine's per-call budget to the task.
     const scoped = (runtime as any).scopedRetriever as RetrieverPort;
+    assert(scoped.requestTimeoutMs === 7000, "the wrapper forwards the budget it was built with");
     await scoped.search({ query: "inner" } as Query);
     assert(retriever.queries.length === 1, "the scoped retriever forwards the search");
     assert(retriever.queries[0]?.sessionId === "s-302-scoped",

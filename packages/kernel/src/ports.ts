@@ -46,9 +46,9 @@ export type Query = SearchRequest & {
 // RetrieverPort: the kernel calls this to search.
 export interface RetrieverPort {
   search(q: Query): Promise<FusedEnvelope>;
-  // The budget one fanout waits with. Omit it and surfaces use the result's
-  // own copy when present, else the engine default; a wrapper whose
-  // implementation runs a timer must forward it.
+  // The budget one fanout waits with. A wrapper placed in
+  // CompositionResult.retriever must forward it; omit it and reported
+  // deadlines fall back to the result's copy, then the engine default.
   readonly requestTimeoutMs?: number;
 }
 

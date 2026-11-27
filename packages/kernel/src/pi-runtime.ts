@@ -723,6 +723,7 @@ export class PiAgentRuntime {
           taskBudget: opts.taskBudget ?? q.taskBudget,
           ...(opts.includeAnswer ? { includeSourceUrls: true } : {}),
         }),
+        requestTimeoutMs: opts.retriever.requestTimeoutMs,
       }
       : opts.retriever;
     // #302: the session half of the routing keeps the old three-part gate
