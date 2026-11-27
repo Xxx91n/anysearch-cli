@@ -537,6 +537,9 @@ function stepStaticAssertions() {
     if (!Array.isArray(evalGolden.entries) || evalGolden.entries.length === 0) fail("eval-golden.json: entries must be a non-empty array");
     if (!evalGolden.entries.every((e) => e && typeof e === "object" && !Array.isArray(e))) fail("eval-golden.json: entries must contain objects");
     if (!evalGolden.scopes || typeof evalGolden.scopes !== "object" || Array.isArray(evalGolden.scopes) || Object.keys(evalGolden.scopes).length === 0) fail("eval-golden.json: scopes must be a non-empty object");
+    for (const [gid, scope] of Object.entries(evalGolden.scopes)) {
+      if (!["stub", "live", "both"].includes(scope)) fail("eval-golden.json: scope for " + gid + " must be stub|live|both");
+    }
     const ge = evalGolden.entries;
     if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "abstain"))
       fail("c1: no docs-domain abstain golden entry");
