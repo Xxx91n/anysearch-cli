@@ -265,8 +265,19 @@ const ledger = readLooksLedger(path.join(root, "eval-looks.json"));
 assert(!Object.hasOwn(ledger, "golden"), "readLooksLedger does not surface a corpus (it lives in eval-golden.json)");
 const staleTmp = path.join(os.tmpdir(), "ans-stale-golden-" + process.pid + ".json");
 fs.writeFileSync(staleTmp, JSON.stringify({ schema: "anysearch/eval-looks@2", schema_version: 1, golden: { scopes: {}, entries: [] }, looks: [] }), "utf8");
-const stale = readLooksLedger(staleTmp);
+const readStale = () => {
+  const lines: string[] = [];
+  const realError = console.error;
+  console.error = ((...args: unknown[]) => { lines.push(args.map(String).join(" ")); }) as typeof console.error;
+  try {
+    return { ledger: readLooksLedger(staleTmp), lines };
+  } finally {
+    console.error = realError;
+  }
+};
+const { ledger: stale, lines: staleErr } = readStale();
 assert(!Object.hasOwn(stale, "golden"), "a stale golden block is dropped on read");
+assert(staleErr.some((line) => line.includes(staleTmp)), "dropping a stale golden block is reported on stderr, naming the file");
 assert((stale as Record<string, unknown>).schema_version === 1, "dropping golden keeps schema_version");
 fs.rmSync(staleTmp, { force: true });
 const appended = appendLook(

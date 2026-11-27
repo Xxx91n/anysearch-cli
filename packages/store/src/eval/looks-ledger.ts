@@ -63,9 +63,8 @@ export function readLooksLedger(file: string): LooksLedger {
   const parsedRoot = parsed as Record<string, unknown>;
   if (!parsedRoot || typeof parsedRoot !== "object" || !Array.isArray(parsedRoot.looks)) return emptyLooksLedger();
   // An old checkout (or a merge conflict) can still leave a `golden` block in
-  // the ledger. The corpus moved to eval-golden.json, so this copy is dropped
-  // here rather than carried through the spread — and said out loud, because a
-  // silent drop reads as data loss. The input object is left untouched.
+  // the ledger; the corpus lives in eval-golden.json, so this copy is dropped
+  // and reported. The input object is left untouched.
   const { golden: staleGolden, ...j } = parsedRoot;
   if (staleGolden !== undefined) {
     console.error("[eval] dropping a stale golden block from " + file + " — the corpus lives in " + GOLDEN_FILE);
