@@ -1,7 +1,7 @@
 // Self-check for RRF pure function.
 // Run: pnpm --filter @anysearch-cli/retriever run test
 
-import { rrfScores, rrfRank } from "../src/rrf";
+import { rrfScores, rrfRank, rrfRankWithPreferred } from "../src/rrf";
 import { FUSION_REGISTRY } from "../src/fusion-registry";
 
 // probe with the registered rank_window (was the implicit default).
@@ -41,6 +41,21 @@ assert("empty lists -> empty map", empty.size === 0);
 // Test 6: custom k value
 const customK = rrfScores([["a"]], 10);
 assert("k=10: score = 1/11", Math.abs(customK.get("a")! - 1/11) < 1e-6);
+
+// Test 7: equal-score tie — the preferred id moves ahead without changing the score.
+// "snippet" and "body" each sit at rank 0 of their own list, so both score 1/61.
+const tie = rrfRankWithPreferred([["1"], ["2"]], K, new Set(["2"]));
+assert("preferred id wins an exact tie", tie[0] === "2" && tie[1] === "1");
+const noPref = rrfRankWithPreferred([["1"], ["2"]], K, new Set<string>());
+assert("no preference keeps the stable order", noPref.join(",") === "1,2");
+
+// Test 8: preference never outranks a higher score.
+const notATie = rrfRankWithPreferred([["1", "2"], ["1"]], K, new Set(["2"]));
+assert("preference does not beat a higher fused score", notATie[0] === "1" && notATie[1] === "2");
+
+// Test 9: any string id works — the primitive is key-agnostic (URLs included).
+const urlTie = rrfRankWithPreferred([["https://a.example/x"], ["https://b.example/y"]], K, new Set(["https://b.example/y"]));
+assert("URL document ids keep the tie-break", urlTie[0] === "https://b.example/y");
 
 console.log(`RRF tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

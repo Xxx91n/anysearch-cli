@@ -10,6 +10,8 @@ import { withMcpTask } from "../mcp-task.js";
 import { toolError } from "./failure.js";
 import { recallProjectIndex } from "../project-index.js";
 
+const MAX_SECTIONS_PER_HIT = 20;
+
 export function registerRecallMemory(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
     "recall_memory",
@@ -81,15 +83,25 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
           internal: hits.map((h) => ({
             role: h.role,
             content: h.content.slice(0, 200),
-            rank: h.rank,
+            rank: h.rank ?? null,
             sessionId: h.sessionId,
-            // #263 (D9): the archive row this hit came from. A summary records
-            // its dependencies by id, and a recall result carries no URL, so
-            // without this the material the model actually read could never be
-            // bound to the summary that used it. Positive rowid = archive
+            // The archive row this hit came from. A summary records
+            // its dependencies by id, so the material the model actually read
+            // can be bound to the summary that used it. Positive rowid = archive
             // material, negative = knowledge row (SessionStore's semantic arm).
             rowid: h.rowid,
             provenance: "internal",
+            // Every hit carries the same fields: url/fetchedAt are null when
+            // absent, rank is null when the arm has no score (a page found only
+            // by its body, or an entity/relation hit), hasContent is false and
+            // sections is []. sectionsTotal is the full count before the
+            // 20-section cut — the list itself is cut from the top. Field
+            // meanings live in docs/mcp-server.md.
+            url: h.url ?? null,
+            fetchedAt: h.fetchedAt ?? null,
+            hasContent: h.hasContent === true,
+            sections: (h.sections ?? []).slice(0, MAX_SECTIONS_PER_HIT),
+            sectionsTotal: h.sections?.length ?? 0,
           })),
           projectIndex: projectHits.map((h) => ({
             title: h.title,

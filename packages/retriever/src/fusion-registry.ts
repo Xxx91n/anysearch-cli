@@ -1,10 +1,6 @@
-// (r118 impl): Fusion Governance Contract layer L1 — committed registration payload.
-// L0 = rrf.ts pure primitive (governance-free); L2 = MemoryFusion (store session-store.ts) and
-// WebFusion (kernel engine.ts) instances with zero data sharing; L3 = top-k consumption contract
-// (FusionProvenance in contract.ts). Behavior-conserving round: no algorithm swap, no weight change.
-//
-// Single-consumer discipline (-adjacent): every registered leaf is consumed by exactly one
-// decision point — see the per-field comments; mutation tests prove no dead registrations.
+// The registered fusion parameters (RRF k, arm weights, windows). Values here
+// are read by the memory and web pipelines; changing one means repinning the
+// frozen hash in fusion-registry.test.ts in the same commit.
 
 import { createHash } from "node:crypto";
 
@@ -26,11 +22,16 @@ export const FUSION_REGISTRY = Object.freeze({
   rank_window: 60,
   // Consumed by: packages/store src/eval/runner.ts ROR_WINDOW (RoR ablation window).
   ror_window: 60,
-  // weights.memory consumed by session-store.ts + fts5.ts (single MemoryFusion decision point);
-  // weights.web consumed by engine.ts (D4 equal weight = null model; sources.weights overlay is
-  // user preference, not evidence).
+  // weights.memory is read by session-store.ts (page fusion), fts5.ts (multi-query)
+  // and retrieval-chunks.ts (block fusion, fts/vector only); knowledge-ranking.ts
+  // reads only k_fusion.memory. weights.web by engine.ts (equal weight = null
+  // model; sources.weights is a user preference overlay, not evidence).
   weights: Object.freeze({
-    memory: Object.freeze({ fts: 1.0, entity: 0.5, vector: 0.5, relation: 0.5, semantic: 0.5 }),
+    // Design: a page-body hit carries full-text weight, same as fts. A page hit
+    // by both the title/snippet lane and the body lane adds both weights, so a
+    // page that matches in title and body ranks above one that only matches in
+    // the body.
+    memory: Object.freeze({ fts: 1.0, content: 1.0, entity: 0.5, vector: 0.5, relation: 0.5, semantic: 0.5 }),
     web: Object.freeze({ exa: 1.0, tavily: 1.0, anysearch: 1.0 }),
   }),
   // Consumed by: fts5.ts + session-store.ts conditional activation — an absent arm adds no list

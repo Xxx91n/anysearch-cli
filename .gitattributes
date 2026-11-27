@@ -28,3 +28,7 @@
 *.gz binary
 *.tar binary
 *.7z binary
+
+# schema-content.ts 是 schema.sql 压成的一行内联字符串，diff 不可读；
+# 评审只看 schema.sql，这个文件默认折叠。
+packages/store/src/schema-content.ts linguist-generated=true

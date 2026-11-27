@@ -48,7 +48,22 @@ import {
 } from "./summary-rebuild.js";
 
 import { registerFreshnessFactorFunction, invalidateOldRecords } from "./time-decay.js";
-import { hasPageBody, NO_PAGE_BODY_SQL } from "./retrieval-content.js";
+import { hasPageBody, HAS_PAGE_BODY_EXPR, NO_PAGE_BODY_SQL } from "./retrieval-content.js";
+import {
+  ensureChunksForPage,
+  searchChunkPages,
+  chunksMissingVectors,
+  pendingChunkVectors,
+  pageChunksBuilt,
+  chunkVectorBacklog,
+  PENDING_BATCH_DEFAULT,
+  pagesMissingChunks,
+  insertChunkVector,
+  sectionsForPages,
+  type PendingChunkVector,
+  type MemorySection,
+} from "./retrieval-chunks.js";
+import { blockSearchText } from "./chunk-text.js";
 import { fts5EscapeQuery, fts5RelaxedQuery, relaxedTerms, coversMajority, appendRelaxed, searchMemoryMultiQuery } from "./fts5.js";
 import { extractEntityCandidates, normalizeEntityName, trigramSimilarity, scriptOf, isCrossScriptPair, extractCrossScriptPairs, ENTITY_ALIAS_THRESHOLD, ENTITY_REVIEW_THRESHOLD, MAX_ENTITY_CANDIDATES as MAX_CANDIDATES } from "./entity.js";
 import {
@@ -80,8 +95,8 @@ import {
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate, CrossScriptPair } from "./entity.js";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
-import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
+import { rrfRankWithPreferred, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
+import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive, parseSqliteUtc } from "./consolidate.js";
 import type {
   ConsolidateSummarizeFn,
   ConsolidateClassifyFn,
@@ -107,7 +122,7 @@ import { migrateTaskRegistryColumns, TaskRegistry } from "./task-registry.js";
 import { ensurePreMigrationBackup, writeStoreLayout } from "./migration-backup.js";
 // embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
-import { embedText, embeddingModelId, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
+import { embedText, embeddingModelId, EMBEDDING_MODEL_UNAVAILABLE, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
 import { sanitizeText, type NormalizedResult } from "@anysearch-cli/retriever";
 
 // MemTX-simplified writer adjudication.
@@ -182,6 +197,18 @@ interface LiveResultRow {
 // window from its body, so keyword recall still sees the page's opening.
 const PAGE_SNIPPET_CHARS = 4000;
 
+/**
+ * SQLite stores `datetime('now')` as "YYYY-MM-DD HH:MM:SS" (UTC). The recall
+ * JSON speaks ISO-8601; parse the SQLite shape and leave unparseable values
+ * alone, so a pre-formatted value is never mangled.
+ */
+function sqliteTimestampToIso(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const ms = parseSqliteUtc(value);
+  if (!Number.isFinite(ms)) return value;
+  return new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
+}
+
 // equal-conflict review channel row (flag, don't silently pick).
 export interface QuarantinedMemory {
   id: number;
@@ -240,10 +267,42 @@ export interface MemoryHit {
   rowid: number;
   sessionId: string;
   role: string;
+  /** Preview. A content-arm hit carries the matched section (length follows the section); without one it carries the page opening, 4000 characters at most. */
   content: string;
-  rank: number;
-  // arm provenance ("fts" | "entity" | "vector" | "relation" | "semantic"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
+  /**
+   * The recalling arm's score, lower is better: FTS hands back
+   * `freshness_factor(bm25(...))` (bm25 is negative, more negative = better
+   * match) and the vector arms hand back `-cosine`. Values are comparable only
+   * within one arm, not across arms.
+   *
+   * A hit carries `rank` only when its arm produced a score. The entity and
+   * relation arms have none, and neither do the substring rungs of the
+   * knowledge lanes, so those rows come back without the key and are ordered by
+   * fusion position. A content-arm hit carries none either. `recall_memory`
+   * serializes the absence as `null`.
+   */
+  rank?: number;
+  // arm provenance ("fts" | "content" | "entity" | "vector" | "relation" | "semantic"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
   arms?: string[];
+  /** Internal: which lane selected this content-arm hit (not serialized). */
+  contentVia?: "keyword" | "vector" | "both";
+  // Page facts, filled for retrieval_results hits only (positive rowid).
+  // Knowledge rows (-id) and message hits carry neither a URL nor sections.
+  // `url` is the stored identity form (scheme-less), not a provider spelling.
+  url?: string;
+  /** When the page row was written (`created_at`, not the provider fetch time), ISO-8601 UTC; null for knowledge rows. */
+  fetchedAt?: string | null;
+  /** True when the row carries a page body; snippet-only rows are false. */
+  hasContent?: boolean;
+  /** Level-0 sections of the page, in reading order. Empty when there is no body. */
+  sections?: MemorySection[];
+}
+
+/** Page-level fields carried by a retrieval_results hit. */
+interface PageFact {
+  url: string;
+  createdAt: string;
+  hasBody: boolean;
 }
 
 // eval-only snapshot of one searchMemory call's RRF inputs, so the runner can
@@ -251,7 +310,7 @@ export interface MemoryHit {
 export interface ArmProvenance {
   // common fusion provenance shape fields.
   instance: "memory";
-  labels: string[];      // parallel to lists/weights; arm order: fts, entity, vector, relation, semantic
+  labels: string[];      // parallel to lists/weights; the arms actually present (fts first)
   lists: string[][];     // rowid strings per arm, rank order
   weights: number[];
   fusedIds: string[];    // full fused id order (pre-limit, pre-secret-filter)
@@ -586,6 +645,17 @@ function migrateSwitchEventSchema(db: Database.Database): void {
   });
 }
 
+/**
+ * Split content-arm hits by the lane that selected them. A block-vector hit is
+ * semantic evidence (0.5); a keyword or both hit is full-text evidence (1.0).
+ */
+function splitContentHits(hits: MemoryHit[]): { lexical: MemoryHit[]; vector: MemoryHit[] } {
+  return {
+    lexical: hits.filter((h) => h.contentVia !== "vector"),
+    vector: hits.filter((h) => h.contentVia === "vector"),
+  };
+}
+
 export class SqliteSessionStore implements SessionStore {
   private db: Database.Database;
   // #187: one ledger over the store's single connection. Registration refreshes
@@ -633,6 +703,15 @@ export class SqliteSessionStore implements SessionStore {
   };
   // vector arm telemetry (fail-open writes; pendingVectors = rows lacking an embedding).
   private readonly embedTel = { writes: 0, pendingVectors: 0, armQueries: 0, armHits: 0 };
+  // Block vectors are filled after the page write, never on the search
+  // path. The queue is bounded: a burst of fetches drops new page ids rather
+  // than growing without limit, and the dropped work stays visible as the
+  // durable `pending` count (chunkVectorBacklog / `ans doctor`).
+  private readonly chunkVectorQueue: number[] = [];
+  private chunkVectorDraining = false;
+  private chunkQueueFullLogged = false;
+  private closed = false;
+  private static readonly CHUNK_VECTOR_QUEUE_MAX = 64;
   // relation extraction + arm telemetry (report-only, never gated).
   // alert-on-silence — event write failures and bootstrap degradation are counted.
   private readonly accessEventTel: AccessEventTelemetry = { writeFailures: 0, bootstrapFailed: false };
@@ -1239,6 +1318,89 @@ export class SqliteSessionStore implements SessionStore {
   // the external contract — do not consume from apps/ or kernel.
   public lastArmProvenance: ArmProvenance | null = null;
 
+  /**
+   * Content-arm hits: blocks are searched, sections are returned, and pages are
+   * the unit the memory fusion speaks — one entry per page, at its best section.
+   */
+  private contentArmRows(query: string, limit: number, queryVector: Float32Array | null, model: string | null): MemoryHit[] {
+    if (query.trim().length === 0) return [];
+    return searchChunkPages(this.db, query, limit, queryVector, model).map((h) => ({
+      rowid: h.pageId,
+      sessionId: h.sessionId,
+      role: h.title ?? "",
+      content: h.matchText ?? h.snippet ?? "",
+      contentVia: h.via,
+    }));
+  }
+
+  /** Live page rows by id: url, write time, body flag. The body text is never read. */
+  private pageFacts(ids: number[]): Map<number, PageFact> {
+    const facts = new Map<number, PageFact>();
+    if (ids.length === 0) return facts;
+    const rows = this.db.prepare(
+      "SELECT r.id, r.url, r.created_at AS createdAt, " + HAS_PAGE_BODY_EXPR + " AS hasBody FROM retrieval_results r WHERE r.id IN (" +
+      ids.map(() => "?").join(", ") + ") AND valid_until IS NULL AND quarantine IS NULL " +
+      "AND archived = 0 AND superseded_by IS NULL",
+    ).all(...ids) as Array<{ id: number; url: string; createdAt: string; hasBody: number }>;
+    for (const row of rows) facts.set(row.id, { url: row.url, createdAt: row.createdAt, hasBody: row.hasBody === 1 });
+    return facts;
+  }
+
+  private materialState(ids: number[]): {
+    live: Set<number>;
+    body: Set<number>;
+    facts: Map<number, PageFact>;
+  } {
+    const live = new Set<number>();
+    const body = new Set<number>();
+    const facts = new Map<number, PageFact>();
+    const positives = ids.filter((id) => id > 0);
+    if (positives.length === 0) return { live, body, facts };
+    for (const [id, fact] of this.pageFacts(positives)) {
+      live.add(id);
+      if (fact.hasBody) body.add(id);
+      facts.set(id, fact);
+    }
+    return { live, body, facts };
+  }
+
+  /**
+   * Fill url / fetchedAt / hasContent / sections for retrieval_results hits.
+   * The page facts already came from `materialState`; only rows it did not see
+   * are read again. The section table belongs to retrieval-chunks.
+   */
+  private attachPageFacts(hits: MemoryHit[], known?: Map<number, PageFact>): void {
+    const byId = new Map<number, MemoryHit>();
+    for (const hit of hits) {
+      hit.fetchedAt = null;
+      hit.hasContent = false;
+      hit.sections = [];
+      // Only retrieval_results ids are positive. Knowledge rows keep their
+      // negative id on every recall path (the multi-query lane re-reads
+      // semantic_memories as `-id`), so they keep the empty defaults above.
+      if (hit.rowid > 0 && hit.sessionId.length > 0) byId.set(hit.rowid, hit);
+    }
+    if (byId.size === 0) return;
+    const ids = [...byId.keys()];
+    const facts = known ?? new Map<number, PageFact>();
+    const missing = ids.filter((id) => !facts.has(id));
+    if (missing.length > 0) {
+      for (const [id, fact] of this.pageFacts(missing)) facts.set(id, fact);
+    }
+    for (const id of ids) {
+      const fact = facts.get(id);
+      const hit = byId.get(id)!;
+      if (!fact) continue;
+      hit.url = fact.url;
+      hit.fetchedAt = sqliteTimestampToIso(fact.createdAt);
+      hit.hasContent = fact.hasBody;
+    }
+    for (const [pageId, sections] of sectionsForPages(this.db, ids)) {
+      const hit = byId.get(pageId);
+      if (hit) hit.sections = sections;
+    }
+  }
+
   // Design: research archive reads are store-scoped, not session- or domain-scoped —
   // session_id is per-call (MCP search_web mints a fresh session each call) and no
   // row records a domain origin; the store is the isolation unit.
@@ -1251,60 +1413,86 @@ export class SqliteSessionStore implements SessionStore {
     // left to refill it with and the answer came back short. Reading a small
     // margin past `limit` gives the filter something to promote.
     const fetchLimit = limit + Math.max(4, Math.ceil(limit / 4));
-   // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
-   let rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, fetchLimit) as MemoryHit[];
-   // strict rung under-fills → append the relaxed rung (decay keyed on the strict string).
-   if (rawHits.length < fetchLimit) {
-     const relaxed = fts5RelaxedQuery(query);
-     if (relaxed) {
-       const terms = relaxedTerms(query);
-       const wide = (this.stmts.searchAllResults.all(safeQuery, relaxed, fetchLimit * 4) as MemoryHit[])
-         .filter((h) => coversMajority(terms, `${h.role ?? ""} ${h.content ?? ""}`));
-       rawHits = appendRelaxed(rawHits, wide, fetchLimit);
-     }
-   }
-   // entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
-   const armHits = this.entityArmRows(query, fetchLimit);
-   const vecHits = await this.vectorArmRows(query, fetchLimit);
-   // relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
-   const relHits = this.relationArmRows(query, fetchLimit);
-   // #277: which object this query names, resolved BEFORE the knowledge lane
-   // reads. The ambiguity bites there — a Han-named knowledge row and a Latin
-   // query share no characters, so the keyword slices match BOTH companies' rows
-   // and whichever ranks first answers. One object means only its own names may
-   // answer; an unresolved collision means no knowledge row is offered at all.
-   //
-   // Resolved here and pushed DOWN into the lane on purpose: filtering the
-   // finished `limit` rows would drop the answering row whenever the head of the
-   // list belongs to another object, returning empty while the right row sat one
-   // position past the cut.
-   const objectResolution = resolveQueryObject(this.liveEntities(), query);
-   if (objectResolution.kind === "ambiguous") this.entityTel.crossScriptAmbiguousQueries += 1;
-   const objectForms = objectResolution.kind === "resolved" ? objectResolution.forms : undefined;
-   // Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
-   // Each knowledge lane reads up to `limit`, then relevance decides their
-   // combined order. The Chinese keyword lane stays active without vectors.
-   const semHitsRaw = await this.semanticArmRows(query, limit, objectForms);
-   // An undetermined object offers no knowledge row: "cannot tell which object"
-   // is the answer, not a guess. Materials stay (they carry their own URL).
-   const semHits = objectResolution.kind === "ambiguous" ? [] : semHitsRaw;
-   const semHitsGated = semHits;
-   const byId = new Map<number, MemoryHit>();
+    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
+    let rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, fetchLimit) as MemoryHit[];
+    // strict rung under-fills → append the relaxed rung (decay keyed on the strict string).
+    if (rawHits.length < fetchLimit) {
+      const relaxed = fts5RelaxedQuery(query);
+      if (relaxed) {
+        const terms = relaxedTerms(query);
+        const wide = (this.stmts.searchAllResults.all(safeQuery, relaxed, fetchLimit * 4) as MemoryHit[])
+          .filter((h) => coversMajority(terms, `${h.role ?? ""} ${h.content ?? ""}`));
+        rawHits = appendRelaxed(rawHits, wide, fetchLimit);
+      }
+    }
+    // entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
+    const armHits = this.entityArmRows(query, fetchLimit);
+    // One query embedding feeds the memory vector lane, the content arm and the
+    // semantic arm.
+    const queryVector = await embedText(query, "query");
+    const chunkModel = queryVector ? await embeddingModelId() : null;
+    const vecHits = await this.vectorArmRows(fetchLimit, queryVector);
+    // Page bodies through sections + blocks; absent when no page has chunks.
+    const contentHits = this.contentArmRows(query, fetchLimit, queryVector, chunkModel);
+    // A page selected only by block vectors is semantic evidence (weight 0.5);
+    // only a keyword/both hit carries the full-text content weight.
+    const { lexical: contentLexical, vector: contentVector } = splitContentHits(contentHits);
+    // relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
+    const relHits = this.relationArmRows(query, fetchLimit);
+    // #277: which object this query names, resolved BEFORE the knowledge lane
+    // reads. The ambiguity bites there — a Han-named knowledge row and a Latin
+    // query share no characters, so the keyword slices match BOTH companies' rows
+    // and whichever ranks first answers. One object means only its own names may
+    // answer; an unresolved collision means no knowledge row is offered at all.
+    //
+    // Resolved here and pushed DOWN into the lane on purpose: filtering the
+    // finished `limit` rows would drop the answering row whenever the head of the
+    // list belongs to another object, returning empty while the right row sat one
+    // position past the cut.
+    const objectResolution = resolveQueryObject(this.liveEntities(), query);
+    if (objectResolution.kind === "ambiguous") this.entityTel.crossScriptAmbiguousQueries += 1;
+    const objectForms = objectResolution.kind === "resolved" ? objectResolution.forms : undefined;
+    // Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
+    // Each knowledge lane reads up to `limit`, then relevance decides their
+    // combined order. The Chinese keyword lane stays active without vectors.
+    const semHitsRaw = await this.semanticArmRows(query, limit, objectForms, queryVector);
+    // An undetermined object offers no knowledge row: "cannot tell which object"
+    // is the answer, not a guess. Materials stay (they carry their own URL).
+    const semHits = objectResolution.kind === "ambiguous" ? [] : semHitsRaw;
+    const semHitsGated = semHits;
+    const byId = new Map<number, MemoryHit>();
     for (const h of rawHits) byId.set(h.rowid, h);
-    for (const h of armHits) byId.set(h.rowid, h);
-    for (const h of vecHits) byId.set(h.rowid, h);
-    for (const h of relHits) byId.set(h.rowid, h);
+    // A page hit by the title/snippet lane keeps its rank, but the content arm's
+    // matched-section text replaces the page-opening snippet; a content-only
+    // page enters with the content hit.
+    for (const h of contentHits) {
+      const prev = byId.get(h.rowid);
+      if (prev) prev.content = h.content;
+      else byId.set(h.rowid, h);
+    }
+    // Side arms only fill gaps: they carry a snippet, not the matched passage.
+    for (const h of armHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
+    for (const h of vecHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
+    for (const h of relHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
     for (const h of semHitsGated) byId.set(h.rowid, h); // semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
-   // RRF arms = FTS (1.0) + entity (0.5) + vector (0.5) + relation (0.5) + semantic (0.5); an absent arm adds no list (conditional activation).
-   // MemoryFusion consumes the registry — k_fusion.memory + weights.memory
-   // (FTS anchor 1.0; side arms 0.5). Values identical to the pre-registry literals.
-   const lists = [rawHits.map((h) => String(h.rowid))];
-   const weights: number[] = [registryWeight("memory", "fts")];
-   if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "entity")); }
-   if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
-   if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
-   if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) { lists.push(semHitsGated.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "semantic")); }
-   const fusedIds = lists.length === 1 ? lists[0]! : rrfRank(lists, FUSION_REGISTRY.k_fusion.memory, weights);
+    // RRF arms, in push order: FTS (1.0), content (1.0), vector (0.5), entity
+    // (0.5), relation (0.5), semantic (0.5); an absent arm adds no list.
+    // MemoryFusion consumes the registry — k_fusion.memory + weights.memory.
+    // The content arm carries the same weight as FTS: a body hit is a full-text
+    // hit on the page, not a side signal like an entity edge. A page matched by
+    // both the opening and a body section sits in two 1.0 lists and outranks a
+    // body-only page (about 2.0 vs 1.0) — two independent matches beat one.
+    // `content` here is the fusion arm's label, not a text field.
+    const lists = [rawHits.map((h) => String(h.rowid))];
+    const weights: number[] = [registryWeight("memory", "fts")];
+    if (contentLexical.length > 0) { lists.push(contentLexical.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "content")); }
+    // Two vector lists that share the label: each keeps its own similarity order
+    // (block distance vs page cosine); the provenance drop-arm removes both by label.
+    if (contentVector.length > 0) { lists.push(contentVector.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
+    if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
+    if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "entity")); }
+    if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
+    if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) { lists.push(semHitsGated.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "semantic")); }
     // Material candidates from the episode arms were read BEFORE the awaits that
     // fetch vectors and knowledge. A correction committed in that window leaves
     // them holding rows that are now closed, while the knowledge lane already
@@ -1315,46 +1503,45 @@ export class SqliteSessionStore implements SessionStore {
     // filter now runs DURING the collection below: a stale row must not take a
     // slot and then be dropped, which would return fewer than `limit` hits
     // while a live successor sat further down the fusion order (#273 review).
+    // That read also answers the body tie-break and the recall payload.
     const materialIds = Array.from(byId.values()).filter((h) => h.rowid > 0).map((h) => h.rowid);
-    let liveMaterials: Set<number> | null = null;
-    if (materialIds.length > 0) {
-      const ph = materialIds.map(() => "?").join(", ");
-      liveMaterials = new Set(
-        (this.db.prepare(
-          "SELECT id FROM retrieval_results WHERE id IN (" + ph + ") " +
-          "AND valid_until IS NULL AND quarantine IS NULL AND archived = 0 AND superseded_by IS NULL",
-        ).all(...materialIds) as Array<{ id: number }>).map((r) => r.id),
-      );
+    const { live: liveMaterials, body: bodyMaterials, facts: materialFacts } = this.materialState(materialIds);
+    const fusedIds = lists.length === 1
+      ? lists[0]!
+      : rrfRankWithPreferred(lists, FUSION_REGISTRY.k_fusion.memory, new Set([...bodyMaterials].map(String)), weights);
+    const fusedHits: MemoryHit[] = [];
+    // read-side exit: rows written before the write guard (or via seed/test seams)
+    // must never surface back to the caller either. Applied while collecting so
+    // each dropped row frees its slot instead of shortening the answer.
+    for (const id of fusedIds) {
+      const h = byId.get(Number(id));
+      if (!h) continue;
+      if (h.rowid > 0 && !liveMaterials.has(h.rowid)) continue;
+      if (containsSecret(h.role + " " + h.content)) continue;
+      fusedHits.push(h);
+      if (fusedHits.length >= limit) break;
     }
-   const fusedHits: MemoryHit[] = [];
-   // read-side exit: rows written before the write guard (or via seed/test seams)
-   // must never surface back to the caller either. Applied while collecting so
-   // each dropped row frees its slot instead of shortening the answer.
-   for (const id of fusedIds) {
-     const h = byId.get(Number(id));
-     if (!h) continue;
-     if (h.rowid > 0 && liveMaterials !== null && !liveMaterials.has(h.rowid)) continue;
-     if (containsSecret(h.role + " " + h.content)) continue;
-     fusedHits.push(h);
-     if (fusedHits.length >= limit) break;
-   }
-   // arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
-   const ftsIds = new Set(rawHits.map((h) => h.rowid));
-   const entIds = new Set(armHits.map((h) => h.rowid));
-   const vecIds = new Set(vecHits.map((h) => h.rowid));
-   const relIds = new Set(relHits.map((h) => h.rowid));
-   const semIds = new Set(semHitsGated.map((h) => h.rowid));
-   // provenance snapshot taken BEFORE the read-side secret filter (the filter can
-   // only remove rows; golden fixtures carry no secrets, so on/off deltas are unaffected).
-   { const armLabels: string[] = ["fts"];
-     if (armHits.length > 0) armLabels.push("entity");
-     if (vecHits.length > 0) armLabels.push("vector");
-     if (relHits.length > 0) armLabels.push("relation");
-     if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) armLabels.push("semantic");
-     const provTexts = new Map<number, string>();
-     for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
-     this.lastArmProvenance = { instance: "memory", labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], scoreKind: SCORE_KIND, texts: provTexts }; }
-   for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); if (SEMANTIC_ARM_MODE === "serve" && semIds.has(h.rowid)) al.push("semantic"); h.arms = al; }
+    // arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
+    const ftsIds = new Set(rawHits.map((h) => h.rowid));
+    const contentIds = new Set(contentLexical.map((h) => h.rowid));
+    const entIds = new Set(armHits.map((h) => h.rowid));
+    const vecIds = new Set([...vecHits.map((h) => h.rowid), ...contentVector.map((h) => h.rowid)]);
+    const relIds = new Set(relHits.map((h) => h.rowid));
+    const semIds = new Set(semHitsGated.map((h) => h.rowid));
+    // provenance snapshot taken BEFORE the read-side secret filter (the filter can
+    // only remove rows; golden fixtures carry no secrets, so on/off deltas are unaffected).
+    const armLabels: string[] = ["fts"];
+    if (contentLexical.length > 0) armLabels.push("content");
+    if (contentVector.length > 0 || vecHits.length > 0) armLabels.push("vector");
+    if (armHits.length > 0) armLabels.push("entity");
+    if (relHits.length > 0) armLabels.push("relation");
+    if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) armLabels.push("semantic");
+    const provTexts = new Map<number, string>();
+    for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
+    this.lastArmProvenance = { instance: "memory", labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], scoreKind: SCORE_KIND, texts: provTexts };
+    for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (contentIds.has(h.rowid)) al.push("content"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); if (SEMANTIC_ARM_MODE === "serve" && semIds.has(h.rowid)) al.push("semantic"); h.arms = al; }
+    // URL / fetch time / body flag / section list, one batch for every hit.
+    this.attachPageFacts(fusedHits, materialFacts);
     // L2: refresh last_accessed for each hit (access-time signal).
     for (const hit of fusedHits) {
       try { this.stmts.touchAccessed.run(hit.rowid); this.recordAccessEventChained(hit.rowid); } catch { this.accessEventTel.writeFailures += 1; }
@@ -1366,11 +1553,18 @@ export class SqliteSessionStore implements SessionStore {
   async searchMemoryMulti(queries: string[], limit = 20): Promise<MemoryHit[]> {
     // entity arm on the raw user query (queries[0]); ids passed as extra RRF list (weight 0.5 in fts5.ts).
     const armHits = this.entityArmRows(queries[0] ?? "", limit);
-    const vecHits = await this.vectorArmRows(queries[0] ?? "", limit);
-    // entity + vector arms, each weight 0.5 against FTS 1.0.
-    // labeled arms so searchMemoryMultiQuery can annotate hit.arms provenance.
+    // One embedding for the vector lane, the content arm and the semantic arm.
+    const queryVector = await embedText(queries[0] ?? "", "query");
+    const chunkModel = queryVector ? await embeddingModelId() : null;
+    const vecHits = await this.vectorArmRows(limit, queryVector);
+    const contentHits = this.contentArmRows(queries[0] ?? "", limit, queryVector, chunkModel);
+    // content + entity + vector arms; weights come from the registry. Labeled
+    // arms so searchMemoryMultiQuery can annotate hit.arms provenance.
+    const { lexical: contentLexical, vector: contentVector } = splitContentHits(contentHits);
     const arms: { label: string; ids: string[] }[] = [];
+    if (contentLexical.length > 0) arms.push({ label: "content", ids: contentLexical.map((h) => String(h.rowid)) });
     if (armHits.length > 0) arms.push({ label: "entity", ids: armHits.map((h) => String(h.rowid)) });
+    if (contentVector.length > 0) arms.push({ label: "vector", ids: contentVector.map((h) => String(h.rowid)) });
     if (vecHits.length > 0) arms.push({ label: "vector", ids: vecHits.map((h) => String(h.rowid)) });
     // relation arm on the raw query (weight 0.5 in fts5.ts like the other side arms).
     // the relation arm attaches to queries[0] only — the multi-query lane keeps the
@@ -1387,11 +1581,27 @@ export class SqliteSessionStore implements SessionStore {
     if (multiObject.kind === "ambiguous") this.entityTel.crossScriptAmbiguousQueries += 1;
     const semHits = multiObject.kind === "ambiguous"
       ? []
-      : await this.semanticArmRows(queries[0] ?? "", limit, multiObject.kind === "resolved" ? multiObject.forms : undefined);
+      : await this.semanticArmRows(queries[0] ?? "", limit, multiObject.kind === "resolved" ? multiObject.forms : undefined, queryVector);
     if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) arms.push({ label: "semantic", ids: semHits.map((h) => String(h.rowid)) });
-    const hits = await searchMemoryMultiQuery<MemoryHit>(this, queries, limit, rrfRank, arms);
+    let multiFacts: Map<number, PageFact> | undefined;
+    const hits = await searchMemoryMultiQuery<MemoryHit>(
+      this, queries, limit, arms, (ids) => {
+        const state = this.materialState(ids);
+        multiFacts = state.facts;
+        return state.body;
+      },
+    );
+    // The content arm's matched passage replaces the page-opening snippet
+    // BEFORE the secret filter, so the filter sees the text that will be served.
+    const contentText = new Map(contentHits.map((h) => [h.rowid, h.content]));
+    for (const h of hits) {
+      const text = contentText.get(h.rowid);
+      if (text !== undefined) h.content = text;
+    }
     // read-side exit: same guard as searchMemory.
     const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
+    // Page facts and the section list travel with every recall hit.
+    this.attachPageFacts(kept, multiFacts);
     // same exactly-once touch as searchMemory (both recall paths feed the signals).
     for (const hit of kept) {
       try { this.stmts.touchAccessed.run(hit.rowid); this.recordAccessEventChained(hit.rowid); } catch { this.accessEventTel.writeFailures += 1; }
@@ -1564,7 +1774,163 @@ export class SqliteSessionStore implements SessionStore {
       result = { id: insertPageRow(), action: "inserted" };
     });
     write.immediate();
+    // Blocks follow the body. A failed chunk write only logs a warning; the page
+    // is still saved and the missing work stays for `backfillChunkVectors`.
+    // An unchanged body still needs blocks when this page was written before
+    // the block index existed; the marker makes the check cheap and idempotent.
+    if (result.id !== null && (result.action !== "unchanged" || !pageChunksBuilt(this.db, result.id))) {
+      try {
+        ensureChunksForPage(this.db, result.id);
+        this.enqueueChunkVectors(result.id);
+      } catch (e) {
+        writeStderr("[warn] chunk index write failed for row " + result.id + ": " +
+          (e instanceof Error ? e.message : String(e)) + "\n");
+      }
+    }
     return result;
+  }
+
+  // Background fill of block vectors, one page at a time. The queue bounds how
+  // many PAGES wait, not how many blocks one page embeds; a full queue drops the
+  // page id and leaves its work in the durable pending count.
+  private enqueueChunkVectors(pageId: number): void {
+    if (this.chunkVectorQueue.includes(pageId)) return;
+    if (this.chunkVectorQueue.length >= SqliteSessionStore.CHUNK_VECTOR_QUEUE_MAX) {
+      if (!this.chunkQueueFullLogged) {
+        this.chunkQueueFullLogged = true;
+        // The page is written; only its vectors wait for the durable backlog.
+        writeStderr("[warn] chunk-vector queue full; further rows are left for ans memory backfill-vectors\n");
+      }
+      return;
+    }
+    this.chunkVectorQueue.push(pageId);
+    void this.drainChunkVectors();
+  }
+
+  /**
+   * Drain the page queue. Work the bounded queue cannot hold — or a killed
+   * process loses — stays in the durable pending count and is repaired by
+   * `backfillChunkVectors`.
+   */
+  private async drainChunkVectors(): Promise<void> {
+    if (this.chunkVectorDraining) return;
+    this.chunkVectorDraining = true;
+    try {
+      while (this.chunkVectorQueue.length > 0) {
+        const pageId = this.chunkVectorQueue.shift()!;
+        if (this.closed) { this.chunkVectorQueue.length = 0; break; }
+        try {
+          await this.embedChunksForPage(pageId);
+        } catch { /* fail-open: stays pending */ }
+      }
+      // Let the next full queue warn again instead of staying silent forever.
+      if (this.chunkVectorQueue.length === 0) this.chunkQueueFullLogged = false;
+    } finally {
+      this.chunkVectorDraining = false;
+    }
+  }
+
+  /** Embed one batch of blocks; a failed block never drops the rest. */
+  private async embedChunkRows(rows: PendingChunkVector[], model: string): Promise<{ embedded: number; failed: number[] }> {
+    let embedded = 0;
+    const failed: number[] = [];
+    const queue = rows.slice();
+    // Embed 4 at a time: blocks are independent, but unbounded fan-out would
+    // swamp the local model. A failed block never stops the rest.
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const chunk = queue.shift();
+        if (!chunk) return;
+        const vector = await embedText(blockSearchText(chunk.headingPath, chunk.text).trim(), "passage");
+        if (!vector) { failed.push(chunk.chunkId); continue; }
+        try {
+          insertChunkVector(this.db, chunk.chunkId, vector, model);
+          embedded += 1;
+        } catch {
+          // A page rebuilt by another process can invalidate this chunk id; keep
+          // the rest of the batch going and count it as failed.
+          failed.push(chunk.chunkId);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, rows.length) }, () => worker()));
+    return { embedded, failed };
+  }
+
+  private async embedChunksForPage(pageId: number): Promise<void> {
+    const model = await embeddingModelId();
+    await this.embedChunkRows(chunksMissingVectors(this.db, pageId, model), model);
+  }
+
+  /** Rebuild pages whose sections or blocks are missing, in id order. */
+  private rebuildMissingChunks(batch: number, limit?: number): { rebuiltPages: number; rebuildFailed: number } {
+    let rebuiltPages = 0;
+    let rebuildFailed = 0;
+    let afterId = 0;
+    for (;;) {
+      const pageIds = pagesMissingChunks(this.db, batch, afterId);
+      if (pageIds.length === 0) break;
+      afterId = pageIds[pageIds.length - 1]!;
+      for (const pageId of pageIds) {
+        // One bad page (SQLITE_BUSY, a broken row) must not abort the rest.
+        try {
+          ensureChunksForPage(this.db, pageId);
+          rebuiltPages += 1;
+        } catch (e) {
+          rebuildFailed += 1;
+          writeStderr("[warn] chunk rebuild failed for row " + pageId + ": " +
+            (e instanceof Error ? e.message : String(e)) + "\n");
+        }
+      }
+      if (limit !== undefined) break;
+    }
+    return { rebuiltPages, rebuildFailed };
+  }
+
+  /**
+   * Repair the block index: rebuild pages that have a body but no chunks (a
+   * failed write), then fill vectors in batches. Without the rebuild, work the
+   * queue dropped or a killed process lost would stay unreachable forever.
+   * `ans memory backfill-vectors` is the CLI entry point.
+   */
+  async backfillChunkVectors(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number; rebuiltPages: number; rebuildFailed: number }> {
+    const batch = limit ?? PENDING_BATCH_DEFAULT;
+    const model = await embeddingModelId();
+    if (!dryRun && model === EMBEDDING_MODEL_UNAVAILABLE) {
+      // The pages are still rebuilt, but every pending block is a failed item:
+      // the CLI must say so and exit non-zero instead of reporting 0/0 success.
+      const pending = chunkVectorBacklog(this.db).pending;
+      return { scanned: pending, embedded: 0, failed: pending, ...this.rebuildMissingChunks(batch, limit) };
+    }
+    if (dryRun) {
+      // Same model the run will use; without the package, count every model so
+      // the number reflects real vectors instead of 0.
+      const backlog = chunkVectorBacklog(
+        this.db,
+        model === EMBEDDING_MODEL_UNAVAILABLE ? undefined : model,
+      );
+      return { scanned: backlog.pending, embedded: 0, failed: 0, rebuiltPages: backlog.pagesWithoutChunks, rebuildFailed: 0 };
+    }
+    const { rebuiltPages, rebuildFailed } = this.rebuildMissingChunks(batch, limit);
+    let scanned = 0;
+    let embedded = 0;
+    let failed = 0;
+    let afterChunkId = 0;
+    for (;;) {
+      // Walk by chunk id, so a batch of failures does not re-read the same
+      // bodies and the normal blocks behind them are still reached.
+      const rows = pendingChunkVectors(this.db, batch, model, afterChunkId);
+      if (rows.length === 0) break;
+      afterChunkId = rows[rows.length - 1]!.chunkId;
+      scanned += rows.length;
+      const result = await this.embedChunkRows(rows, model);
+      embedded += result.embedded;
+      failed += result.failed.length;
+      // The window grows by the known failures, so a batch with none embedded
+      // still advances; only --limit stops it early.
+      if (limit !== undefined) break;
+    }
+    return { scanned, embedded, failed, rebuiltPages, rebuildFailed };
   }
 
   // One session's fetch handles: search row ids, user URL identities, and an
@@ -1918,10 +2284,9 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // vector arm — full-scan JS cosine over live, non-quarantined rows. Absent on CB-open.
-  private async vectorArmRows(query: string, limit: number): Promise<MemoryHit[]> {
+  private async vectorArmRows(limit: number, queryVector: Float32Array | null): Promise<MemoryHit[]> {
     this.embedTel.armQueries++;
-    const qv = await embedText(query, "query");
-    if (!qv) return [];
+    if (!queryVector) return [];
     const rows = this.db.prepare(
       "SELECT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, me.embedding as emb " +
       "FROM memory_embeddings me JOIN retrieval_results r ON r.id = me.memory_id " +
@@ -1930,7 +2295,7 @@ export class SqliteSessionStore implements SessionStore {
     const scored: Array<{ h: MemoryHit; s: number }> = [];
     for (const r of rows) {
       const v = new Float32Array(r.emb.buffer, r.emb.byteOffset, r.emb.byteLength / 4);
-      const s = cosineSimilarity(qv, v);
+      const s = cosineSimilarity(queryVector, v);
       scored.push({ h: { rowid: r.rowid, sessionId: r.sessionId, role: r.role ?? "", content: r.content ?? "", rank: -s } as MemoryHit, s });
     }
     scored.sort((a, b) => b.s - a.s);
@@ -1940,16 +2305,25 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // idempotent backfill for rows missing an embedding (write failures, pre-rename upgrade, model re-embed).
-  async backfillEmbeddings(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number }> {
+  // A row with no title and no snippet can never get a vector, so it never enters
+  // `scanned`: it is counted in `skipped` instead, stays out of the exit code, and
+  // no retry or network fix would change it.
+  async backfillEmbeddings(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number; skipped: number }> {
+    const hasText = "trim(coalesce(r.title, '') || ' ' || coalesce(r.snippet, '')) <> ''";
     const rows = this.db.prepare(
-      "SELECT r.id, r.title, r.snippet FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL AND r.archived = 0" +
+      "SELECT r.id, r.title, r.snippet FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL AND r.archived = 0 AND " + hasText +
       (limit ? " LIMIT " + Math.max(1, Math.floor(limit)) : "")
     ).all() as Array<{ id: number; title: string | null; snippet: string | null }>;
+    let skipped = (this.db.prepare(
+      "SELECT COUNT(*) AS n FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL AND r.archived = 0 AND NOT (" + hasText + ")",
+    ).get() as { n: number }).n;
     let embedded = 0, failed = 0;
     if (!dryRun) {
       for (const r of rows) {
         const text = ((r.title ?? "") + " " + (r.snippet ?? "")).trim();
-        if (!text) { failed++; continue; }
+        // SQLite's trim only covers ASCII whitespace, so a row of other spaces
+        // reaches this point and is reported as skipped.
+        if (!text) { skipped += 1; continue; }
         const v = await embedText(text, "passage");
         if (!v) { failed++; continue; }
         this.db.prepare("INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding, model) VALUES (?, ?, ?)")
@@ -1957,7 +2331,7 @@ export class SqliteSessionStore implements SessionStore {
         embedded++;
       }
     }
-    return { scanned: rows.length, embedded, failed };
+    return { scanned: rows.length, embedded, failed, skipped };
   }
   // ---- turn older episodes into semantic memories (D2/D4) + reversible forgetting (D5) ----
 
@@ -2009,24 +2383,14 @@ export class SqliteSessionStore implements SessionStore {
   // semantic arm scoring (served in Phase-2). Full-table JS cosine over live semantic
   // rows, same pattern as vectorArmRows. Synthetic negative rowids (-semantic_memories.id) keep
   // the RRF id-space collision-free vs retrieval_results.
-  private async semanticArmRows(query: string, limit: number, objectForms?: readonly string[]): Promise<MemoryHit[]> {
+  private async semanticArmRows(query: string, limit: number, objectForms: readonly string[] | undefined, queryVector: Float32Array | null): Promise<MemoryHit[]> {
     this.semTel.queries++;
-    // #261 D8: a knowledge row is the only carrier of the facts a correction
-    // did not replace, so it must be reachable without an embedding on either
-    // side. The keyword lane below supplies that; the vector lane refines the
-    // order when embeddings exist. Both feed the same `semantic` arm, so the
-    // fusion registry keeps its closed label set.
-    // Both lanes must be read against ONE view of the knowledge table. The
-    // keyword lane used to read before `await embedText(...)` and the vector
-    // lane after it, so a correction committed in between left the keyword
-    // list holding the closed row and the vector list holding its successor —
-    // both then appeared in the merged result (#273 review). Reading both after
-    // the await removes the window; the validity re-check below covers anything
-    // closed between the two statements.
-    const qv = await embedText(query, "query");
+    // Both lanes read one view of the knowledge table; the vector comes from
+    // the caller (computed once per search).
+
     const keyword = this.semanticKeywordRows(query, limit, objectForms);
     let vector: MemoryHit[] = [];
-    if (qv) {
+    if (queryVector) {
       const rows = this.db
         .prepare("SELECT id, content, embedding FROM semantic_memories WHERE valid_until IS NULL AND embedding IS NOT NULL")
         .all() as Array<{ id: number; content: string; embedding: Buffer }>;
@@ -2039,16 +2403,16 @@ export class SqliteSessionStore implements SessionStore {
         // lane.
         if (objectForms && objectForms.length > 0 && !objectForms.some((f) => formAppearsInText(r.content, f))) continue;
         const v = new Float32Array(r.embedding.buffer, r.embedding.byteOffset, r.embedding.byteLength / 4);
-        const sv = cosineSimilarity(qv, v);
+        const sv = cosineSimilarity(queryVector, v);
         scored.push({ h: { rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: -sv } as MemoryHit, s: sv });
       }
       scored.sort((a, b) => b.s - a.s);
       vector = scored.slice(0, limit).map((x) => x.h);
     }
-    // Validity recheck: the two SELECTs above are separate statements, so a
-    // concurrent correction can still close a row between them. Drop ids that
-    // are no longer live before merging, so one answer never carries both a
-    // replaced row and its successor.
+    // A concurrent correction (or a test seam) can close a row between the
+    // keyword read and the vector read. Drop ids that are no longer live
+    // before merging, so one answer never carries both a replaced row and its
+    // successor.
     if (keyword.length > 0 || vector.length > 0) {
       const ids = [...keyword, ...vector].map((h) => Math.abs(h.rowid));
       const ph = ids.map(() => "?").join(", ");
@@ -2089,15 +2453,17 @@ export class SqliteSessionStore implements SessionStore {
     const objectParams = objectActive ? objectForms!.map((f) => "%" + f + "%") : [];
     const matchesObject = (content: string): boolean =>
       !objectActive || objectForms!.some((f) => formAppearsInText(content, f));
-    const latin: Array<{ id: number; content: string; rank: number }> = [];
-    const cjk: Array<{ id: number; content: string; rank: number }> = [];
-    const otherScript: Array<{ id: number; content: string; rank: number }> = [];
+    // `rank` is present only on rows that came with a real score; the LIKE and
+    // prefix rungs below have none and leave the key out rather than pass 0.
+    const latin: Array<{ id: number; content: string; rank?: number }> = [];
+    const cjk: Array<{ id: number; content: string; rank?: number }> = [];
+    const otherScript: Array<{ id: number; content: string; rank?: number }> = [];
     // Independent indexed lane for rows matching both query scripts.
     // Each lane deduplicates independently so shared hits retain both signals.
-    const crossScript: Array<{ id: number; content: string; rank: number }> = [];
-    const mark = (list: Array<{ id: number; content: string; rank: number }>) => {
+    const crossScript: Array<{ id: number; content: string; rank?: number }> = [];
+    const mark = (list: Array<{ id: number; content: string; rank?: number }>) => {
       const seen = new Set<number>();
-      return (r: { id: number; content: string; rank: number }): void => {
+      return (r: { id: number; content: string; rank?: number }): void => {
         if (seen.has(r.id)) return;
         seen.add(r.id);
         list.push(r);
@@ -2249,7 +2615,7 @@ export class SqliteSessionStore implements SessionStore {
             .iterate(...list.map((t) => "%" + t + "%"), ...objectParams, ...pairedParams) as Iterable<{ id: number; content: string }>;
           for (const r of rows) {
             if (cjk.length >= limit) break;
-            if (matchesObject(r.content)) pushCjk({ id: r.id, content: r.content, rank: 0 });
+            if (matchesObject(r.content)) pushCjk({ id: r.id, content: r.content });
           }
         };
         const factGrams = grams.filter((t) => t.length >= 4);
@@ -2315,15 +2681,17 @@ export class SqliteSessionStore implements SessionStore {
         ).iterate(...otherWords.map((w) => "%" + w + "%"), ...objectParams) as Iterable<{ id: number; content: string }>;
         for (const r of rows) {
           if (otherScript.length >= limit) break;
-          if (matchesObject(r.content)) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
+          if (matchesObject(r.content)) pushOtherScript({ id: r.id, content: r.content });
         }
       }
     }
     // Keep each recall lane independent: a row found through both scripts has
     // more evidence than a row matching only one. Raw BM25 and LIKE scores are
     // not comparable across languages; fuse their ranks instead (#283).
-    const lanes = [cjk, crossScript, otherScript, latin].map((rows) => rows.map((r) =>
-      ({ rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: r.rank }) as MemoryHit));
+    const lanes = [cjk, crossScript, otherScript, latin].map((rows) => rows.map((r) => ({
+      rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content,
+      ...(r.rank === undefined ? {} : { rank: r.rank }),
+    }) as MemoryHit));
     return rankKnowledge(query, lanes).slice(0, limit);
   }
 
@@ -3000,7 +3368,7 @@ export class SqliteSessionStore implements SessionStore {
     if (matched.length === 0) return [];
     this.entityTel.activations += 1;
     const ids = matched.map((e) => e.id);
-    const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank FROM retrieval_results r " + // rank required by MemoryHit
+    const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content FROM retrieval_results r " +
       "JOIN memory_entity me ON me.memory_id = r.id WHERE me.entity_id IN (" + ids.map(() => "?").join(", ") + ") " +
       "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) AND (r.superseded_by IS NULL) ORDER BY r.created_at DESC LIMIT ?";
     const rows = this.db.prepare(sql).all(...ids, limit) as MemoryHit[];
@@ -3118,7 +3486,7 @@ export class SqliteSessionStore implements SessionStore {
     const ph2 = allIds.map(() => "?").join(", ");
     const rows = this.db
       .prepare(
-        "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank" +
+        "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content" +
         " FROM retrieval_results r JOIN memory_entity me ON me.memory_id = r.id" +
         " WHERE me.entity_id IN (" + ph2 + ") AND r.valid_until IS NULL AND (r.quarantine IS NULL) AND r.archived = 0 AND r.superseded_by IS NULL" +
         " ORDER BY r.created_at DESC LIMIT ?"
@@ -3312,7 +3680,7 @@ export class SqliteSessionStore implements SessionStore {
       // still closes content or snippet counterparts.
       const protect = hasPageBody(row) ? "" : NO_PAGE_BODY_SQL;
       this.db
-        .prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE session_id = ? AND entity = ? AND id != ? AND valid_until IS NULL AND quarantine IS NULL AND archived = 0" + protect)
+        .prepare("UPDATE retrieval_results AS r SET valid_until = datetime('now') WHERE r.session_id = ? AND r.entity = ? AND r.id != ? AND r.valid_until IS NULL AND r.quarantine IS NULL AND r.archived = 0" + protect)
         .run(row.session_id, row.entity, id);
     } else {
       this.db.prepare("UPDATE retrieval_results SET quarantine = 'resolved_drop' WHERE id = ?").run(id);
@@ -3323,6 +3691,8 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   close(): void {
+    this.closed = true;
+    this.chunkVectorQueue.length = 0;
     this.db.close();
   }
 }

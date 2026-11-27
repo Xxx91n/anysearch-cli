@@ -29,14 +29,40 @@ export function rrfScores(
   return scores;
 }
 
+// RRF scores here are ~1e-2 and real gaps are ≥1e-4; 1e-12 only absorbs
+// floating-point noise. Revisit if arm weights grow into the thousands.
+const SCORE_QUANTUM = 1e12;
+
+function rankedIds(scores: Map<string, number>, preferred?: ReadonlySet<string>): string[] {
+  // Quantize before comparing: equal keys tie, `preferred` breaks the tie, and
+  // ids that are still equal keep their input order.
+  const key = (score: number) => Math.round(score * SCORE_QUANTUM);
+  return [...scores.entries()]
+    .sort((a, b) => {
+      const byScore = key(b[1]) - key(a[1]);
+      if (byScore !== 0) return byScore;
+      return (preferred?.has(b[0]) ? 1 : 0) - (preferred?.has(a[0]) ? 1 : 0);
+    })
+    .map(([id]) => id);
+}
+
 // Sort document ids by RRF score descending. Returns ordered array.
 export function rrfRank(
   lists: string[][],
   k: number,
   weights?: number[],
 ): string[] {
-  const scores = rrfScores(lists, k, weights);
-  return [...scores.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map((entry) => entry[0]);
+  return rankedIds(rrfScores(lists, k, weights));
+}
+
+// Same order with an explicit tie-break: ids in `preferred` come first when
+// their scores are indistinguishable. Ids stay strings, like everywhere else in
+// this primitive (a URL or an archive rowid are both valid document ids).
+export function rrfRankWithPreferred(
+  lists: string[][],
+  k: number,
+  preferred: ReadonlySet<string>,
+  weights?: number[],
+): string[] {
+  return rankedIds(rrfScores(lists, k, weights), preferred);
 }

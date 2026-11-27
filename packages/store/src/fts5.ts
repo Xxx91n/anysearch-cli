@@ -6,7 +6,7 @@
 // queries with >8 terms are truncated to the first 8 terms (0-context "phrase" for long queries is D2's "empty fallback").
 // Heuristic balance chosen: prefix-match-with-truncate + phrase fallback gives ~90% intent capture per arXiv:2602.23368 evidence.
 // MemoryFusion registry consumption (k_fusion.memory + arm weights).
-import { FUSION_REGISTRY, registryWeight } from "@anysearch-cli/retriever";
+import { FUSION_REGISTRY, registryWeight, rrfRankWithPreferred } from "@anysearch-cli/retriever";
 
 const SANITIZE_RE = /[^A-Za-z0-9]+/g;
 const PHRASE_QUOTE_RE = /\"/g; // CWE-20 escape: double-quote doubling for FTS5
@@ -88,8 +88,10 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
   store: SearchableStoreLike,
   queries: string[],
   limit: number,
-  rrfRankFn: (lists: string[][], k: number, weights?: number[]) => string[],
-  extraArms?: { label: string; ids: string[] }[], // entity + labeled arms (provenance); each list weighted 0.5
+  extraArms?: { label: string; ids: string[] }[], // content/entity/... labeled arms, weight from the registry
+  // Ids whose row carries a page body. Called once, and only when two or more
+  // lists are fused (a single list has no tie to break).
+  bodyLookup?: (ids: number[]) => ReadonlySet<number>,
 ): Promise<THit[]> {
   const lists: string[][] = [];
   for (const q of queries) {
@@ -122,13 +124,25 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
     }
   }
   const baseCount = lists.length;
-  for (const arm of extraArms ?? []) { if (arm.ids.length > 0) lists.push(arm.ids); }
+  const presentArms = (extraArms ?? []).filter((arm) => arm.ids.length > 0);
+  for (const arm of presentArms) lists.push(arm.ids);
   if (lists.length === 0) return [];
-  // entity arm weight 0.5 (weaker than FTS 1.0); conditional activation handled upstream (absent arm = no extra list).
-  // MemoryFusion single decision point — registry weights + k_fusion.memory.
-  // Unknown arm label => registryWeight throws (configuration error fails fast).
-  const weights = lists.map((_, i) => (i >= baseCount ? registryWeight("memory", extraArms?.[i - baseCount]?.label ?? "") : FUSION_REGISTRY.weights.memory.fts));
-  const fusedIds = rrfRankFn(lists, FUSION_REGISTRY.k_fusion.memory, weights);
+  // Every list takes the weight registered for its own label; conditional
+  // activation happens upstream (an absent arm adds no list). Unknown label =>
+  // registryWeight throws (configuration error fails fast).
+  const weights = lists.map((_, i) => (i >= baseCount ? registryWeight("memory", presentArms[i - baseCount]!.label) : FUSION_REGISTRY.weights.memory.fts));
+  let fusedIds: string[];
+  if (lists.length === 1) {
+    // No tie-break to make; page facts are filled by the caller when needed.
+    fusedIds = lists[0]!;
+  } else {
+    const preferred = bodyLookup
+      ? new Set([
+          ...bodyLookup([...new Set(lists.flatMap((l) => l.map(Number)))].filter((id) => id > 0)),
+        ].map(String))
+      : new Set<string>();
+    fusedIds = rrfRankWithPreferred(lists, FUSION_REGISTRY.k_fusion.memory, preferred, weights);
+  }
   // SELECT ... WHERE r.id IN (<placeholders>) AND valid_until IS NULL preserves RRF order via CASE.
   const placeholders = fusedIds.map(() => "?").join(", ");
   const orderCases = fusedIds.map((id, i) => `WHEN ${id} THEN ${i}`).join(" ");

@@ -5,7 +5,7 @@
 import { SqliteSessionStore } from "../src/session-store";
 import { loadDomainFromString } from "../src/domain-loader";
 import { ROR_WINDOW, ROR_CLIP } from "../src/eval/runner";
-import { FUSION_REGISTRY, rrfRank } from "@anysearch-cli/retriever";
+import { FUSION_REGISTRY, registryWeight, rrfRank } from "@anysearch-cli/retriever";
 
 let passed = 0;
 let failed = 0;
@@ -29,8 +29,12 @@ async function main() {
     assert("provenance instance label", prov.instance === "memory");
     assert("provenance scoreKind rank_fusion", prov.scoreKind === "rank_fusion");
     assert("provenance labels/lists/weights parallel", prov.labels.length === prov.lists.length && prov.weights.length === prov.labels.length);
-    assert("FTS anchor weight from registry", prov.weights[0] === FUSION_REGISTRY.weights.memory.fts);
-    for (const w of prov.weights.slice(1)) assert("side-arm weight from registry", w === FUSION_REGISTRY.weights.memory.entity);
+    // Every list takes the weight registered for its own label. This used to
+    // assert "all side arms are 0.5", which stopped being true when the content
+    // arm (#609) joined at 1.0 — per-label is the contract the registry states.
+    prov.labels.forEach((label, i) => {
+      assert("arm weight from registry: " + label, prov.weights[i] === registryWeight("memory", label));
+    });
     // Behavior anchor: fusedIds equal an independent registry-driven recomputation.
     const ref = prov.lists.length === 1 ? prov.lists[0]! : rrfRank(prov.lists, FUSION_REGISTRY.k_fusion.memory, [...prov.weights]);
     assert("fusedIds == registry k_fusion.memory recomputation", JSON.stringify(prov.fusedIds) === JSON.stringify(ref));

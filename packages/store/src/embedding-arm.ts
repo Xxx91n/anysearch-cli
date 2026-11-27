@@ -1,13 +1,11 @@
-// /: @anysearch-cli/embedding is an
-// OPTIONAL PEER (peerDependencies + peerDependenciesMeta.optional; 's
-// optionalDependencies form migrated in — npm auto-install of a heavy
-// optional runtime is the bomb regression). The vector arm is a capability, not
-// a requirement. When the package is absent from the install closure (peer not
-// installed), the arm is absent: embedText ≡ null, telemetry all-zero +
-// absent:true — a legal FTS-only state, never a throw.
-// fail-open semantics are preserved end-to-end.
-// consolidate dedup degrades to jaccard-only (decideOp null-cos branch,
-// THETA_JAC=0.80) when this arm is absent — see packages/store/src/consolidate.ts.
+// @anysearch-cli/embedding is an OPTIONAL PEER (peerDependencies +
+// peerDependenciesMeta.optional). If it is not installed, embedText returns null,
+// telemetry reads all-zero with absent:true, and every caller falls back to the
+// FTS-only path — a legal state, not an error. Nothing throws: loadEmbedding
+// catches a failed import and answers null, and importEmbeddingFallback guards
+// each candidate copy the same way. consolidate dedup degrades to jaccard-only
+// (decideOp null-cos branch, THETA_JAC=0.80) when this arm is absent — see
+// packages/store/src/consolidate.ts.
 //
 // cosineSimilarity is pure math — inlined here (dot product over L2-normalized
 // vectors) so scoring never statically depends on the optional package.
@@ -141,11 +139,16 @@ export async function embedText(text: string, role: "query" | "passage"): Promis
   return m.embedText(text, role);
 }
 
-// Model id for memory_embeddings.model — only resolved after embedText
-// produced a vector, so the module is known-present here.
+/** Returned when the embedding package cannot be loaded (missing or broken). */
+export const EMBEDDING_MODEL_UNAVAILABLE = "unavailable";
+
+/**
+ * Model id written to memory_embeddings.model and retrieval_chunk_vectors.model;
+ * returns EMBEDDING_MODEL_UNAVAILABLE when the package cannot be loaded.
+ */
 export async function embeddingModelId(): Promise<string> {
   const m = await loadEmbedding();
-  return m?.EMBEDDING_MODEL_ID ?? "unavailable";
+  return m?.EMBEDDING_MODEL_ID ?? EMBEDDING_MODEL_UNAVAILABLE;
 }
 
 export interface ArmTelemetry {
