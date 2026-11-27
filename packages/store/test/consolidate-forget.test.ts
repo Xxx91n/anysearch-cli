@@ -412,6 +412,8 @@ assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at
       "URL dedupe: the body version survives");
     assert(!seen.some((e) => e.title === "dup-newer"), "URL dedupe: the same URL is not fed twice");
     assert(rep.add === 1, "live filter: the three live materials still add one row (add=" + rep.add + ")");
+    assert(rep.duplicateMaterialSkipped === 1,
+      "URL dedupe: the dropped live version is counted (got " + rep.duplicateMaterialSkipped + ")");
 
     // The other half of the truth: three versions of one page (same entity,
     // same session) leave ONE live material. Once the cluster is all replaced,

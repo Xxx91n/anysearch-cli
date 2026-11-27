@@ -83,6 +83,24 @@ assert(estimatePromptTokens("a你b") === 2, "estimate: the two scripts are count
   assert(planned.materials.reduce((n, m) => n + m.fedChars, 0) > 0, "mixed sizes: something is fed");
 }
 
+// --- over budget: current knowledge is pinned, never dropped --------------
+
+{
+  const eps: ConsolidateEvidence[] = [
+    { title: "Big one", snippet: "x".repeat(500), url: "https://a.example/big-1" },
+    { title: "Big two", snippet: "y".repeat(500), url: "https://a.example/big-2" },
+    { title: "CURRENT KNOWLEDGE", snippet: "keep this fact", url: "knowledge://semantic/1", pinned: true },
+  ];
+  const planned = planClusterEvidence(eps, 15);
+  assert(planned.overBudget === true, "pinned: the cluster is over budget");
+  assert(planned.prompt.includes("keep this fact"),
+    "pinned: current knowledge survives even when it alone exceeds the cap");
+  assert(planned.materials.length === 2 && planned.materials.every((m) => m.title !== "CURRENT KNOWLEDGE"),
+    "pinned: current knowledge is not reported as a retrieval material");
+  assert(planned.materials.every((m) => m.fedChars === 0),
+    "pinned: reserved budget can leave no room for material bodies");
+}
+
 // --- over budget: most relevant LAST, least relevant in the middle --------
 
 {

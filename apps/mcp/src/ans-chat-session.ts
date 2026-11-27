@@ -34,6 +34,8 @@ import type {
 } from "@anysearch-cli/kernel";
 import {
   formatConsolidateScope,
+  formatConsolidateMaterialFeed,
+  formatConsolidateQuotes,
   toBudgetCaps,
   type BudgetConfig,
   type ConsolidateReport,
@@ -511,11 +513,15 @@ export function buildAnsChatConsolidateResult(
       ? "\ndry-run: nothing saved. The counts describe the state read now; a concurrent write " +
         "before an apply can make the apply differ."
       : "") +
+    (report.duplicateMaterialSkipped > 0
+      ? "\nduplicate materials: " + report.duplicateMaterialSkipped +
+        " live row(s) dropped because an exact-URL version of the same page was kept"
+      : "") +
     (extra.budgetUnmetered
       ? "\nbudget: unmetered — " + (extra.budgetUnmeteredReason ?? "no budget row was registered") + "."
       : "") +
     (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " model call(s) refused by the session cap" : "") +
-    // #613: the 24k cluster budget and the quote contract. Printed only when
+    // The 24k cluster budget and the quote contract. Printed only when
     // they mattered, so a small all-shaped run reads as before.
     ((report.clustersOverBudget ?? 0) > 0
       ? "\nmaterial budget: " + report.clusterTokenBudget + " tokens per cluster; " + report.clustersOverBudget +
@@ -523,7 +529,8 @@ export function buildAnsChatConsolidateResult(
       : "") +
     ((report.quotesMissing ?? 0) > 0
       ? "\nquotes missing: " + report.quotesMissing +
-        " cluster(s) replied without usable <quotes> (or in the wrong shape); a malformed reply was kept whole as the conclusion"
+        " cluster(s) had no usable <quotes> block (empty, or the reply was in the wrong shape);" +
+        " check the quote report before trusting a correction from those clusters"
       : "");
   // #261 (D6): one readable line per refused correction, so a content-only
   // proxy still sees the old knowledge, the candidate, the sources, the
@@ -595,28 +602,15 @@ export function buildAnsChatConsolidateResult(
         "; re-judge retries=" + d.retries + ", sameFact=" + d.sameFact + ", reliable=" + d.reliable +
         (d.reason ? "; " + d.reason : "") + ")",
       ).join("\n");
-  // #613: one readable line per material. fedChars 0 means the material did
-  // not fit the cluster budget; it is named instead of silently omitted.
+  // One readable line per material. fedChars 0 means the material did not fit
+  // the cluster budget; it is named instead of silently omitted.
   const feedText = (report.materialsFed ?? []).length === 0
     ? ""
-    : "\n" + report.materialsFed.map((m) =>
-        "material (cluster " + m.cluster + ", #" + (m.materialId ?? "?") + " " + m.url + ")" +
-        "\n  fed " + m.fedChars + "/" + m.originalChars + " chars, ~" + m.estimatedTokens + " tokens" +
-        ", source " + m.source +
-        (m.overBudget ? ", over budget" : "") +
-        (m.truncated ? ", truncated" : "") +
-        (m.cacheHit ? ", cache hit" : "") +
-        (m.sections.length > 0
-          ? "\n  sections: " + m.sections.map((s) => s.headingPath + " (" + s.chars + " chars)").join("; ")
-          : ""),
-      ).join("\n");
-  // #613: the quotes are report-only; semantic memory never stores them.
+    : "\n" + report.materialsFed.map(formatConsolidateMaterialFeed).join("\n");
+  // The quotes are report-only; semantic memory never stores them.
   const quotesText = (report.quotes ?? []).length === 0
     ? ""
-    : "\n" + report.quotes.map((q) =>
-        "quotes (cluster " + q.cluster + ")\n" +
-        q.quotes.split("\n").map((l) => "  " + l).join("\n"),
-      ).join("\n");
+    : "\n" + report.quotes.map(formatConsolidateQuotes).join("\n");
   return {
     content: [{ type: "text", text: line + refusedText + incompleteText + suspendedText + conflictText + resolvedText + feedText + quotesText }],
     structuredContent: {
@@ -633,6 +627,7 @@ export function buildAnsChatConsolidateResult(
         verifyRejected: report.verifyRejected,
         correctionsIncomplete: report.correctionsIncomplete,
         supersededClusterSkipped: report.supersededClusterSkipped,
+        duplicateMaterialSkipped: report.duplicateMaterialSkipped,
         summariesSuspended: report.summariesSuspended,
         // Design: #262 — real cross-session conflicts, kept DISTINCT from the
         // gate counter above (that one counts claim-gate rejections);
@@ -640,8 +635,10 @@ export function buildAnsChatConsolidateResult(
         // reads today.
         unresolvedConflicts: report.conflicts,
         resolvedCollisions: (report.resolvedCollisions ?? []).length,
-        // #613: budget and quote visibility, separate from the writable counts
-        // above so a host can alert on an over-budget or unshaped run.
+      },
+      // Diagnostics, not writable counts: a host alerts on these separately
+      // instead of adding budget constants or report lengths to a merge total.
+      materialReport: {
         clusterTokenBudget: report.clusterTokenBudget,
         clustersOverBudget: report.clustersOverBudget,
         quotesMissing: report.quotesMissing,

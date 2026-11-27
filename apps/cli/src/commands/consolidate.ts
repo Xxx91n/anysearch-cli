@@ -32,6 +32,8 @@ import {
   resolveConsolidateScope,
   ConsolidateScopeError,
   formatConsolidateScope,
+  formatConsolidateMaterialFeed,
+  formatConsolidateQuotes,
   toBudgetCaps,
   type BudgetConfig,
   type ConsolidateReport,
@@ -333,13 +335,14 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       ", add " + r.add + ", noop " + r.noop + ", update " + r.update +
       (r.singleEvidenceSkipped > 0 ? ", singleEvidenceSkipped " + r.singleEvidenceSkipped : "") +
       (r.supersededClusterSkipped > 0 ? ", supersededClusterSkipped " + r.supersededClusterSkipped : "") +
+      (r.duplicateMaterialSkipped > 0 ? ", duplicateMaterialSkipped " + r.duplicateMaterialSkipped : "") +
       (r.verifyRejected > 0 ? ", verifyRejected " + r.verifyRejected : "") +
       (r.correctionsIncomplete > 0 ? ", correctionsIncomplete " + r.correctionsIncomplete : "") +
       (r.summariesSuspended > 0 ? ", summariesSuspended " + r.summariesSuspended : "") +
       (r.conflicts > 0 ? ", conflicts " + r.conflicts : "") +
       (r.resolvedCollisions.length > 0 ? ", collisionsResolved " + r.resolvedCollisions.length : "") +
       (r.budgetRejected > 0 ? ", budgetRejected " + r.budgetRejected : "") +
-      // #613: the cluster material budget. Printed only when it mattered, so a
+      // The cluster material budget. Printed only when it mattered, so a
       // small run reads exactly as before.
       (r.clustersOverBudget > 0
         ? ", clusterTokenBudget " + r.clusterTokenBudget + ", clustersOverBudget " + r.clustersOverBudget
@@ -354,30 +357,17 @@ export async function runConsolidate(argv: string[]): Promise<number> {
 
   // The scope that was really used, not the one the caller thinks it passed.
   process.stdout.write("scope: " + formatConsolidateScope(r.scope) + "\n");
-  // #613: what each material actually contributed. fedChars is the code-point
+  // What each material actually contributed. fedChars is the code-point
   // count placed in the prompt, originalChars the source size, estimatedTokens
   // the language-aware estimate (not a tokenizer). A material with fedChars 0
   // did not fit the 24k budget and is reported instead of silently dropped.
   for (const m of r.materialsFed) {
-    process.stdout.write(
-      "material: cluster " + m.cluster + " #" + (m.materialId ?? "?") + " " + m.url +
-        " - fed " + m.fedChars + "/" + m.originalChars + " chars, ~" + m.estimatedTokens + " tokens" +
-        ", source " + m.source +
-        (m.overBudget ? ", over budget" : "") +
-        (m.truncated ? ", truncated" : "") +
-        (m.cacheHit ? ", cache hit" : "") + "\n" +
-        (m.sections.length > 0
-          ? "  sections: " + m.sections.map((s) => s.headingPath + " (" + s.chars + " chars)").join("; ") + "\n"
-          : ""),
-    );
+    process.stdout.write(formatConsolidateMaterialFeed(m) + "\n");
   }
-  // #613: the verbatim quotes the summarizer selected. They are not persisted
+  // The verbatim quotes the summarizer selected. They are not persisted
   // in semantic memory; the report is the only place they survive.
   for (const q of r.quotes) {
-    process.stdout.write(
-      "quotes: cluster " + q.cluster + "\n" +
-        q.quotes.split("\n").map((line) => "  " + line).join("\n") + "\n",
-    );
+    process.stdout.write(formatConsolidateQuotes(q) + "\n");
   }
   if (dryRun) {
     process.stdout.write(
