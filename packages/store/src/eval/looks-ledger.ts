@@ -11,7 +11,6 @@
 // rows are dropped and the SHA-256 of the pre-compaction row set is preserved in `compaction`.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { GOLDEN_FILE } from "./golden-file";
 
 export const LOOKS_LEDGER_SCHEMA = "anysearch/eval-looks@2";
 export const LOOKS_LEDGER_LEGACY_SCHEMA = "anysearch/eval-looks@1";
@@ -60,13 +59,15 @@ export function readLooksLedger(file: string): LooksLedger {
   } catch {
     return emptyLooksLedger();
   }
-  const j = parsed as Record<string, unknown>;
-  if (!j || typeof j !== "object" || !Array.isArray(j.looks)) return emptyLooksLedger();
-  // A stale `golden` copy from an old checkout or merge conflict must not be
-  // resurrected by the spread below.
-  if (Object.hasOwn(j, "golden")) {
-    console.error("[eval] ignoring stale golden block in " + file + " (corpus lives in " + GOLDEN_FILE + ")");
-    delete j.golden;
+  const parsedRoot = parsed as Record<string, unknown>;
+  if (!parsedRoot || typeof parsedRoot !== "object" || !Array.isArray(parsedRoot.looks)) return emptyLooksLedger();
+  // An old checkout (or a merge conflict) can still leave a `golden` block in
+  // the ledger. The corpus moved to eval-golden.json, so this copy is dropped
+  // here rather than carried through the spread — and said out loud, because a
+  // silent drop reads as data loss. The input object is left untouched.
+  const { golden: staleGolden, ...j } = parsedRoot;
+  if (staleGolden !== undefined) {
+    console.error("[eval] dropping a stale golden block from " + file + " — the corpus lives in eval-golden.json");
   }
   const looks: LooksLedgerEntry[] = [];
   for (const raw of j.looks as Array<Record<string, unknown>>) {
