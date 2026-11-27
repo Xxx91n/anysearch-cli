@@ -47,7 +47,12 @@ async function main() {
     assert(!store.hasFetchTicket(a.id, "search", "m:1"), "a non-numeric search ticket is not stored");
     await store.saveFetchTickets(a.id, "user", ["https://example.com/raw"]);
     assert(!store.hasFetchTicket(a.id, "user", "https://example.com/raw"),
-      "a raw user URL is not stored as an identity");
+      "a raw user URL is not stored under its raw spelling");
+    assert(store.hasFetchTicket(a.id, "user", "example.com/raw"),
+      "a raw user URL is normalized before storage");
+    await store.saveFetchTickets(a.id, "user", ["Example.COM./Pasted?utm_source=x"]);
+    assert(store.hasFetchTicket(a.id, "user", "example.com/Pasted"),
+      "case, trailing dot and tracking are normalized before storage");
 
     // Repeating a write is a no-op, not an error.
     await store.saveFetchTickets(a.id, "search", [String(rowId), String(rowId)]);

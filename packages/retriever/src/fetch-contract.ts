@@ -9,15 +9,6 @@ import type { ProviderErrorClass } from "./contract";
 /** Upstream page-text cap. A longer page is stored truncated. */
 export const FETCH_PAGE_MAX_CHARS = 100_000;
 
-export function isPageReadArmKey(key: string): boolean {
-  return key.endsWith(":fetch");
-}
-
-/** The search-facing subset of providerBuildErrors: page-read arms are not search arms. */
-export function searchBuildErrors(errors: Readonly<Record<string, string>>): Record<string, string> {
-  return Object.fromEntries(Object.entries(errors).filter(([id]) => !isPageReadArmKey(id)));
-}
-
 /** What one adapter may receive in one upstream request. */
 export interface FetchRequest {
   /** Full URLs (scheme included), already admitted by the tool. */

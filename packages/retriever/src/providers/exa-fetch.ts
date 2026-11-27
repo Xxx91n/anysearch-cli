@@ -7,7 +7,7 @@
 import Exa from "exa-js";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
 import { FETCH_PAGE_MAX_CHARS, type FetchEnvelope, type FetchFailure, type FetchPage, type FetchProvider, type FetchRequest } from "../fetch-contract";
-import { normalizeUrlIdentity } from "../url-identity";
+import { normalizeUrlIdentity, parseWebUrl } from "../url-identity";
 import { callExaMcpTool } from "./exa-free-arm";
 import { PROVIDER_FACTS } from "./provider-facts";
 
@@ -72,17 +72,13 @@ function matchPaidReading(
   results: ExaContentsResult[],
 ): Reading {
   const byIdentity = new Map<string, { url: string; title: string; text: string }>();
-  const empty = new Set<string>();
   for (const result of results) {
     const url = typeof result?.url === "string" ? result.url.trim() : "";
     if (!url) continue;
     const identity = normalizeUrlIdentity(url);
     const text = typeof result?.text === "string" ? result.text : "";
     const title = typeof result?.title === "string" ? result.title.trim() : "";
-    if (!text.trim()) {
-      empty.add(identity);
-      continue;
-    }
+    if (!text.trim()) continue;
     byIdentity.set(identity, { url, title, text });
   }
 
@@ -97,10 +93,12 @@ function matchPaidReading(
     const wanted = normalizeUrlIdentity(requested[0]!);
     const returned = normalizeUrlIdentity(pages[0]!.url);
     if (returned !== wanted) {
-      const wantedHost = new URL(requested[0]!).hostname.replace(/\.$/, "");
-      const returnedHost = new URL(pages[0]!.url).hostname.replace(/\.$/, "");
-      if (returnedHost !== wantedHost && !returnedHost.endsWith("." + wantedHost)) {
-        pages.length = 0; // a cross-host landing page is not the requested text
+      const wantedUrl = parseWebUrl(requested[0]!);
+      const returnedUrl = parseWebUrl(pages[0]!.url);
+      if (!wantedUrl || !returnedUrl ||
+          (returnedUrl.hostname.replace(/\.$/, "") !== wantedUrl.hostname.replace(/\.$/, "") &&
+           !returnedUrl.hostname.replace(/\.$/, "").endsWith("." + wantedUrl.hostname.replace(/\.$/, "")))) {
+        pages.length = 0; // a cross-host or unparseable landing page is not the requested text
       } else {
         pages[0] = { ...pages[0]!, url: requested[0]! };
       }
@@ -153,11 +151,8 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
       title: lines[i]!.replace(/^#\s+/, "").trim(),
     });
   }
-  // A requested URL can appear twice: once inside another page's body and once
-  // as its real document. Keep the last occurrence. A non-requested heading
-  // starts a document only when a blank line sets it apart. Without that
-  // signal an indistinguishable body heading (e.g. "# Install" + a URL) would
-  // cut the page; a no-blank redirect is rare enough to accept the ambiguity.
+  // Same requested URL: keep the last occurrence. Any other `#` heading
+  // starts a document only when the preceding line is blank.
   const lastRequested = new Map<string, number>();
   rawStarts.forEach((start, index) => {
     const identity = normalizeUrlIdentity(start.url);
@@ -216,9 +211,16 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
   if (requested.length === 1 && pages.length === 0) {
     const redirect = docs.length === 1 ? docs[0] : undefined;
     if (redirect) {
-      const body = lines.slice(redirect.bodyFrom, redirect.end).join("\n").trim();
-      if (body) {
-        pages.push({ url: requested[0]!, text: body, ...(redirect.title ? { title: redirect.title } : {}) });
+      const wanted = parseWebUrl(requested[0]!);
+      const got = parseWebUrl(redirect.url);
+      const hostOk = !!wanted && !!got &&
+        (got.hostname.replace(/\.$/, "") === wanted.hostname.replace(/\.$/, "") ||
+         got.hostname.replace(/\.$/, "").endsWith("." + wanted.hostname.replace(/\.$/, "")));
+      if (hostOk) {
+        const body = lines.slice(redirect.bodyFrom, redirect.end).join("\n").trim();
+        if (body) {
+          pages.push({ url: requested[0]!, text: body, ...(redirect.title ? { title: redirect.title } : {}) });
+        }
       }
     } else if (docs.length === 0 && errorByUrl.size === 0) {
       const bodyLines = lines.slice(0, allErrorsEnd);

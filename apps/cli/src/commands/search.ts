@@ -2,7 +2,7 @@
 // decision 3A: uses createEngine factory, not inline wiring.
 
 import type { Mode, ProviderErrorClass } from "@anysearch-cli/retriever";
-import { buildVerticalSpec, searchBuildErrors, verticalSpecReject } from "@anysearch-cli/retriever";
+import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
 import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, DEFAULT_REQUEST_TIMEOUT_MS, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
@@ -293,7 +293,7 @@ export async function runSearch(args: string[]): Promise<number> {
         // with the runtime providersFailed chain above — the audit surface for
         // "which arm never entered the fanout, and why" (#180). Additive; {}
         // when every enabled arm built.
-        providerBuildErrors: searchBuildErrors(providerBuildErrors),
+        providerBuildErrors,
         // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
         credentialSources: credentialSources ?? null,
         answers: envelope.answers,

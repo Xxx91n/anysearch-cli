@@ -71,5 +71,5 @@ apps/cli/.build-stamp.json
 /apps/cli/plugin/
 
 # review-bot drafts
-.r*.txt
-.r*.json
+/.r*.txt
+/.r*.json

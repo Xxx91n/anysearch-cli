@@ -95,7 +95,8 @@ function readJsonReply(body: string, id: number): JsonRpcMessage {
     !!item && typeof item === "object" && isReplyFor(item as JsonRpcMessage, id));
   if (message) return message;
   const failed = messages.find((item): item is JsonRpcMessage =>
-    !!item && typeof item === "object" && (item as JsonRpcMessage).id === null &&
+    !!item && typeof item === "object" &&
+    ((item as JsonRpcMessage).id === null || (item as JsonRpcMessage).id === undefined) &&
     !!(item as JsonRpcMessage).error);
   if (failed) throw jsonRpcError(failed);
   const seen = messages.map((item) => (item as JsonRpcMessage | null)?.id).join(", ");

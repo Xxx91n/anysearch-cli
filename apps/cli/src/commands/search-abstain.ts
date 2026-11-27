@@ -1,6 +1,5 @@
-// Search presentation helpers. The only runtime import is the retriever's
-// searchBuildErrors helper; this still avoids the kernel module graph (and its
-// ESM-only pi-agent-core dependency) in tests.
+// Search presentation helpers. All imports are type-only, so tests avoid the
+// kernel module graph (and its ESM-only pi-agent-core dependency).
 // Abstain line + provider build-failure absence line share this module: both
 // are presentation contracts of `ans search` — stdout in the result/abstain
 // render; the absence line additionally rides stderr on the error path.
@@ -11,9 +10,9 @@ import type { CredentialSourceLabel, CredentialSources } from "@anysearch-cli/ke
 // 同样只做类型导入；provider 联合由 store 拥有，这里不复制一份。新增
 // provider 时下面的 Record 会编译失败，直到补上它没配 key 时的说法。
 import type { SearchProviderId } from "@anysearch-cli/store";
-// 判据只有一份，在 retriever 的 outcome 模块里。这里借它的类型和
-// searchBuildErrors 判定 —— 退出码表读的就是引擎写进信封的那个值。
-import { searchBuildErrors, type SearchOutcome } from "@anysearch-cli/retriever";
+// 判据只有一份，在 retriever 的 outcome 模块里。这里只借 SearchOutcome
+// 类型 —— 退出码表读的就是引擎写进信封的那个值。
+import type { SearchOutcome } from "@anysearch-cli/retriever";
 
 // Exit codes: 0 = ok (including abstain), 1 = generic failure, all providers
 // failed, or zero results that are not an abstain (empty), 2 = usage error,
@@ -34,8 +33,7 @@ export function formatAbstainLine(abstain: { domain?: string; preFiltered: numbe
 
 // Remedy lines printed under "Providers failed": one line per entry, exactly
 // what the caller passes in — the filtering (which arms have a sentence) is
-// providerErrorHints' job, not this function's. Kept free of imports for the
-// same reason as the rest of this module — the hint table is the caller's.
+// providerErrorHints' job, not this function's; the hint table is the caller's.
 export function formatProviderHintLines(hints: Record<string, string>): string[] {
   return Object.entries(hints).map(([id, sentence]) => "  " + id + ": " + sentence);
 }
@@ -69,7 +67,7 @@ export function formatFailedArmLines(input: {
 // undefined when every enabled arm built, so the healthy path is zero-noise.
 export function formatProviderAbsentLine(buildErrors: Record<string, string>): string | undefined {
   // Page-read arms use `id:fetch`; search's absence line names only search arms.
-  const entries = Object.entries(searchBuildErrors(buildErrors));
+  const entries = Object.entries(buildErrors);
   if (entries.length === 0) return undefined;
   return "Providers absent (build failure): " + entries.map(([id, category]) => id + " — " + category).join("; ");
 }

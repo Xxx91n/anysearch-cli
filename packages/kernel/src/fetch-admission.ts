@@ -155,9 +155,9 @@ function looksHighEntropy(value: string): boolean {
 }
 
 /**
- * Credential gate: a URL that carries a secret-shaped parameter or value is
- * never sent upstream. The names are checked before values so a short token
- * (`?token=abc`) is still caught.
+ * Credential gate: a URL with a known credential parameter name, a known
+ * secret shape, or a high-entropy `=` value is never sent upstream. Other
+ * shapes rely on heuristics; this is not a complete secret detector.
  */
 export function fetchCredentialHit(rawHandle: string, identity: string): boolean {
   for (const text of [rawHandle, identity]) {
@@ -217,9 +217,8 @@ function bareLooksLikePage(candidate: string): boolean {
 /**
  * The user-message ticket corpus: every web URL the user typed, as normalized
  * identities. Only http(s) is taken; a bare `host/path` is read as https.
- * Anything shaped like `word.word/path` is treated as a URL, so a real file
- * name such as `Node.js/Express` can become a ticket; the caller decides
- * whether it is a page.
+ * A real file/module name shaped like `word.word/path` can become a ticket;
+ * the caller decides whether it is a page.
  */
 export function extractUserUrlTickets(text: string): string[] {
   const out = new Set<string>();

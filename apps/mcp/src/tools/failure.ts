@@ -7,7 +7,7 @@
 // is a success whose content and structuredContent name the degraded arms.
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import type { CompositionResult } from "@anysearch-cli/kernel";
-import { searchBuildErrors, type ProviderErrorClass, type SearchOutcome } from "@anysearch-cli/retriever";
+import type { ProviderErrorClass, SearchOutcome } from "@anysearch-cli/retriever";
 import { providerErrorHints } from "@anysearch-cli/kernel";
 
 /** Execution-failure result: isError true, text content, no structuredContent. */
@@ -40,7 +40,7 @@ export function providerFailureMetadata(
   providerErrorRetryAfterSeconds?: Record<string, number>,
 ): ProviderFailureMetadata | undefined {
   // Page-read arms use `id:fetch`; this metadata describes the search fanout.
-  const buildErrors = searchBuildErrors(eng.providerBuildErrors ?? {});
+  const buildErrors = eng.providerBuildErrors ?? {};
   if (providersFailed.length === 0 && Object.keys(buildErrors).length === 0) return undefined;
   const hints = providerErrorHints(providersFailed, providerErrorClasses, providerErrorRetryAfterSeconds);
   return {

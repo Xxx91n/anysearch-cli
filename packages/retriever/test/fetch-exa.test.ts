@@ -169,6 +169,15 @@ async function main() {
       "parse: a non-requested document does not leak into its neighbour");
   }
 
+  // ---- a free-arm single document on another host is not the requested page --
+  {
+    const reading = parseExaFetchReply([
+      "# Other", "URL: https://evil.example/x", "wrong body",
+    ].join("\n"), ["https://example.com/a"]);
+    assert(reading.pages.length === 0 && reading.failures.length === 1,
+      "free: a single cross-host document is not mapped to the requested URL");
+  }
+
   // ---- an all-failure reply keeps every upstream reason ------------------
   {
     const text = [

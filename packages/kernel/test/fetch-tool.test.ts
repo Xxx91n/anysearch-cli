@@ -171,6 +171,9 @@ async function main() {
       const zero = envelope(await tool.execute("t3", { handles: [handle], maxCharacters: 0 }));
       assert(zero.pages[0]!.text.length === 4000,
         "maxCharacters 0 falls back to the default instead of one character");
+      const half = envelope(await tool.execute("t3b", { handles: [handle], maxCharacters: 0.5 }));
+      assert(half.pages[0]!.text.length === 4000,
+        "a fractional maxCharacters below 1 falls back to the default");
     }
 
     // ---- 2. forged / cross-session / invented handles are rejected in-band ---

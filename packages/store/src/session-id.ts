@@ -55,7 +55,7 @@ const tempIdByAnchor = new Map<string, string>();
 // process instead of continuing fail-open.
 const stderrErrorListeners = new WeakSet<NodeJS.WriteStream>();
 
-function writeStderr(message: string): void {
+export function writeStderr(message: string): void {
   const stderr = process.stderr;
   if (!stderrErrorListeners.has(stderr)) {
     stderr.on("error", () => {});

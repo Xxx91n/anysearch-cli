@@ -1,7 +1,7 @@
-// Exa free-quota search adapter: parses the text block returned by the shared
-// transport in exa-free-arm.ts. Page-read parsing lives in exa-fetch.ts.
-// Reply shapes, rate limits and known failures: providers/exa/README.md
-// ("回复形状" / "已知异常").
+// Exa 免费额度搜索适配器：没配 key 时走这里，一条 POST 到 mcp.exa.ai，
+// 不握手、不带凭据。解析 exa-free-arm.ts 共享传输拿回的 text 块，读页解析在
+// exa-fetch.ts。回包形状、限速和已知失败：providers/exa/README.md 的
+// 「回复形状」「已知异常」。
 
 import type { Mode, NormalizedResult, ProviderEnvelope, SearchProvider, SearchRequest } from "../contract";
 import { PROVIDER_FACTS } from "./provider-facts";

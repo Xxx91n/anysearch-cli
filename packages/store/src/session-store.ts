@@ -18,6 +18,7 @@ import {
   withInitBusyRetry,
 } from "./sqlite-init.js";
 import { containsSecret } from "./secret.js";
+import { writeStderr } from "./session-id.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -1569,7 +1570,11 @@ export class SqliteSessionStore implements SessionStore {
   // `http:` marker for a user URL that was pasted with http. The store checks
   // the shape and drops values that could never match a lookup.
   async saveFetchTickets(sessionId: string, kind: FetchTicketKind, values: readonly string[]): Promise<void> {
-    const cleaned = values.map((v) => v.trim()).filter(Boolean);
+    const cleaned = values.map((v) => v.trim()).filter(Boolean).map((v) => {
+      if (kind !== "user") return v;
+      const marker = v.startsWith("http:") ? "http:" : "";
+      return marker + normalizeUrlIdentity(marker ? v.slice(5) : v);
+    });
     const valid = cleaned.filter((v) => {
       if (kind === "search") return /^[1-9]\d*$/.test(v);
       // User values are scheme-less identities; `http:<identity>` marks the
@@ -1580,12 +1585,10 @@ export class SqliteSessionStore implements SessionStore {
       return parsed !== null && parsed.hostname.includes(".") && normalizeUrlIdentity(identity) === identity;
     });
     if (valid.length !== cleaned.length) {
-      try {
-        process.stderr.write(
-          "[anysearch] ignored " + (cleaned.length - valid.length) +
-          " invalid " + kind + " fetch ticket value(s)\n",
-        );
-      } catch { /* stderr unavailable */ }
+      writeStderr(
+        "[anysearch] ignored " + (cleaned.length - valid.length) +
+        " invalid " + kind + " fetch ticket value(s)\n",
+      );
     }
     const unique = [...new Set(valid)];
     if (unique.length === 0) return;

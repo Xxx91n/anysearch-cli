@@ -56,7 +56,7 @@ export interface ProviderFacts {
 /**
  * 表的形状：一家一行，每行都要填全 `ProviderFacts`，`id` 必须和键一致——写错在类型检查就红。
  * 少填一家 = 少了键，少填一个必填字段 = 那一行不满足 `ProviderFacts`。
- * 两个可选字段：`freeArm`（只有 exa 今天有）和 `mcpProtocolVersion`——删掉它们不会让表本身红，
+ * 三个可选字段：`freeArm`（只有 exa 今天有）、`mcpProtocolVersion` 和 `fetchMaxUrlsPerCall`——删掉它们不会让表本身红，
  * 读它们的地方会红。
  */
 type ProviderFactsTable = { [K in ProviderKey]: ProviderFacts & { readonly id: K } };
@@ -68,7 +68,7 @@ export const PROVIDER_FACTS = {
     // exa-js 的 includeDomains 是一等字段，上游按它过滤。
     domainFilterSupported: true,
     verticalDomainSupported: false,
-    // 读页端点一次最多接 5 个 URL；工具侧也按这个数分批。
+    // 读页和搜索一样按 5 个 URL 分批；端点真实批量上限没测过，不替它报上限。
     fetchMaxUrlsPerCall: 5,
     freeProbe: {
       // exa-js 构造函数默认的 baseURL。

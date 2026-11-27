@@ -843,7 +843,7 @@ export class PiAgentRuntime {
     // The writer accepted these results; the search tool stamps the same field.
     const items = results as Array<{ handle?: string }>;
     ids.forEach((id, index) => {
-      if (typeof id === "number" && id > 0 && items[index]) items[index].handle = "m:" + id;
+      if (typeof id === "number" && id > 0 && items[index]) items[index].handle = searchHandle(id);
     });
   }
 

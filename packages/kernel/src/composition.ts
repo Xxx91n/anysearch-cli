@@ -118,7 +118,6 @@ export function classifyProviderBuildError(error: unknown): "credential" | "unex
 function buildArm<T>(
   id: string,
   constructors: Record<string, (creds: CredentialSource) => T>,
-  errorKey: string,
   label: string,
   providerBuildErrors: Record<string, string> | undefined,
   creds: CredentialSource,
@@ -137,7 +136,7 @@ function buildArm<T>(
     const message = classifyProviderBuildError(error) === "credential"
       ? "permanent: missing/invalid credential — set the provider's API key env"
       : "unexpected construction fault";
-    if (providerBuildErrors) providerBuildErrors[errorKey] = message;
+    if (providerBuildErrors) providerBuildErrors[id] = message;
     writeProviderDiagnostic("[anysearch] " + label + " " + id + " construction failed: " + message + "\n");
     return undefined;
   }
@@ -149,7 +148,7 @@ function buildProviders(
   creds: CredentialSource,
 ): SearchProvider[] {
   return ids
-    .map((id) => buildArm(id, PROVIDER_CONSTRUCTORS, id, "provider", providerBuildErrors, creds))
+    .map((id) => buildArm(id, PROVIDER_CONSTRUCTORS, "provider", providerBuildErrors, creds))
     .filter((p): p is SearchProvider => p !== undefined);
 }
 
@@ -158,7 +157,7 @@ function buildProviders(
 // fanout. `buildArm` accepts no map here, so there is no dead error key.
 function buildFetchProviders(ids: string[], creds: CredentialSource): FetchProvider[] {
   return ids
-    .map((id) => buildArm(id, FETCH_PROVIDER_CONSTRUCTORS, id, "fetch provider", undefined, creds))
+    .map((id) => buildArm(id, FETCH_PROVIDER_CONSTRUCTORS, "fetch provider", undefined, creds))
     .filter((p): p is FetchProvider => p !== undefined);
 }
 
