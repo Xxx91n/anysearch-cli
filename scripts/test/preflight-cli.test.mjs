@@ -176,28 +176,31 @@ test(
           err += chunk;
         });
         const started = Date.now();
-        // The cap is the test's own: without it a gate that never answers hangs
-        // the run until CI's timeout instead of failing here.
-        const code = await new Promise((resolve, reject) => {
-          const cap = setTimeout(() => reject(new Error("the gate never exited")), 20000);
-          gate.on("exit", (exitCode) => {
-            clearTimeout(cap);
-            resolve(exitCode);
-          });
-        });
-        // Measure the gate's own exit first: the wait below adds up to five
-        // seconds of polling that are not the gate's time.
-        const waited = Date.now() - started;
-        // The exit and the pipe's last bytes are separate events: wait for the
-        // line the assertions read, bounded, before judging the answer.
-        await waitForText(() => /timed out after 2s/.test(err), 5000);
-        const holder = Number(/HOLDER=(\d+)/.exec(out)?.[1]);
         try {
+          // The cap is the test's own: without it a gate that never answers hangs
+          // the run until CI's timeout instead of failing here. It sits above the
+          // assertion below, so a slow answer fails as a slow answer, not a hang.
+          const code = await new Promise((resolve, reject) => {
+            const cap = setTimeout(() => reject(new Error("the gate never exited")), 25000);
+            gate.on("exit", (exitCode) => {
+              clearTimeout(cap);
+              resolve(exitCode);
+            });
+          });
+          // Measure the gate's own exit first: the wait below adds up to five
+          // seconds of polling that are not the gate's time.
+          const waited = Date.now() - started;
+          // The exit and the pipe's last bytes are separate events: wait for the
+          // line the assertions read, bounded, before judging the answer.
+          await waitForText(() => /timed out after 2s/.test(err), 5000);
           // 2s budget + 10s cap + flush; the holder's own minute is not the gate's.
-          assert.ok(waited < 25000, `the gate waited ${waited}ms on a pipe holder`);
+          assert.ok(waited < 20000, `the gate waited ${waited}ms on a pipe holder`);
           assert.equal(code, 1, err);
           assert.match(err, /timed out after 2s/);
         } finally {
+          // The cleanup covers the reject above too: a gate that never exits must
+          // not leave itself or the holder running on the machine.
+          const holder = Number(/HOLDER=(\d+)/.exec(out)?.[1]);
           if (holder) {
             try {
               process.kill(holder);
@@ -1152,8 +1155,9 @@ function writeCountingPnpm(bin) {
 // A pnpm that dies of a signal instead of exiting: the gate gets no exit code, so
 // the file it kept is a prefix of the run and has to be named as one.
 function writeSignalPnpm(bin) {
-  // The write has to land before the signal, or the gate reads an empty file and
-  // the test fails for a reason the gate is right about.
+  // Write first, then die: a signal sent while the line is still in the pipe
+  // leaves an empty file, and the reasons below would read `no output to show`
+  // instead of `see the output file`.
   writeNodePnpm(bin, "signal.mjs", [
     'process.stdout.write("suite started" + "\\n", () => process.kill(process.pid, "SIGTERM"));',
     "",
