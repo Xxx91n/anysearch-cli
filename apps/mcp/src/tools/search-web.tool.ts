@@ -84,6 +84,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           const providerFailures = providerFailureMetadata(eng, failedProviders, providerErrorClasses, providerErrorRetryAfter);
           const partial = isPartialPool(cancelledProviders);
           const topResults = envelope.results.slice(0, 10);
+          // One read for both halves: the same budget in the text JSON and in
+          // structuredContent, so the two copies cannot drift.
+          const deadlineMs = reportedDeadlineMs(eng);
 
           // provider answers pass through as first-class fields.
           // attribution attached to envelope by engine.attachAttribution.
@@ -106,7 +109,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               providersCancelled: cancelledProviders,
               partial,
               // The budget the engine gave this fanout.
-              deadlineMs: reportedDeadlineMs(eng),
+              deadlineMs,
               // What each answered arm said it took. Cut and failed arms have no
               // key, so this map never reads as a 0ms answer.
               providerElapsedMs,
@@ -167,7 +170,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             // Both always present so a host never confuses "complete" with
             // "field missing".
             partial,
-            deadlineMs: reportedDeadlineMs(eng),
+            deadlineMs,
             // 答完的臂各自花了多久；被掐、失败的臂没有键。
             providerElapsedMs,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
