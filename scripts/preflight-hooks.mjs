@@ -108,6 +108,12 @@ function hookTarget(text) {
   return flags ? `${script} ${flags}` : script;
 }
 
+/** The gate script a hook's exec line runs, or null when that line is not a gate command. */
+function gateScript(command) {
+  const match = (command ?? "").match(GATE_COMMAND);
+  return match ? match[1] : null;
+}
+
 /** A file that runs nothing (a shebang alone included) is nobody's hook. */
 function isEmptyHook(text) {
   return commandLines(text).length === 0;
@@ -120,8 +126,9 @@ function isOurs(text) {
   // checked here: it is part of the code, so a changed one reads as out of date.
   const banner = lines[lines[0]?.startsWith("#!") ? 1 : 0];
   if (!OWN_BANNERS.some((prefix) => banner?.startsWith(prefix))) return false;
-  // A note that starts like our banner still has to run the gate to be ours.
-  return GATE_SCRIPT.test(hookCommand(text) ?? "");
+  // A note that starts like our banner still has to run the gate to be ours, in a
+  // shape status can follow: the same match names the script it reports on.
+  return gateScript(hookCommand(text)) !== null;
 }
 
 /**
@@ -195,11 +202,13 @@ function prePushStatus() {
     return { state: "unknown", dir: place.dir, hookPath, reason: `cannot read ${hookPath}: ${installed.error.message}` };
   }
 
+  const command = hookCommand(installed.text) ?? "";
   const hook = {
     dir: place.dir,
     root: place.root,
     hookPath,
-    command: hookCommand(installed.text) ?? "",
+    command,
+    script: gateScript(command),
     target: hookTarget(installed.text),
   };
   if (isEmptyHook(installed.text)) return { state: "empty", ...hook };
@@ -300,8 +309,9 @@ const INCREMENTAL_WITH_READERS =
 const PACKAGE_SECONDS = 600;
 const FULL_SECONDS = 900;
 const STORE_RUN = "4m15s";
-const PACKAGE_WAIT = `wait budget: up to ${PACKAGE_SECONDS}s for the packages this push runs (store alone measures about ${STORE_RUN}); set the calling tool's timeout to 0 or at least ${PACKAGE_SECONDS}`;
-const FULL_WAIT = `wait budget: 6 to 9 minutes on Windows for the whole suite; set the calling tool's timeout to 0 or at least ${FULL_SECONDS}`;
+const FULL_RUN = "6 to 9 minutes";
+const PACKAGE_WAIT = `wait budget: up to ${PACKAGE_SECONDS}s for the packages this push runs (store alone measures about ${STORE_RUN}); set the calling tool's timeout to 0, which means no cap, or to at least ${PACKAGE_SECONDS}`;
+const FULL_WAIT = `wait budget: ${FULL_RUN} on Windows for the whole suite; set the calling tool's timeout to 0, which means no cap, or to at least ${FULL_SECONDS}`;
 const NOTHING_RUNS = "wait budget: none — nothing runs";
 
 const MODE_REPORT = {
@@ -316,7 +326,10 @@ const MODE_REPORT = {
     wait: PACKAGE_WAIT,
   },
   incremental: { mode: INCREMENTAL_MODE, wait: PACKAGE_WAIT },
-  full: { mode: "mode: full — every push runs the whole suite (ANS_PUSH_GATE=strict)", wait: FULL_WAIT },
+  full: {
+    mode: "mode: full — every push runs the whole suite (ANS_PUSH_GATE=strict, or --full in the hook's source)",
+    wait: FULL_WAIT,
+  },
   unknown: {
     mode: "mode: unknown — git cannot name this change (no HEAD, or no origin/HEAD to compare against)",
     wait: "wait budget: unknown — a push still runs what its refs carry",
@@ -341,17 +354,18 @@ function modeReport(plan) {
  * The plan a push of this checkout would run, or `unknown` when git cannot name
  * the change. `broken` carries the plan's reason and fix.
  *
- * Design: `ANS_PUSH_GATE=strict` decides the mode before any change set matters. A
- * `--full` in the installed hook's own exec line cannot: that edit makes the hook
- * read as stale, so status never reports a mode for such a hook.
+ * Design: the two switches that run everything on every push decide the mode
+ * before any change set matters — `ANS_PUSH_GATE=strict` in this shell, or `--full`
+ * in the hook's exec line, which a repo can install by putting it in
+ * `scripts/hooks/pre-push-user` and running `hooks:install`.
  *
  * Design: the change set is what a plain gate run reads, everything not on
  * origin/HEAD plus the working tree — this checkout's change, not every change a
  * push can carry: `git push origin other-branch` sends commits HEAD does not have,
  * and no local read can see them.
  */
-function pushPreview(root) {
-  if (strictPushGate()) return { mode: "full" };
+function pushPreview(root, command) {
+  if (strictPushGate() || /(^|\s)--full(\s|$)/.test(command)) return { mode: "full" };
   const files = localFiles(root);
   if (files === null) return { mode: "unknown" };
   return planPreflight(root, files);
@@ -365,10 +379,8 @@ function pushPreview(root) {
  * start tests, while a tree that cannot load the module fails before its first
  * line anyway.
  */
-function gateScriptCheck(root, command) {
-  const match = command.match(GATE_COMMAND);
-  if (!match) return { problem: "the hook's exec line names no gate script status can follow", detail: command.trim() };
-  const file = path.join(root, match[1]);
+function gateScriptCheck(root, script) {
+  const file = path.join(root, script);
   let stat;
   try {
     stat = fs.statSync(file);
@@ -458,14 +470,14 @@ function reportStatus(result) {
     console.log(`[hooks] pre-push installed: ${result.hookPath}`);
     if (result.target) console.log(`[hooks] runs: ${result.target}`);
 
-    const gate = gateScriptCheck(result.root, result.command);
+    const gate = gateScriptCheck(result.root, result.script);
     if (gate.problem) {
       console.error(`[hooks] blocked: ${gate.problem}: ${gate.detail ?? gate.file}`);
       console.error("[hooks] fix: restore it in this checkout — a push aborts inside the hook without it");
       return 2;
     }
 
-    const preview = pushPreview(result.root);
+    const preview = pushPreview(result.root, result.command);
     if (preview.mode === "broken") {
       // Design: the hook is fine and the repository is not, so the words and the
       // exit code are the gate's own — nothing was looked at, which is 2, never

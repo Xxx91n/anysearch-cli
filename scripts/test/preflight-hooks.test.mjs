@@ -480,7 +480,7 @@ test("status names the mode a push lands in and what waiting for it costs", () =
     const incremental = box.run(clone, ["status"]);
     assert.equal(incremental.status, 0, incremental.stderr);
     assert.match(incremental.stdout, /mode: incremental/);
-    assert.match(incremental.stdout, /set the calling tool's timeout to 0 or at least 600/);
+    assert.match(incremental.stdout, /set the calling tool's timeout to 0, which means no cap, or to at least 600/);
   });
 });
 
@@ -540,6 +540,25 @@ test("a docs-only change reads as nothing to run, not as a test run", () => {
   });
 });
 
+// The repo's own hook source is where a lasting "always run everything" edit
+// lands: change it, install, and the installed hook still counts as current.
+test("a hook source that runs the whole suite reads as the full mode", () => {
+  withSandbox((box) => {
+    const clone = box.clone();
+    const local = withScriptsIn(clone);
+    const hookSource = join(clone, "scripts", "hooks", "pre-push-user");
+    writeFileSync(hookSource, readFileSync(hookSource, "utf8").replace(/^(exec .*)$/m, "$1 --full"));
+
+    const install = box.run(clone, ["install"], local);
+    assert.equal(install.status, 0, install.stderr);
+
+    const status = box.run(clone, ["status"], local);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: full — every push runs the whole suite/);
+    assert.match(status.stdout, /at least 900/);
+  });
+});
+
 test("ANS_PUSH_GATE=strict reads as the full mode and a longer wait", () => {
   withSandbox((box) => {
     const clone = box.seeded();
@@ -548,7 +567,7 @@ test("ANS_PUSH_GATE=strict reads as the full mode and a longer wait", () => {
     const status = box.run(clone, ["status"], cli, { ANS_PUSH_GATE: "strict" });
     assert.equal(status.status, 0, status.stderr);
     assert.match(status.stdout, /mode: full — every push runs the whole suite/);
-    assert.match(status.stdout, /set the calling tool's timeout to 0 or at least 900/);
+    assert.match(status.stdout, /set the calling tool's timeout to 0, which means no cap, or to at least 900/);
   });
 });
 
