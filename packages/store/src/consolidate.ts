@@ -10,7 +10,7 @@ import type Database from "better-sqlite3";
 import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
 import { suspendSummariesForCorrection, liveHeadOf } from "./summary-sources.js";
-import { sectionsForPages } from "./retrieval-chunks.js";
+import { sectionsForPages, type MemorySection } from "./retrieval-chunks.js";
 import { applyStatedPairAsAlias, crossScriptPairsInText, loadLiveEntities, queueProposedAlias, resolveQueryObject, type AliasJudgeFn, type AliasJudgeVerdict } from "./entity-alias.js";
 import { parseSqliteUtc } from "./sqlite-time.js";
 
@@ -938,7 +938,7 @@ function evidenceForCluster(db: Database.Database, rows: readonly EpisodeRow[]):
   const pageIds = rows
     .filter((r) => typeof r.content === "string" && r.content.trim().length > 0)
     .map((r) => r.id);
-  const byPage = pageIds.length > 0 ? sectionsForPages(db, pageIds) : new Map();
+  const byPage = pageIds.length > 0 ? sectionsForPages(db, pageIds) : new Map<number, MemorySection[]>();
   return rows.map((r) => {
     const hasBody = typeof r.content === "string" && r.content.trim().length > 0;
     const sections = hasBody ? byPage.get(r.id) ?? [] : [];
