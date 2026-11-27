@@ -213,7 +213,8 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
   process.once(signal, () => {
     interrupted = code;
     reportKeptTestHome(testHome);
-    reportRunOutput(dump);
+    // The run was cut short: the file is a partial record, not the whole run.
+    reportRunOutput(dump, { finished: false });
     stopChild(child, signal);
   });
 }
@@ -260,13 +261,9 @@ if (selfTest) {
   console.log(`[preflight] gate self-test green: ${describeCount(result.tests, GATE_GROUPS.length)}`);
 }
 
-// Design: the suite's output goes to a timestamped file in the temp directory as
-// well as to the terminal. A failure shows the last 100 lines and the file's
-// absolute path; a green run deletes the file. A timeout or an interrupt keeps
-// the file and names it too — neither is a pass, and the file is the only record
-// of what the run got through. The file is what makes a long run auditable after
-// the terminal has scrolled past it, and it is where the test count is read from
-// — the 64 KiB in-memory tail can lose the summary of a suite that prints a lot.
+// Design: the count comes from the file, not the 64 KiB tail — a talkative suite
+// can push the summary out of a fixed-size tail. The header says where the file
+// goes and which runs keep it.
 const suiteStarted = Date.now();
 dump = openDump();
 console.log(
@@ -283,27 +280,28 @@ child = spawn("pnpm", runArgs, {
 
 const readTail = forwardKeepingTail(child, 64 * 1024, dump);
 
-// Design: the heartbeat is the sign of life. A silent suite reads as a hang, and
-// a person who thinks the gate is stuck presses Ctrl-C. The interval follows the
-// budget — fifteen seconds on the default ten minutes, shorter on a short budget
-// so even a one-minute run shows a beat.
+// Design: a silent suite reads as a hang. The interval follows the budget: fifteen
+// seconds on the default ten-minute budget.
 const heartbeat = setInterval(() => {
   console.log(`[preflight] still running: ${Math.round((Date.now() - suiteStarted) / 1000)}s elapsed`);
 }, heartbeatSeconds * 1000);
 heartbeat.unref();
 
-// Design: the budget stops the whole tree, not pnpm alone — a child pnpm leaves
-// behind would keep writing to the home this run keeps. A run that hit its
-// budget did not finish, so it is not a pass. The close wait gets its own cap:
-// a process outside the killed group can hold the pipe open, and the gate's
-// answer must not wait on a tree that refuses to die.
+// Design: the budget stops the whole tree — a child pnpm leaves behind would keep
+// writing to the home this run keeps. A run that hit its budget did not finish, so
+// it is not a pass. The close wait is capped: a process outside the killed group
+// can hold the pipe open.
 let timedOut = false;
 let settleClose = null;
 let closeCap = null;
 const deadline = setTimeout(() => {
-  timedOut = true;
-  stopChild(child, "SIGTERM");
-  closeCap = setTimeout(() => settleClose?.(null), 10000);
+  // A suite that already exited is the answer, not a timeout: keep its exit code
+  // and just cap the wait, because a pipe holder can outlive the child.
+  if (child.exitCode === null) {
+    timedOut = true;
+    stopChild(child, "SIGTERM");
+  }
+  closeCap = setTimeout(() => settleClose?.(child.exitCode), 10000);
 }, suiteTimeoutSeconds * 1000);
 deadline.unref();
 
@@ -340,7 +338,7 @@ const seconds = ((Date.now() - started) / 1000).toFixed(1);
 if (timedOut) {
   writeStderr(`[preflight] timed out after ${suiteTimeoutSeconds}s: the suite did not finish — this is not a pass`);
   writeStderr(`[preflight] run the rest yourself: pnpm ${runArgs.join(" ")}`);
-  reportRunOutput(dump);
+  reportRunOutput(dump, { finished: false });
   reportKeptTestHome(testHome, console.error);
   // Design: exit after the flush instead of setting the code and falling off —
   // a process outside the killed tree can still hold the pipe, and its data
@@ -358,7 +356,7 @@ if (timedOut) {
   }
   const failed = failedTask(output ?? readTail());
   console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
-  reportRunOutput(dump, console.error);
+  reportRunOutput(dump, { write: console.error });
   reportKeptTestHome(testHome, console.error);
   // Design: a run that did not pass is 1 whatever pnpm exited with — its own
   // code is not the answer to "were the tests green", and forwarding a 2 here
@@ -508,10 +506,13 @@ function reportKeptTestHome({ home }, write = writeStderr) {
 // Where the run's output went. The default is the sync writer, because the gate
 // may exit right after the line; a caller that lets the event loop drain passes
 // console.error, the same rule as the kept-home line. A file the stream failed to
-// finish is named as incomplete — it is not the whole run.
-function reportRunOutput(handle, write = writeStderr) {
+// finish is named as incomplete, a run cut short as partial: neither is the whole run.
+function reportRunOutput(handle, { write = writeStderr, finished = true } = {}) {
   if (!handle?.file) return;
-  write(`[preflight] ${handle.failed ? "incomplete output file" : "full output"}: ${handle.file}`);
+  let label = "full output";
+  if (handle.failed) label = "incomplete output file";
+  else if (!finished) label = "partial output (the run did not finish)";
+  write(`[preflight] ${label}: ${handle.file}`);
 }
 
 // Design: pin the reporter to spec — the total is read from the summary line it
@@ -563,7 +564,7 @@ function forwardKeepingTail(source, limit, dump) {
     const decoder = new StringDecoder("utf8");
     stream.on("data", (chunk) => {
       out.write(chunk);
-      if (dump && !dump.failed) dump.stream.write(chunk);
+      if (dump && !dump.failed && !dump.stream.writableEnded) dump.stream.write(chunk);
       tail = (tail + decoder.write(chunk)).slice(-limit);
     });
   }
@@ -572,11 +573,12 @@ function forwardKeepingTail(source, limit, dump) {
 
 // The suite's output file: a timestamped file in the system temp directory. A
 // write that fails turns the dump off rather than the run: the suite's answer is
-// its exit code, and a full disk should not hide a failing test.
+// its exit code, and a full disk should not hide a failing test. The exclusive
+// create refuses a name already taken, so a planted symlink is not followed.
 function openDump() {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const handle = { file: path.join(os.tmpdir(), `ans-preflight-${stamp}.log`), failed: false };
-  handle.stream = fs.createWriteStream(handle.file, { flags: "w" });
+  handle.stream = fs.createWriteStream(handle.file, { flags: "wx" });
   handle.stream.on("error", (error) => {
     if (handle.failed) return;
     handle.failed = true;
@@ -660,10 +662,7 @@ function totalTests(output) {
   return seen ? total : null;
 }
 
-// ANS_PUSH_GATE_TIMEOUT is the suite's budget in seconds. A value that is not a
-// positive number, or past the timer's ceiling, is a gate that cannot do its job,
-// so it stops the push with exit 2 instead of running under a budget nobody
-// asked for.
+// Design: reads ANS_PUSH_GATE_TIMEOUT; the default and the exit-2 rule are stated above.
 function readSuiteTimeout() {
   const raw = process.env.ANS_PUSH_GATE_TIMEOUT;
   if (raw === undefined || raw.trim() === "") return DEFAULT_SUITE_TIMEOUT_SECONDS;

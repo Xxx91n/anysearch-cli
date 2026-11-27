@@ -111,6 +111,17 @@ test("a suite that runs past its budget stops the tree and keeps the output", as
   });
 });
 
+// A bounded wait for text a child writes after it exits: the exit event and the
+// pipe's last bytes are separate events. The cap keeps a broken pipe from hanging
+// the test.
+async function waitForText(seen, limit) {
+  const until = Date.now() + limit;
+  while (Date.now() < until) {
+    if (seen()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 // The cap's reason for existing: a process outside the killed group keeps the
 // pipe open, so the close event never fires. The gate must still answer — the
 // wait is capped, and the answer must leave the process. POSIX only: `detached`
@@ -124,11 +135,7 @@ test(
       await withPnpmShim(writePipeHoldingPnpm, async (bin) => {
         // spawnSync would block until the holder closes the pipe, so this test
         // measures the gate's own exit instead of waiting for the streams.
-        const env = { ...process.env };
-        delete env.ANS_PUSH_GATE_TIMEOUT;
-        env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
-        Object.assign(env, overrides, { ANS_PUSH_GATE_TIMEOUT: "2" });
-        delete env.PREFLIGHT_GATE_TESTS;
+        const env = gateEnv(bin, { ...overrides, ANS_PUSH_GATE_TIMEOUT: "2" });
         env.PREFLIGHT_SELF_TEST = "0";
         const gate = spawn(process.execPath, [join(repoRoot, "scripts", "preflight-test.mjs"), "--full"], {
           cwd: repoRoot,
@@ -145,6 +152,9 @@ test(
         });
         const started = Date.now();
         const code = await new Promise((resolve) => gate.on("exit", resolve));
+        // The exit and the pipe's last bytes are separate events: wait for the
+        // line the assertions read, bounded, before judging the answer.
+        await waitForText(() => /timed out after 2s/.test(err), 5000);
         const waited = Date.now() - started;
         const holder = Number(/HOLDER=(\d+)/.exec(out)?.[1]);
         try {
@@ -165,10 +175,8 @@ test(
   },
 );
 
-// Design: the count comes from the file on disk, not from a tail kept in memory:
-// a suite that prints a lot pushes the summary out of any fixed-size tail. The
-// default budget and its fifteen-second heartbeat show in the banner, so a run
-// without the variable proves both numbers the ticket asks for.
+// Design: the fixture prints more than the 64 KiB tail holds, so only the file can
+// supply the count. The banner also pins the default budget and heartbeat.
 test("a green run counts the tests from the file and deletes it", async () => {
   await withTempDir(async ({ dir, overrides }) => {
     await withPnpmShim(writeCountingPnpm, async (bin) => {
@@ -868,20 +876,26 @@ test("no refs on stdin falls back to the working tree and says so", async () => 
   });
 });
 
-function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrides } = {}) {
+// The environment a gate run gets: the fixture's bin first on PATH and the
+// operator's own gate settings removed, so a shell variable cannot change what a
+// fixture asserts. One copy, so the two callers cannot drift apart.
+function gateEnv(bin, overrides) {
   const env = { ...process.env };
-  // A budget in the operator's shell must not change what a fixture asserts;
-  // the tests that want one set it through overrides below.
   delete env.ANS_PUSH_GATE_TIMEOUT;
+  delete env.PREFLIGHT_GATE_TESTS;
+  delete env.PREFLIGHT_SELF_TEST;
   // Read PATH through process.env, which is case-insensitive on Windows: the
   // spread above keeps the original key's casing, so env.PATH can be undefined
   // and the real PATH would be dropped, hiding git from the child.
   env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
   if (process.platform === "win32") env.Path = env.PATH;
   if (overrides) Object.assign(env, overrides);
-  delete env.PREFLIGHT_GATE_TESTS;
+  return env;
+}
+
+function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrides } = {}) {
+  const env = gateEnv(bin, overrides);
   if (gateTests || selfTest) {
-    delete env.PREFLIGHT_SELF_TEST;
     if (gateTests) env.PREFLIGHT_GATE_TESTS = gateTests;
   } else {
     // A full run would re-enter this file's own tests through the self-test.
@@ -1028,7 +1042,12 @@ function writePipeHoldingPnpm(bin) {
 // A pnpm that prints two test summaries and passes: the green line's count is the
 // sum of both, read from the file rather than from a tail in memory.
 function writeCountingPnpm(bin) {
-  writeNodePnpm(bin, "count.mjs", ['console.log("pnpm ran");', 'console.log("ℹ tests 3");', 'console.log("ℹ tests 4");', ""]);
+  // The summaries come first and more than the 64 KiB tail follows them, so only
+  // the file on disk can supply the count.
+  const lines = ['console.log("pnpm ran");', 'console.log("ℹ tests 3");', 'console.log("ℹ tests 4");'];
+  for (let i = 0; i < 2000; i += 1) lines.push(`console.log("padding ${"x".repeat(60)} ${i}");`);
+  lines.push("");
+  writeNodePnpm(bin, "count.mjs", lines);
 }
 
 // A pnpm whose output is longer than the failure recap: 150 lines, then a failed
@@ -1172,7 +1191,7 @@ function dropLeftoverHome(result) {
 // The path the gate prints for a run's output file. A red or timed-out run keeps
 // the file and names it; a green run deletes it and names nothing.
 function runOutputFile(output) {
-  const match = /\[preflight\] full output: (.+)$/m.exec(output);
+  const match = /\[preflight\] (?:full output|partial output[^:]*|incomplete output file): (.+)$/m.exec(output);
   return match ? match[1].trim() : null;
 }
 
