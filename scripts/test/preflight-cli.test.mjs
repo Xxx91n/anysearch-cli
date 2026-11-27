@@ -176,6 +176,7 @@ test(
           err += chunk;
         });
         const started = Date.now();
+        let exited = false;
         try {
           // The test's own cap is 25s, looser than the 20s assertion below: a
           // slow answer fails on `waited`, no answer fails on "never exited".
@@ -186,6 +187,7 @@ test(
               resolve(exitCode);
             });
           });
+          exited = true;
           // Measure the gate's own exit first: the wait below adds up to five
           // seconds of polling that are not the gate's time.
           const waited = Date.now() - started;
@@ -197,21 +199,10 @@ test(
           assert.equal(code, 1, err);
           assert.match(err, /timed out after 2s/);
         } finally {
-          // The cleanup covers the reject above too: a gate that never exits must
-          // not leave itself, the suite it spawned, or the holder on the machine.
-          // pnpm is detached (its own group), so the group is what gets killed.
-          const pnpm = Number(/PNPM=(\d+)/.exec(out)?.[1]);
-          const holder = Number(/HOLDER=(\d+)/.exec(out)?.[1]);
-          if (pnpm) {
-            try {
-              process.kill(-pnpm, "SIGKILL");
-            } catch {}
-          }
-          if (holder) {
-            try {
-              process.kill(holder);
-            } catch {}
-          }
+          // A gate that answered already killed its own group at the deadline;
+          // its pids may belong to someone else by now, so nothing is killed
+          // here. Only a gate that never answered has leftovers to take.
+          if (!exited) killLeftovers(out);
           gate.kill("SIGKILL");
         }
       });
@@ -461,15 +452,7 @@ test("an interrupted run keeps the test home and stops the whole tree", { skip: 
       await waitGone(Number(/^GRANDCHILD=(\d+)$/m.exec(out)[1]));
     } finally {
       gate.kill("SIGKILL");
-      // pnpm is the group leader (the gate spawns it detached), so one group
-      // kill takes the grandchild with it; killing the grandchild's own pid as
-      // a group would target an unrelated group number on a busy machine.
-      const pnpm = /^PNPM=(\d+)$/m.exec(out);
-      if (pnpm) {
-        try {
-          process.kill(-Number(pnpm[1]), "SIGKILL");
-        } catch {}
-      }
+      killLeftovers(out);
       dropLeftoverHome({ stdout: out, stderr: err });
     }
   });
@@ -1165,8 +1148,8 @@ function writeCountingPnpm(bin) {
 // the file it kept is a prefix of the run and has to be named as one.
 function writeSignalPnpm(bin) {
   // Write first, then signal: a signal that wins the race leaves an empty file,
-  // the reason line reads `no output to show`, and the test goes red for a
-  // question the gate answered correctly.
+  // the reason line reads `no output to show`, and the test's pointer assertion
+  // goes red.
   writeNodePnpm(bin, "signal.mjs", [
     'process.stdout.write("suite started" + "\\n", () => process.kill(process.pid, "SIGTERM"));',
     "",
@@ -1369,6 +1352,24 @@ function writeSleepingPnpm(bin) {
   ].join("\n");
   write(join(bin, "pnpm"), `${sh}\n`);
   chmodSync(join(bin, "pnpm"), 0o755);
+}
+
+// pnpm is the group leader (the gate spawns it detached), so one group kill takes
+// the grandchild with it; killing a grandchild's own pid as a group would target
+// an unrelated group number on a busy machine. The holder sits outside the group.
+function killLeftovers(out) {
+  const group = Number(/^PNPM=(\d+)$/m.exec(out)?.[1]);
+  const holder = Number(/^HOLDER=(\d+)$/m.exec(out)?.[1]);
+  if (group) {
+    try {
+      process.kill(-group, "SIGKILL");
+    } catch {}
+  }
+  if (holder) {
+    try {
+      process.kill(holder, "SIGKILL");
+    } catch {}
+  }
 }
 
 async function waitGone(pid) {
