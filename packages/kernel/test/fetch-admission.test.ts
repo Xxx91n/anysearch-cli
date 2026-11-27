@@ -94,6 +94,9 @@ assert(!fetchCredentialHit("https://example.com/posts/2026/05/hello-world", "exa
   "a normal path is not a credential");
 assert(!fetchCredentialHit("https://example.com/?q=hello", "example.com/?q=hello"),
   "a normal query is not a credential");
+assert(!fetchCredentialHit("https://example.com/?next=posts/2024/LongCamelTitleNoSeparator",
+  "example.com/?next=posts/2024/LongCamelTitleNoSeparator"),
+  "a long query value with slashes but no token symbol is not a credential");
 assert(!fetchCredentialHit("https://github.com/o/r/blob/0123456789abcdef0123456789abcdef01234567/file.ts",
   "github.com/o/r/blob/0123456789abcdef0123456789abcdef01234567/file.ts"),
   "a 40-character commit SHA is not a credential");
