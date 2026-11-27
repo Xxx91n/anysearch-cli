@@ -960,7 +960,9 @@ function stepDocClaims() {
   if (!/Promise\.race\([\s\S]{0,200}?\bdeadline\b[\s\S]{0,80}?\bcallerAborted\b/.test(code)) fail("engine fanout race no longer waits on the deadline and the caller abort");
   if (!/const abortAllUnsettled = \([\s\S]{0,120}=>\s*\{[\s\S]{0,120}for \([^)]*<\s*controllers\.length\s*;[^)]*i\+\+[^)]*\)[\s\S]{0,200}abortArm\([^)]*reason/.test(code)) fail("engine.ts helper must abort every unsettled arm and pass the reason");
   if (!/setTimeout\(\(\) => \{[\s\S]{0,80}abortAllUnsettled\([\s\S]{0,40}?\)[\s\S]{0,40}deadlineResolve\(\)[\s\S]{0,40}\}, this\.requestTimeoutMs\)/.test(code)) fail("engine deadline no longer aborts unsettled arms with this.requestTimeoutMs");
-  if (!/this\.requestTimeoutMs = (?:opts\?\.requestTimeoutMs|requestedTimeout) \?\? DEFAULT_REQUEST_TIMEOUT_MS;/.test(code)) fail("engine request deadline no longer defaults from DEFAULT_REQUEST_TIMEOUT_MS");
+  // the assignment must go through the validated local: matching opts?.requestTimeoutMs
+  // here would let the range check above be bypassed while both guards stayed green.
+  if (!/this\.requestTimeoutMs = requestedTimeout \?\? DEFAULT_REQUEST_TIMEOUT_MS;/.test(code)) fail("engine request deadline no longer defaults from DEFAULT_REQUEST_TIMEOUT_MS");
   if (!/const requestedTimeout = opts\?\.requestTimeoutMs;/.test(code)) fail("engine requestedTimeout must come from opts.requestTimeoutMs");
   if ((code.match(/abortedArms\.has\(i\)\)\s*return;/g) ?? []).length < 2) fail("engine.ts lost the cancelled-vs-failed guard in one of its settle handlers");
   const limits = fs.readFileSync(path.join(ROOT, "docs", "limitations.md"), "utf8");
