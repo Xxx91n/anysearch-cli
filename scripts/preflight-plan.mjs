@@ -2,17 +2,16 @@
 // which workspace packages the rest touches, and which packages have to run
 // because they use one of them.
 //
-// Design: the plan answers in one of seven modes, and the caller prints each
-// one differently. "incremental" and "readers" run the packages the
-// change can break; "full" runs everything and only a forced run asks for it;
-// "none" and "docs" have nothing to run and say why. The final two have nothing
-// to run either, but they are not "nothing to do": "unowned" is a change
-// carrying a file no package can claim — the gate says it skipped, because no
-// rule here names what that file can break; "broken" is a repository the gate
-// cannot read at all (a damaged manifest, no workspace declaration, a reader
-// that is gone) — the caller stops the push with exit 2 instead of guessing.
-// Skipping and stopping are two different answers, and only the second one is a
-// fault. Neither is a pass.
+// Design: seven modes, each printed differently by the caller — "incremental"
+// and "readers" run the packages the change can break; "full" runs everything
+// and only a forced run asks for it; "none" and "docs" have nothing to run and
+// say why. The final two have nothing to run either, but they are not "nothing
+// to do": "unowned" is a change carrying a file no package can claim — the
+// gate says it skipped, because no rule here names what that file can break;
+// "broken" is a repository the gate cannot read at all (a damaged manifest, no
+// workspace declaration, a reader that is gone) — the caller stops the push
+// with exit 2 instead of guessing. Skipping and stopping are two different
+// answers, and only the second one is a fault. Neither is a pass.
 //
 // Design: the gate runs the changed packages plus every package that depends
 // on them, and no upstream tests: turbo's test task builds a package's
@@ -69,9 +68,9 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
   // stopped push.
   if (docsOnly(files)) return { mode: "docs", reason: "documentation only", files, packages: [] };
 
-  const { packages, nameless, unreadable } = readWorkspaceReport(root);
-  if (unreadable) {
-    return broken(`cannot read ${unreadable}`, "repair that manifest, then push again", files);
+  const { packages, nameless, unreadableManifest } = readWorkspaceReport(root);
+  if (unreadableManifest) {
+    return broken(`cannot read ${unreadableManifest}`, "repair that manifest, then push again", files);
   }
   if (packages.length === 0) {
     // The workspace looks empty because its manifests have no name; naming the
@@ -79,7 +78,7 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     if (nameless.length > 0) {
       return broken(
         `no workspace packages found; package.json without a name in: ${nameless.join(", ")}`,
-        "give those manifests a name, then push again",
+        NAMELESS_FIX,
         files,
       );
     }
@@ -120,7 +119,7 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     if (namelessHits.length > 0) {
       return broken(
         `files under a directory whose package.json has no name: ${namelessHits.join(", ")}`,
-        "give those manifests a name, then push again",
+        NAMELESS_FIX,
         files,
       );
     }
@@ -137,6 +136,10 @@ export function planPreflight(root, changedFiles, { forceFull = false } = {}) {
     packages: [...new Set([...readerPackages, ...withDependents(touched, packages)])].sort(),
   };
 }
+
+// A manifest with no name is a damaged repository in both places it can show
+// up — no package at all, or a change under one — so the repair is one line.
+const NAMELESS_FIX = "give those manifests a name, then push again";
 
 // The gate cannot read the repository it is standing in, so it has nothing to
 // run and no right to guess. The reason names what it could not read and the
@@ -266,7 +269,9 @@ function readWorkspaceReport(root) {
     const manifest = readManifest(path.join(root, dir, "package.json"));
     // The first unreadable manifest, in directory order, is the one worth
     // naming: fixing it is what lets the next run answer.
-    if (manifest === UNREADABLE) return { packages: null, nameless: [], unreadable: `${dir}/package.json` };
+    if (manifest === UNREADABLE) {
+      return { packages: null, nameless: [], unreadableManifest: `${dir}/package.json` };
+    }
     if (manifest === null) continue; // no package.json: not a package
     if (manifest === NAMELESS) {
       nameless.push(dir);
@@ -277,7 +282,7 @@ function readWorkspaceReport(root) {
   return {
     packages: packages.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
     nameless: nameless.sort(),
-    unreadable: null,
+    unreadableManifest: null,
   };
 }
 
@@ -337,8 +342,9 @@ export function packageForFile(file, packages) {
 }
 
 // The root has no direct YAML dependency and only the `packages:` list matters,
-// so read that block here. A pattern this cannot expand leaves packages
-// undiscovered, which falls back to the full suite.
+// so read that block here. A pattern this cannot expand leaves its packages
+// undiscovered: when that leaves none, the plan answers broken, never a silent
+// pass.
 function workspacePatterns(root) {
   const file = path.join(root, "pnpm-workspace.yaml");
   let text;

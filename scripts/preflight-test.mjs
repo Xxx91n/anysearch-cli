@@ -11,10 +11,12 @@
 // splitting a commit costs no test run. A push runs this gate and a merge waits
 // for one full run. See AGENTS.md.
 //
-// Design: the exit code is the answer: 0 = skipped or green, 1 = a test
-// went red (or the run was cut short), 2 = the gate itself could not do its
-// job. Nothing that runs out of the gate's own control borrows 1 — that would
-// read as "the code is bad" when the truth is "nobody looked".
+// Design: the exit code is the answer — 0 = skipped or green, 1 = the run did
+// not pass, 2 = the gate itself could not do its job. An interrupt keeps its
+// signal's code (130/143) instead of borrowing one of the three, because a
+// person pressing Ctrl-C did not fail a test. Nothing out of the gate's own
+// control borrows 1 either: that would read as "the code is bad" when the
+// truth is "nobody looked".
 //
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
@@ -99,11 +101,12 @@ if (args.length === 1 && args[0] === "--staged") {
   process.exit(0);
 }
 
-const change = readChange();
-if (change.note) console.log(`[preflight] ${change.note}`);
-const plan = change.unknown
-  ? unreadableChange(change.unknown)
-  : planPreflight(root, change.files, { forceFull: args.includes("--full") });
+// The repair for a change set git cannot name: the usual cause is a base the
+// clone never fetched, so fetch first; --no-verify is the way past a gate that
+// has no answer. It sits above the call because planRun reads it.
+const FETCH_FIRST = "run `git fetch origin` first — a stale origin/HEAD is the usual cause";
+
+const plan = planRun();
 
 if (plan.mode === "none") {
   console.log("[preflight] nothing to run: no changed files");
@@ -119,15 +122,17 @@ if (plan.mode === "docs") {
   process.exit(0);
 }
 
-// Design: a file no package owns is skipped, not run at full width. The
-// old fallback spent the whole suite on a file nobody could name a reader for,
-// then got killed or bypassed, so "nothing ran" read the same as "it failed".
-// Like the docs skip it says skipped and never green; unlike the docs skip the
-// coverage it drops is someone else's, so the line names where it lives.
+// Design: a file no package owns is skipped, not run at full width — the old
+// fallback spent the whole suite on a file nobody could name a reader for, then
+// got killed or bypassed, so "nothing ran" read the same as "it failed". Like
+// the docs skip it says skipped and never green. It also has to say that the
+// whole change ran nothing: a package change next to an unowned file loses its
+// run too, and a line counting only the unowned files would hide that.
 if (plan.mode === "unowned") {
   console.log(
-    `[preflight] skipped: ${plan.outside.length} changed file(s) belong to no workspace package — no test ran: ${listFirst(plan.outside)}`,
+    `[preflight] skipped: ${plan.outside.length} changed file(s) belong to no workspace package — no test ran for the whole change`,
   );
+  console.log(`[preflight] skipped files: ${listFirst(plan.outside)}`);
   console.log("[preflight] a skipped run is not a pass: nothing here is evidence that the change is good");
   console.log("[preflight] this coverage is CI's: check-build runs the full suite when no package owns a file");
   console.log("[preflight] to run the whole suite here anyway: node scripts/preflight-test.mjs --full");
@@ -135,9 +140,9 @@ if (plan.mode === "unowned") {
 }
 
 // Design: a repository the gate cannot read stops the push with exit 2 — its
-// own code, so 1 keeps meaning "a test went red". The reason names what
-// it could not read, the fix names the repair, and --no-verify is the way past a
-// gate that has no answer. CI still runs, so the escape hatch does not hide the
+// own code, so 1 keeps meaning "a test went red". The reason names what it could
+// not read, the fix names the repair, and --no-verify is the way past a gate
+// that has no answer. CI still runs, so the escape hatch does not hide the
 // change from anyone but the operator.
 if (plan.mode === "broken") {
   writeStderr(`[preflight] blocked: ${plan.reason}`);
@@ -182,13 +187,13 @@ for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
   });
 }
 
-// Design: the gate's own tests follow `full`, not `scripts/`. A change
-// under scripts/ is now unowned, so it never gets here: the self-test measures
-// 1m46s and does not fit a pre-push budget, and CI's check-build runs the same
-// files on every push. --full still runs them, because a person asking for the
-// strict run asked for the evidence too. PREFLIGHT_SELF_TEST=0 skips this for
-// the test that drives the script with a fake pnpm; PREFLIGHT_GATE_TESTS
-// replaces the group list so that test does not re-enter the whole suite.
+// Design: the gate's own tests follow `full`, not `scripts/` — a change under
+// scripts/ is now unowned, so it never gets here. The self-test measures 1m46s
+// and does not fit a pre-push budget, and CI's check-build runs the same files
+// on every push. --full still runs them, because a person asking for the strict
+// run asked for the evidence too. PREFLIGHT_SELF_TEST=0 skips this for the test
+// that drives the script with a fake pnpm; PREFLIGHT_GATE_TESTS replaces the
+// group list so that test does not re-enter the whole suite.
 if (selfTest) {
   // Design: the shared judgment that needs a YAML parser is asked for here, by
   // resolving the parser the same way check-workflows does — an uninstalled or
@@ -259,30 +264,42 @@ if (interrupted) {
 function readChange() {
   if (args.includes("--pushed")) {
     const input = readStdin();
-    if (input === null) return { unknown: "could not read the pushed refs" };
+    if (input === null) {
+      return {
+        unknown: "could not read the pushed refs",
+        fix: "git handed the hook nothing on stdin — run this script by hand to name the change",
+      };
+    }
     const pushed = pushedFiles(root, input);
-    if (pushed === PUSH_UNKNOWN) return { unknown: "could not read the pushed commits" };
+    if (pushed === PUSH_UNKNOWN) return { unknown: "could not read the pushed commits", fix: FETCH_FIRST };
     if (pushed !== null) return { files: pushed };
     const files = localFiles(root);
-    if (files === null) return { unknown: "git could not name the change" };
+    if (files === null) return { unknown: "git could not name the change", fix: FETCH_FIRST };
     return { files, note: "no refs on stdin, looked at the working tree instead" };
   }
   const files = localFiles(root);
-  return files === null ? { unknown: "git could not name the change" } : { files };
+  return files === null ? { unknown: "git could not name the change", fix: FETCH_FIRST } : { files };
+}
+
+// The plan for a run. `--full` never needs the change set — "run everything
+// anyway" is exactly what it is for — so an unreadable change set does not stop
+// it. Without `--full`, a change set git cannot name is a broken gate: nothing
+// starts, and the reason and its repair go to the caller.
+function planRun() {
+  const change = readChange();
+  if (change.note) console.log(`[preflight] ${change.note}`);
+  const forceFull = args.includes("--full");
+  if (!change.unknown) return planPreflight(root, change.files, { forceFull });
+  if (forceFull) {
+    return { mode: "full", reason: `${change.unknown}; --full runs everything anyway`, files: [], packages: [] };
+  }
+  return unreadableChange(change);
 }
 
 // A change set git cannot name is the gate being broken, not a reason to run
-// everything: the push stops with exit 2 and nothing starts. The usual
-// cause is a stale origin/HEAD on a branch git has never seen, so the fix says
-// fetch first; --no-verify is the way past a gate that has no answer.
-function unreadableChange(reason) {
-  return {
-    mode: "broken",
-    reason,
-    fix: "run `git fetch origin` first — a stale origin/HEAD is the usual cause",
-    files: [],
-    packages: [],
-  };
+// everything: the push stops with exit 2 and nothing starts.
+function unreadableChange({ unknown, fix }) {
+  return { mode: "broken", reason: unknown, fix, files: [], packages: [] };
 }
 
 // turbo names a failed task on its summary line, e.g. "Failed: @scope/app#test".

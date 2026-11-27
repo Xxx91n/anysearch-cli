@@ -520,8 +520,9 @@ test("a change no package owns is skipped, runs nothing, and never claims green"
     assert.equal(result.status, 0, result.stderr);
     assert.match(
       result.stdout,
-      /skipped: 1 changed file\(s\) belong to no workspace package — no test ran: scripts\/test\/preflight-plan\.test\.mjs/,
+      /skipped: 1 changed file\(s\) belong to no workspace package — no test ran for the whole change/,
     );
+    assert.match(result.stdout, /skipped files: scripts\/test\/preflight-plan\.test\.mjs/);
     assert.match(result.stdout, /not a pass/);
     assert.match(
       result.stdout,
@@ -646,6 +647,20 @@ test("a pushed ref runs the gate on the files it carries", async () => {
     assert.equal(result.status, 0);
     assert.match(result.stdout, /run: @anysearch-cli\/dsh-plugin/);
     assert.match(result.stdout, /--filter=@anysearch-cli\/dsh-plugin/);
+  });
+});
+
+test("--full still runs the suite when the change set cannot be read", async () => {
+  // --full never consults the change set, so an unreadable one does not stop
+  // it: that is what "run everything anyway" means.
+  await withWorkspace({ pnpm: passingPnpm }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--pushed", "--full"], { input: "not a ref line" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /full suite: could not read the pushed commits; --full runs everything anyway/,
+    );
+    assert.match(result.stdout, /pnpm ran/);
   });
 });
 
