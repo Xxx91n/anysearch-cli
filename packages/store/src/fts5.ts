@@ -89,8 +89,8 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
   queries: string[],
   limit: number,
   extraArms?: { label: string; ids: string[] }[], // content/entity/... labeled arms, weight from the registry
-  // Ids whose row carries a page body. Called once with every fused
-  // candidate, so the body tie-break costs one query, not one per list.
+  // Ids whose row carries a page body. Called once, and only when two or more
+  // lists are fused (a single list has no tie to break).
   bodyLookup?: (ids: number[]) => ReadonlySet<number>,
 ): Promise<THit[]> {
   const lists: string[][] = [];

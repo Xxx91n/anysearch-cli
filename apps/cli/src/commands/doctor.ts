@@ -111,15 +111,18 @@ function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): st
   }
   const needsBlocks = backlog.pagesWithoutChunks > 0;
   const needsVectors = backlog.pending > 0;
-  let repair = "没有积压";
-  if (needsBlocks || needsVectors) {
+  let repair: string;
+  if (chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {
+    repair = needsBlocks
+      ? "embedding 包没装：跑 " + BACKFILL_COMMAND + " 可重建缺块；块向量要装包后才能补"
+      : "embedding 包没装，块向量现在补不了";
+  } else if (needsBlocks || needsVectors) {
     const actions: string[] = [];
     if (needsBlocks) actions.push("重建缺块");
     if (needsVectors) actions.push("补块向量");
     repair = "跑 " + BACKFILL_COMMAND + " " + actions.join("、");
-    if (needsVectors && chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {
-      repair += "；块向量要装 embedding 包后才能补";
-    }
+  } else {
+    repair = "没有积压";
   }
   return facts.join("；") + "。" + repair;
 }
@@ -1152,12 +1155,9 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     // 不用构造器，免得 doctor 顺手迁移或做备份。
     if (dbPath !== ":memory:" && existsSync(dbPath)) {
       try {
-        // 按当前模型统计；没装 embedding 包时退回按任意模型统计。
+        // 口径固定为当前模型；没装包时用哨兵，此时一条向量都匹配不到。
         const chunkModel = await embeddingModelId();
-        const backlog = readChunkVectorBacklogFile(
-          dbPath,
-          chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? undefined : chunkModel,
-        );
+        const backlog = readChunkVectorBacklogFile(dbPath, chunkModel);
         if (!backlog) {
           report.add({
             layer: "data",

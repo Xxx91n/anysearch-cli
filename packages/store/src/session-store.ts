@@ -1804,7 +1804,10 @@ export class SqliteSessionStore implements SessionStore {
     let failed = 0;
     const failedIds = new Set<number>();
     for (;;) {
-      const rows = pendingChunkVectors(this.db, batch, model).filter((row) => !failedIds.has(row.chunkId));
+      // Fetch past the known failures, otherwise a batch full of them starves
+      // the normal blocks behind them and the loop exits early.
+      const rows = pendingChunkVectors(this.db, batch + failedIds.size, model)
+        .filter((row) => !failedIds.has(row.chunkId));
       if (rows.length === 0) break;
       scanned += rows.length;
       const result = await this.embedChunkRows(rows, model);

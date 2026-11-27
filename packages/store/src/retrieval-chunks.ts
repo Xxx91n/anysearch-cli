@@ -45,15 +45,21 @@ function owesVectorSql(model?: string): { sql: string; params: string[] } {
   };
 }
 
-/** A block of a live page that still has no usable vector. */
-function missingVectorFrom(model?: string): { sql: string; params: string[] } {
+/** Blocks of live pages with a body, optionally for one page, that owe a vector. */
+function owedBlocksFrom(model?: string, pageId?: number): { from: string; params: Array<string | number> } {
   const owes = owesVectorSql(model);
   return {
-    sql: "FROM retrieval_chunks c JOIN retrieval_results r ON r.id = c.page_id " +
+    from: "FROM retrieval_chunks c JOIN retrieval_results r ON r.id = c.page_id " +
       "WHERE c.level = " + LEVEL_BLOCK + " AND " + HAS_PAGE_BODY_EXPR + " AND" + LIVE_PAGE_SQL +
-      " AND " + owes.sql,
-    params: owes.params,
+      " AND " + owes.sql + (pageId === undefined ? "" : " AND c.page_id = ?"),
+    params: [...owes.params, ...(pageId === undefined ? [] : [pageId])],
   };
+}
+
+/** A block of a live page that still has no usable vector. */
+function missingVectorFrom(model?: string): { sql: string; params: Array<string | number> } {
+  const owed = owedBlocksFrom(model);
+  return { sql: "SELECT COUNT(*) AS n " + owed.from, params: owed.params };
 }
 
 export interface MemorySection {
@@ -153,7 +159,7 @@ export interface ChunkVectorBacklog {
 /** Blocks that have a vector, and blocks of live pages that still owe one. */
 export function chunkVectorBacklog(db: Database.Database, model?: string): ChunkVectorBacklog {
   const missing = missingVectorFrom(model);
-  const pending = (db.prepare("SELECT COUNT(*) AS n " + missing.sql).get(...missing.params) as { n: number }).n;
+  const pending = (db.prepare(missing.sql).get(...missing.params) as { n: number }).n;
   const embedded = (db.prepare(
     "SELECT COUNT(*) AS n FROM retrieval_chunk_vectors v " +
       "JOIN retrieval_chunks c ON c.id = v.chunk_id " +
@@ -217,23 +223,16 @@ function chunksOwingVectors(
   db: Database.Database,
   opts: { pageId?: number; limit?: number; model?: string },
 ): PendingChunkVector[] {
-  // A model-aware reader also re-claims blocks whose vector belongs to a
-  // previous embedding model; the plain reader (doctor) counts any vector.
-  const owes = owesVectorSql(opts.model);
-  const page = opts.pageId === undefined ? "" : " AND c.page_id = ?";
+  // Same builder as the backlog count: a model-aware reader also re-claims
+  // blocks whose vector belongs to a previous model.
+  const owed = owedBlocksFrom(opts.model, opts.pageId);
   // `0` asks for nothing; only `undefined` means "no limit".
   const limit = opts.limit === undefined ? "" : " LIMIT " + Math.max(0, Math.floor(opts.limit));
-  const params = [
-    ...owes.params,
-    ...(opts.pageId === undefined ? [] : [opts.pageId]),
-  ];
   return db.prepare(
     "SELECT c.id AS chunkId, c.heading_path AS headingPath, " +
       "substr(r.content, c.start_offset + 1, c.end_offset - c.start_offset) AS text " +
-      "FROM retrieval_chunks c JOIN retrieval_results r ON r.id = c.page_id " +
-      "WHERE c.level = " + LEVEL_BLOCK + " AND " + HAS_PAGE_BODY_EXPR + " AND" + LIVE_PAGE_SQL +
-      " AND " + owes.sql + page + limit,
-  ).all(...params) as PendingChunkVector[];
+      owed.from + limit,
+  ).all(...owed.params) as PendingChunkVector[];
 }
 
 /** Blocks of one page that still have no vector for this model. */
@@ -461,7 +460,8 @@ export function searchChunkPages(
   const textBySection = new Map(texts.map((t) => [t.id, t.truncated ? t.text + "…" : t.text]));
   const hits: ChunkPageHit[] = [];
   for (const pageId of pageIds) {
-    const page = byPage.get(pageId)!;
+    const page = byPage.get(pageId);
+    if (!page) continue;
     const rank = bestRank.get(pageId)!;
     const bestSectionId = bestSection.get(pageId)!;
     hits.push({

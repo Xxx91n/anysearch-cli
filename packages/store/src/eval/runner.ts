@@ -52,9 +52,10 @@ export interface OpRecord {
   armDeltas?: Record<string, ArmDeltaRecord>;
 }
 
-export type MemoryArmLabel = "fts" | "entity" | "vector" | "relation" | "semantic";
+export type MemoryArmLabel = "fts" | "content" | "entity" | "vector" | "relation" | "semantic";
 export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "observational"> = {
   fts: "anchor",
+  content: "observational", // known to the type, not measured until a golden case writes a body
   entity: "critical",
   vector: "critical",
   relation: "critical",

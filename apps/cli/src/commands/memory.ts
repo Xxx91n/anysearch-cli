@@ -58,7 +58,6 @@ export async function runMemory(args: string[]): Promise<number> {
       chunks.embedded + "/" + chunks.scanned + " block vector(s)" +
       (chunks.failed > 0 ? " (" + chunks.failed + " failed)" : "") +
       (chunks.rebuildFailed > 0 ? " (" + chunks.rebuildFailed + " page(s) not rebuilt)" : "") + "\n");
-    // 失败多半是模型下不下来，或者根本没装 embedding 包。
     if (chunks.rebuildFailed > 0) {
       process.stderr.write("hint: " + chunks.rebuildFailed + " page(s) could not be rebuilt; retry ans memory backfill-vectors.\n");
     }

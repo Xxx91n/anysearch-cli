@@ -159,6 +159,7 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
       // level LIKE lane takes them instead of returning nothing.
       if (tokens.length === 1 && [...run.text].length === 1) {
         loneHan.push(tokens[0]!);
+        budget -= 1;
         continue;
       }
       groups.push('"' + tokens.slice(0, budget).join(" ") + '"');

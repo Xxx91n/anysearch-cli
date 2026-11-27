@@ -89,8 +89,9 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             // material, negative = knowledge row (SessionStore's semantic arm).
             rowid: h.rowid,
             provenance: "internal",
-            // 四个字段恒定出现；url/fetchedAt 缺了给 null，hasContent 缺了给
-            // false，sections 缺了给 []。字段含义见 docs/mcp-server.md。
+            // The four fields always appear: url/fetchedAt are null when absent,
+            // hasContent is false, sections is []. Field meanings live in
+            // docs/mcp-server.md.
             url: h.url ?? null,
             fetchedAt: h.fetchedAt ?? null,
             hasContent: h.hasContent === true,
