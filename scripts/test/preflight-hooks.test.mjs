@@ -539,7 +539,9 @@ test("a gate script that is not in the checkout is a problem, not a healthy stat
     rmSync(join(clone, "scripts", "preflight-test.mjs"));
 
     const status = box.run(clone, ["status"]);
-    assert.equal(status.status, 1, status.stdout);
+    // 2, not 1: nothing ran, so this is nobody having looked, the gate's own code
+    // for "the gate could not do its job".
+    assert.equal(status.status, 2, status.stdout);
     assert.match(status.stderr, /blocked: the gate script is not in this checkout: .*preflight-test\.mjs/);
     assert.doesNotMatch(status.stdout, /mode:/);
   });
@@ -552,7 +554,7 @@ test("a gate script that does not parse is a problem too", () => {
     writeFileSync(join(clone, "scripts", "preflight-test.mjs"), "export const = ;\n");
 
     const status = box.run(clone, ["status"]);
-    assert.equal(status.status, 1, status.stdout);
+    assert.equal(status.status, 2, status.stdout);
     assert.match(status.stderr, /blocked: the gate script does not parse: SyntaxError/);
   });
 });
@@ -566,7 +568,7 @@ test("a gate script whose import is gone is a problem too", () => {
     writeFileSync(join(clone, "scripts", "preflight-test.mjs"), 'import "./preflight-gone.mjs";\n');
 
     const status = box.run(clone, ["status"]);
-    assert.equal(status.status, 1, status.stdout);
+    assert.equal(status.status, 2, status.stdout);
     assert.match(status.stderr, /blocked: the gate script imports a file that is not there: .*preflight-gone\.mjs/);
   });
 });
@@ -578,8 +580,8 @@ test("a repository the gate cannot read is blocked, not reported as fine", () =>
     writeFileSync(join(clone, "packages", "foo", "package.json"), "{ broken\n");
 
     const status = box.run(clone, ["status"]);
-    assert.equal(status.status, 1, status.stdout);
-    assert.match(status.stderr, /mode: blocked/);
-    assert.match(status.stderr, /blocked: cannot read packages\/foo\/package\.json/);
+    assert.equal(status.status, 2, status.stdout);
+    assert.match(status.stderr, /blocked: the gate cannot read this repository/);
+    assert.match(status.stderr, /reason: cannot read packages\/foo\/package\.json/);
   });
 });

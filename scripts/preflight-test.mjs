@@ -300,9 +300,9 @@ function readChange() {
 function planRun() {
   const change = readChange();
   if (change.note) console.log(`[preflight] ${change.note}`);
-  // Design: ANS_PUSH_GATE=strict is the session-wide form of --full, so a person
-  // who wants the whole suite before every push sets it once; hooks:status reads
-  // the same switch and reports the mode this will run.
+  // Design: ANS_PUSH_GATE=strict is the session-wide form of --full — a person who
+  // wants the whole suite before every push sets it once, and hooks:status reads
+  // the same switch, so the mode it reports is the mode this runs.
   const forceFull = args.includes("--full") || strictPushGate();
   if (!change.unknown) return planPreflight(root, change.files, { forceFull });
   if (forceFull) {

@@ -139,9 +139,9 @@ const NAMELESS_FIX = "give those manifests a name, then push again";
 /**
  * Whether this shell asked for the whole suite on every push: `ANS_PUSH_GATE=strict`.
  *
- * Design: the switch lives here, next to the modes it selects, so the push gate
- * and `hooks:status` read one copy of the name and the value — a status line
- * that says which mode a push runs cannot then disagree with the run.
+ * Design: the switch lives here, next to the modes it selects — the push gate and
+ * `hooks:status` then read one copy of the name and the value, so a status line
+ * that says which mode a push runs cannot disagree with the run.
  *
  * @param {Record<string, string | undefined>} [env]
  */
