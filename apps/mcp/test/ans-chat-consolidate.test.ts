@@ -190,7 +190,8 @@ async function callConsolidate(args: Record<string, unknown>) {
   // A single material is below the batch threshold; the flag opts into the
   // correction exception. With no model configured the cluster reports
   // llmUnavailable (the honest shape), and the new count fields are present.
-  const res = await callConsolidate({ memoryIds: [idsB[0]!], allowSingleEvidence: true });
+  // idsB holds three revisions of one URL; only the newest is live (#613).
+  const res = await callConsolidate({ memoryIds: [idsB[idsB.length - 1]!], allowSingleEvidence: true });
   assert(!isError(res), "a single-evidence run without an LLM is a report, not an error");
   const sc = res?.result?.structuredContent as any;
   assert(sc?.report?.clustersTriggered === 1 && sc?.report?.llmUnavailable === 1,

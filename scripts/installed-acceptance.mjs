@@ -110,7 +110,7 @@ function sseToolCall(name, args, preamble) {
 
 function classify(body) {
   // 整理用的提示词带这些标题，普通对话请求不带。
-  if (body.includes("Summarize these episodic memories") || body.includes("You are a memory adjudicator")
+  if (body.includes("The materials are above") || body.includes("Summarize these episodic memories") || body.includes("You are a memory adjudicator")
     || body.includes("You are a context summarization assistant")) return "consolidate";
   // 已经拿到过工具结果的轮次，不能再要搜索：请求历史里还留着原来那句话，
   // 只看文字就会一直循环下去。

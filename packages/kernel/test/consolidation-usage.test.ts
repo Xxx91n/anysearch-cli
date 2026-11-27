@@ -321,7 +321,7 @@ async function main() {
     } as never;
     const seams = createConsolidationSeams(failing);
     const out = await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
-    assert(out === null, "a failed stream yields no summary (got " + JSON.stringify(out) + ")");
+    assert(typeof out === "object" && out !== null && out.text === null, "a failed stream yields no summary text (got " + JSON.stringify(out) + ")");
     assert(seams.usage.calls === 1, "the attempt is still counted");
   }
 

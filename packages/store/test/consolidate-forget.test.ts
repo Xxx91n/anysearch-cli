@@ -435,6 +435,13 @@ assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at
       assert(live.c === 1 && closed.c === 2,
         "same page: three versions leave one live and two closed (live=" + live.c + ", closed=" + closed.c + ")");
     }
+    // An all-replaced cluster means every version is closed. Close the one
+    // adjudication left live, then assert the run counts the dead cluster.
+    {
+      const d = new Database(dbPath3);
+      d.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE entity = 'OnePage' AND valid_until IS NULL").run();
+      d.close();
+    }
     seen = [];
     const skipRep = await st.consolidateMemory(
       { scope: { by: "memory", sessionIds: [], memoryIds: pageIds, sessionIdNotApplied: false } },
