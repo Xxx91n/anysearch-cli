@@ -177,9 +177,8 @@ test(
         });
         const started = Date.now();
         try {
-          // The cap is the test's own: without it a gate that never answers hangs
-          // the run until CI's timeout instead of failing here. It sits above the
-          // assertion below, so a slow answer fails as a slow answer, not a hang.
+          // The test's own cap is 25s, looser than the 20s assertion below: a
+          // slow answer fails on `waited`, no answer fails on "never exited".
           const code = await new Promise((resolve, reject) => {
             const cap = setTimeout(() => reject(new Error("the gate never exited")), 25000);
             gate.on("exit", (exitCode) => {
@@ -199,8 +198,15 @@ test(
           assert.match(err, /timed out after 2s/);
         } finally {
           // The cleanup covers the reject above too: a gate that never exits must
-          // not leave itself or the holder running on the machine.
+          // not leave itself, the suite it spawned, or the holder on the machine.
+          // pnpm is detached (its own group), so the group is what gets killed.
+          const pnpm = Number(/PNPM=(\d+)/.exec(out)?.[1]);
           const holder = Number(/HOLDER=(\d+)/.exec(out)?.[1]);
+          if (pnpm) {
+            try {
+              process.kill(-pnpm, "SIGKILL");
+            } catch {}
+          }
           if (holder) {
             try {
               process.kill(holder);
@@ -1136,6 +1142,9 @@ function writePipeHoldingPnpm(bin) {
     'const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "inherit", detached: true });',
     "child.unref();",
     'console.log(`HOLDER=${child.pid}`);',
+    // Named so the test can take the whole group down when the gate never gets
+    // far enough to stop it.
+    "console.log(`PNPM=${process.pid}`);",
     "setInterval(() => {}, 1000);",
     "",
   ]);
@@ -1155,9 +1164,9 @@ function writeCountingPnpm(bin) {
 // A pnpm that dies of a signal instead of exiting: the gate gets no exit code, so
 // the file it kept is a prefix of the run and has to be named as one.
 function writeSignalPnpm(bin) {
-  // Write first, then die: a signal sent while the line is still in the pipe
-  // leaves an empty file, and the reasons below would read `no output to show`
-  // instead of `see the output file`.
+  // Write first, then signal: a signal that wins the race leaves an empty file,
+  // the reason line reads `no output to show`, and the test goes red for a
+  // question the gate answered correctly.
   writeNodePnpm(bin, "signal.mjs", [
     'process.stdout.write("suite started" + "\\n", () => process.kill(process.pid, "SIGTERM"));',
     "",
