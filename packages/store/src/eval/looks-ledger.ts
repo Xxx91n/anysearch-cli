@@ -1,7 +1,6 @@
 // the preregistered OF look ledger is a git-committed, append-only
 // file at the repo root (`eval-looks.json`). It records one row per release-grade peek so the
 // OF alpha-spending sequence survives across runs without depending on local `.ship-gate/` state.
-// The docs golden corpus lives in eval-golden.json.
 //
 // Write policy (why ordinary runs never write it):
 // - merge-gate / CI runs set ANS_EVAL_NO_LOOK=1 -> read-only, never spend a look;
@@ -16,8 +15,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 export const LOOKS_LEDGER_SCHEMA = "anysearch/eval-looks@2";
 export const LOOKS_LEDGER_LEGACY_SCHEMA = "anysearch/eval-looks@1";
 export const LOOKS_LEDGER_MAX_ROWS = 50;
-// The schema_version sentinel the ledger file carries; kept with the ledger,
-// not with the corpus module it used to live in.
+// The eval-looks.json root carries this schema_version sentinel.
 export const EVAL_LOOKS_SCHEMA_VERSION = 1;
 
 export interface LooksLedgerEntry {

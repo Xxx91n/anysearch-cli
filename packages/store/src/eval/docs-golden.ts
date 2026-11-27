@@ -91,7 +91,9 @@ export interface DocsGoldenVerticalSpec {
   params?: Record<string, unknown>;
 }
 
-// four optional fixture fields (additive — no breaking change, hence no schema v2 migration).
+// Closed vocabularies: DOCS_GOLDEN_TOLERATED_SEGMENTS gates
+// expected.mustHitPaths.tolerate; DOCS_GOLDEN_STABILITY_CLASSES gates
+// entry.stability_class. Adding a value is a corpus-governance act.
 export const DOCS_GOLDEN_TOLERATED_SEGMENTS = ["locale", "version", "dated"] as const;
 export type DocsGoldenToleratedSegment = (typeof DOCS_GOLDEN_TOLERATED_SEGMENTS)[number];
 export const DOCS_GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "external"] as const;
