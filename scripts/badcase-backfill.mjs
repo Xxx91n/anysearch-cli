@@ -54,6 +54,7 @@ if (bc.status !== "open") fail("badcase " + id + " is not open (status=" + bc.st
 // 禁合成护栏：无真实观测不得回灌。
 if (!bc.observed || typeof bc.observed.results !== "number") fail(id + " has no observed block — synthetic input refused");
 if (!bc.evidence || typeof bc.evidence.command !== "string" || !bc.evidence.command.trim()) fail(id + " has no evidence.command — synthetic input refused");
+if (typeof bc.question !== "string" || bc.question.trim().length < 8) fail(id + " question must be a string of at least 8 characters");
 
 const golden = JSON.parse(readFileSync(GOLDEN, "utf8"));
 // Keep this schema literal in sync with DOCS_GOLDEN_SCHEMA in
@@ -142,6 +143,7 @@ if (into) {
     if (!allow.has(host)) fail(id + " mustHitHost " + host + " outside domains/docs.toml urlAllowlist");
   }
   for (const url of mustHitUrls) {
+    if (typeof url !== "string" || !/^https?:\/\//.test(url)) fail(id + " mustHitUrl must be http(s): " + url);
     let host;
     try { host = new URL(url).hostname; } catch { fail(id + " mustHitUrl unparseable: " + url); }
     if (!allow.has(host)) fail(id + " mustHitUrl host " + host + " outside domains/docs.toml urlAllowlist");
