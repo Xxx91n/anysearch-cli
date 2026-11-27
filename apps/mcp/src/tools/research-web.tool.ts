@@ -171,6 +171,9 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           let callOutcome = lastOutcome;
           if (allResults.length > 0) callOutcome = "answer";
           else if (lastOutcome === "failed") callOutcome = "empty";
+          // One read for both halves: the same budget in the text JSON and in
+          // structuredContent, so the two copies cannot drift.
+          const deadlineMs = reportedDeadlineMs(eng);
           const summary = JSON.stringify(
             {
               question,
@@ -192,7 +195,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
               providersQueried: lastRoundQueried,
               providersCancelled: lastRoundCancelled,
               partial,
-              deadlineMs: reportedDeadlineMs(eng),
+              deadlineMs,
               // Same round: what each answered arm said it took.
               providerElapsedMs: lastRoundProviderElapsedMs,
               // Same record as structuredContent: some hosts read only this text half.
@@ -228,7 +231,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // Both always present. deadlineMs is the per-round budget, so a
             // multi-round call can wait up to rounds times that long.
             partial,
-            deadlineMs: reportedDeadlineMs(eng),
+            deadlineMs,
             providerElapsedMs: lastRoundProviderElapsedMs,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,
