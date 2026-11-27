@@ -148,6 +148,10 @@ try {
   assert.equal(tightCap.requestTimeoutMs, 1500, "小数 cap 向下取整，不能反手放大成 15000");
   closeResult(tightCap);
 
+  const tinyCap = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: 20000, requestTimeoutCapMs: 0.5 });
+  assert.equal(tinyCap.requestTimeoutMs, 15000, "小于 1ms 的 cap 回落评测上限，不能变成 1ms 掐掉所有源");
+  closeResult(tinyCap);
+
   const hugeClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: 3_000_000_000, requestTimeoutCapMs: 3_000_000_000 });
   assert.equal(hugeClock.requestTimeoutMs, 2_147_483_647, "超过引擎上限的值和 cap 都夹到 2^31-1，不把 RangeError 甩给调用方");
   closeResult(hugeClock);

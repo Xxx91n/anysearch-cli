@@ -349,9 +349,11 @@ const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 // engine's ceiling is clamped rather than thrown from the constructor.
 function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_MS): number {
   if (raw === undefined || !Number.isInteger(raw) || raw <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
-  // A fractional cap is rounded down, never widened to the eval ceiling.
-  const cap = Number.isFinite(capMs) && capMs > 0
-    ? Math.min(Math.max(1, Math.floor(capMs)), MAX_REQUEST_TIMEOUT_MS)
+  // A cap at or above 1ms is rounded down. Anything smaller is invalid and
+  // falls back to the eval ceiling; it must not become a 1ms budget that
+  // cancels every arm.
+  const cap = Number.isFinite(capMs) && capMs >= 1
+    ? Math.min(Math.floor(capMs), MAX_REQUEST_TIMEOUT_MS)
     : EVAL_REQUEST_TIMEOUT_CAP_MS;
   return Math.min(raw, cap, MAX_REQUEST_TIMEOUT_MS);
 }
