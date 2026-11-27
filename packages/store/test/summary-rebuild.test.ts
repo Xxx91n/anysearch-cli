@@ -116,11 +116,12 @@ async function buildKnowledge(
 ): Promise<{ materialIds: number[]; knowledgeId: number }> {
   const ids: number[] = [];
   for (let i = 1; i <= 3; i++) {
-    // One entity key (clustering groups by entity), distinct URLs. The store's
-    // temporal supersede closes the earlier rows of that key as each new one is
-    // written, so only the LAST row stays live; `buildKnowledge` therefore uses
-    // the live survivor as the summary's source (see below).
-    ids.push(await seedEpisode(store, sessionId, urlBase + "-v" + i, entity + " v" + i, content, entity));
+    // #613: one entity key (clustering groups by entity), distinct URLs.
+    // Temporal supersede is per session, so each version is seeded in its own
+    // session and all three stay LIVE for the batch. The fixture still cites
+    // only the LAST row as the summary's source (see below).
+    const sid = i === 1 ? sessionId : (await store.createSession("eval")).id;
+    ids.push(await seedEpisode(store, sid, urlBase + "-v" + i, entity + " v" + i, content, entity));
   }
   const rep = await store.consolidateMemory(
     { scope: { by: "memory", sessionIds: [], memoryIds: [...ids], sessionIdNotApplied: false } },

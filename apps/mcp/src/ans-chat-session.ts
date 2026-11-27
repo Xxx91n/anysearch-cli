@@ -514,7 +514,17 @@ export function buildAnsChatConsolidateResult(
     (extra.budgetUnmetered
       ? "\nbudget: unmetered — " + (extra.budgetUnmeteredReason ?? "no budget row was registered") + "."
       : "") +
-    (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " model call(s) refused by the session cap" : "");
+    (report.budgetRejected > 0 ? "\nbudget: " + report.budgetRejected + " model call(s) refused by the session cap" : "") +
+    // #613: the 24k cluster budget and the quote contract. Printed only when
+    // they mattered, so a small all-shaped run reads as before.
+    ((report.clustersOverBudget ?? 0) > 0
+      ? "\nmaterial budget: " + report.clusterTokenBudget + " tokens per cluster; " + report.clustersOverBudget +
+        " cluster(s) over budget (planned by section; details in materialsFed)"
+      : "") +
+    ((report.quotesMissing ?? 0) > 0
+      ? "\nquotes missing: " + report.quotesMissing +
+        " cluster(s) replied without <quotes>/<conclusion>; the whole reply was kept as the conclusion"
+      : "");
   // #261 (D6): one readable line per refused correction, so a content-only
   // proxy still sees the old knowledge, the candidate, the sources, the
   // verdict and what to check next. The structured block carries the same
@@ -585,8 +595,30 @@ export function buildAnsChatConsolidateResult(
         "; re-judge retries=" + d.retries + ", sameFact=" + d.sameFact + ", reliable=" + d.reliable +
         (d.reason ? "; " + d.reason : "") + ")",
       ).join("\n");
+  // #613: one readable line per material. fedChars 0 means the material did
+  // not fit the cluster budget; it is named instead of silently omitted.
+  const feedText = (report.materialsFed ?? []).length === 0
+    ? ""
+    : "\n" + report.materialsFed.map((m) =>
+        "material (cluster " + m.cluster + ", #" + (m.materialId ?? "?") + " " + m.url + ")" +
+        "\n  fed " + m.fedChars + "/" + m.originalChars + " chars, ~" + m.estimatedTokens + " tokens" +
+        ", source " + m.source +
+        (m.overBudget ? ", over budget" : "") +
+        (m.truncated ? ", truncated" : "") +
+        (m.cacheHit ? ", cache hit" : "") +
+        (m.sections.length > 0
+          ? "\n  sections: " + m.sections.map((s) => s.headingPath + " (" + s.chars + " chars)").join("; ")
+          : ""),
+      ).join("\n");
+  // #613: the quotes are report-only; semantic memory never stores them.
+  const quotesText = (report.quotes ?? []).length === 0
+    ? ""
+    : "\n" + report.quotes.map((q) =>
+        "quotes (cluster " + q.cluster + ")\n" +
+        q.quotes.split("\n").map((l) => "  " + l).join("\n"),
+      ).join("\n");
   return {
-    content: [{ type: "text", text: line + refusedText + incompleteText + suspendedText + conflictText + resolvedText }],
+    content: [{ type: "text", text: line + refusedText + incompleteText + suspendedText + conflictText + resolvedText + feedText + quotesText }],
     structuredContent: {
       operation: "consolidate",
       scope: s,
@@ -608,6 +640,13 @@ export function buildAnsChatConsolidateResult(
         // reads today.
         unresolvedConflicts: report.conflicts,
         resolvedCollisions: (report.resolvedCollisions ?? []).length,
+        // #613: budget and quote visibility, separate from the writable counts
+        // above so a host can alert on an over-budget or unshaped run.
+        clusterTokenBudget: report.clusterTokenBudget,
+        clustersOverBudget: report.clustersOverBudget,
+        quotesMissing: report.quotesMissing,
+        quotesReported: (report.quotes ?? []).length,
+        materialsReported: (report.materialsFed ?? []).length,
       },
       usage,
       ...(extra.budgetUnmetered

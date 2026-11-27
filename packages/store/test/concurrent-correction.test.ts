@@ -207,7 +207,10 @@ async function buildKnowledge(
 ): Promise<number[]> {
   const ids: number[] = [];
   for (let i = 1; i <= 3; i++) {
-    ids.push(await seedEpisode(store, sessionId, urlBase + "-v" + i, entity + " v" + i, content, entity));
+    // #613: temporal supersede is per session. Seeding the three versions in
+    // separate sessions keeps all three LIVE so the batch reaches CLUSTER_MIN.
+    const sid = i === 1 ? sessionId : (await store.createSession("eval")).id;
+    ids.push(await seedEpisode(store, sid, urlBase + "-v" + i, entity + " v" + i, content, entity));
   }
   const rep = await store.consolidateMemory(
     { scope: { by: "memory", sessionIds: [], memoryIds: [...ids], sessionIdNotApplied: false } },

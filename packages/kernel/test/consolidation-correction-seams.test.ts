@@ -30,7 +30,7 @@ type UsageShape = {
   totalTokens?: number; cost?: { total?: number; totalFromProvider?: boolean };
 };
 
-function fakeSession(opts: { text?: string; usage?: UsageShape }) {
+function fakeSession(opts: { text?: string; usage?: UsageShape; onPrompt?: (prompt: string) => void }) {
   const model = {
     id: "fake-model",
     name: "fake-model",
@@ -43,7 +43,8 @@ function fakeSession(opts: { text?: string; usage?: UsageShape }) {
     contextWindow: 128000,
     maxTokens: 8192,
   };
-  const streamFn = () => {
+  const streamFn = (_model: unknown, req?: { messages?: Array<{ content?: string }> }) => {
+    if (opts.onPrompt && req?.messages?.[0]?.content) opts.onPrompt(req.messages[0].content);
     const events = [
       { type: "text_delta", delta: opts.text ?? "{}" },
       ...(opts.usage ? [{ type: "done", message: { role: "assistant", content: [], usage: opts.usage } }] : []),
@@ -86,6 +87,70 @@ function recordingLedger(opts: { rejectCall?: boolean } = {}) {
 const EVIDENCE: ConsolidateEvidence[] = [
   { title: "Official notice", snippet: "Support hours changed to 24x7 on 2026-11-01.", url: "https://a.example/notice" },
 ];
+
+// --- #613: the judges read the quotes, not the full material block -------
+
+{
+  let prompt = "";
+  const seams = createConsolidationSeams(fakeSession({
+    text: '{"alreadyCurrent": false, "sameFact": true, "reliable": true, "relation": "correction"}',
+    onPrompt: (p) => { prompt = p; },
+  }));
+  await seams.verify({
+    oldContent: "Support runs weekdays 9-17.", summary: "Support is 24x7.",
+    quotes: "QUOTE-ONLY: support is 24x7 from 2026-11-01", evidence: EVIDENCE,
+  });
+  assert(prompt.includes("QUOTE-ONLY: support is 24x7 from 2026-11-01"),
+    "verify: the check receives the summarizer quotes");
+  assert(!prompt.includes("Support hours changed to 24x7 on 2026-11-01."),
+    "verify: the full material snippet is not sent alongside the quotes");
+}
+
+{
+  let prompt = "";
+  const seams = createConsolidationSeams(fakeSession({
+    text: '{"supported": true, "preserved": true, "corrected": true, "noExtras": true}',
+    onPrompt: (p) => { prompt = p; },
+  }));
+  await seams.verifyFinal({
+    oldContent: "old", finalContent: "merged", correctedContent: "new",
+    quotes: "QUOTE-ONLY-FINAL", evidence: EVIDENCE,
+  });
+  assert(prompt.includes("QUOTE-ONLY-FINAL"), "verifyFinal: the check receives the quotes");
+  assert(!prompt.includes("Support hours changed to 24x7 on 2026-11-01."),
+    "verifyFinal: the full material snippet is not sent alongside the quotes");
+}
+
+{
+  let prompt = "";
+  const seams = createConsolidationSeams(fakeSession({
+    text: '{"sameFact": true, "reliable": true, "relation": "correction"}',
+    onPrompt: (p) => { prompt = p; },
+  }));
+  await seams.verify({ oldContent: "old", summary: "new", quotes: "", evidence: EVIDENCE });
+  assert(!prompt.includes("Support hours changed to 24x7 on 2026-11-01."),
+    "verify: an empty quote string is a real answer, not a fallback to the evidence");
+}
+
+// --- #613: materials first, instructions last -----------------------------
+
+{
+  let prompt = "";
+  const seams = createConsolidationSeams(fakeSession({
+    text: "<quotes>q</quotes><conclusion>done</conclusion>",
+    onPrompt: (p) => { prompt = p; },
+  }));
+  const out = await seams.summarize([{
+    title: "Acme notice", snippet: "SHORT-SNIPPET", url: "https://acme.example/notice",
+    content: "FULL-PAGE-BODY",
+  }]);
+  assert(prompt.indexOf("FULL-PAGE-BODY") >= 0, "summarize: the whole body is fed");
+  assert(!prompt.includes("SHORT-SNIPPET"), "summarize: the snippet is not used when a body exists");
+  assert(prompt.indexOf("FULL-PAGE-BODY") < prompt.indexOf("The materials are above"),
+    "summarize: the materials precede the instructions");
+  assert(typeof out === "object" && out !== null && out.materials.length === 1,
+    "summarize: the feed report comes back with the text");
+}
 
 // --- verify: the correction-relationship check -----------------------------
 

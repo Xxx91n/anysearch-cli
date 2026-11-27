@@ -10,14 +10,17 @@
 // it. Every dimension that never arrived is named in `missing[]` instead of
 // being rendered as a silent zero.
 
-import type {
-  ConsolidateClaimVerdict,
-  ConsolidateEvidence,
-  ConsolidateFinalCheckFn,
-  ConsolidateFinalCheckVerdict,
-  ConsolidateSummarizeFn,
-  ConsolidateVerifyFn,
-  ConsolidateVerifyVerdict,
+import {
+  CONSOLIDATION_CLUSTER_TOKEN_BUDGET,
+  type ConsolidateClaimVerdict,
+  type ConsolidateEvidence,
+  type ConsolidateEvidenceSection,
+  type ConsolidateFinalCheckFn,
+  type ConsolidateFinalCheckVerdict,
+  type ConsolidateMaterialFeed,
+  type ConsolidateSummarizeFn,
+  type ConsolidateVerifyFn,
+  type ConsolidateVerifyVerdict,
 } from "@anysearch-cli/store";
 import { classifyClaim } from "./attribution";
 import type { BudgetLedgerPort } from "./ports";
@@ -171,13 +174,28 @@ export interface ConsolidationSeams {
 }
 
 export const CONSOLIDATION_SUMMARY_PROMPT = [
-  "Summarize these episodic memories about the same entity into one short, factual paragraph.",
-  "Only state facts directly supported by the episodes. No speculation.",
+  "The materials are above, numbered [1], [2], ... Each starts with its page title path.",
+  "Summarize them into one short, factual paragraph about the same entity.",
+  "Only state facts directly supported by the materials. No speculation.",
   // D8 (preserve uncorrected facts): the UPDATE path appends the old
   // distilled claim as a CURRENT KNOWLEDGE item. It must survive unless a new
   // episode explicitly corrects that same fact.
   "If an item is titled CURRENT KNOWLEDGE, it is the existing distilled claim:",
-  "keep every fact it states unless a new episode explicitly corrects that same fact.",
+  "keep every fact it states unless a new material explicitly corrects that same fact.",
+  "",
+  // #613: the reply shape is the contract. Only <conclusion> is persisted;
+  // <quotes> goes to the correction judges and the run report. A reply without
+  // both tags is kept whole by the store and flagged quotesMissing, so a model
+  // that ignores this instruction cannot silently lose the facts it stated.
+  "Reply in exactly this shape, with no text outside the two blocks:",
+  "<quotes>",
+  "[n] <heading path> \"<verbatim sentence from that material>\"",
+  "</quotes>",
+  "<conclusion>",
+  "<the factual paragraph>",
+  "</conclusion>",
+  "Every sentence in the conclusion must be supported by a quoted sentence.",
+  "Quote only text that appears in the materials; never paraphrase inside <quotes>.",
 ].join("\n");
 
 // D6: the correction-relationship check. A negation word, a newer date,
@@ -192,11 +210,11 @@ export const CORRECTION_CHECK_PROMPT = [
   "CANDIDATE SUMMARY FROM THE NEW MATERIAL:",
   "{NEW}",
   "",
-  "NEW MATERIAL:",
-  "{EVIDENCE}",
+  "QUOTES FROM THE NEW MATERIAL (verbatim excerpts; no other material text is shown):",
+  "{QUOTES}",
   "",
   "Decide:",
-  "1. alreadyCurrent: does the new material already say the same thing as the current",
+  "1. alreadyCurrent: do the quotes already say the same thing as the current",
   "   knowledge (no change)? If yes, there is nothing to correct.",
   "2. sameFact: does the new material assert a change to the SAME fact, subject and scope as",
   "   the current knowledge? A different subject, period, population, or special case",
@@ -231,8 +249,8 @@ export const FINAL_CONTENT_CHECK_PROMPT = [
   "ACCEPTED CORRECTION (the change this replacement must express):",
   "{CORRECTED}",
   "",
-  "NEW MATERIAL (the evidence for the change):",
-  "{EVIDENCE}",
+  "QUOTES FROM THE NEW MATERIAL (the only evidence for the change):",
+  "{QUOTES}",
   "",
   "Decide:",
   "1. supported: is every statement in the replacement text supported by the current",
@@ -492,6 +510,315 @@ async function completeText(
 }
 
 /**
+ * Language-aware token estimate for a prompt block.
+ *
+ * A tokenizer is not available here, so this is deliberately conservative:
+ * one CJK code point is one token (Chinese/Japanese/Korean are the dense
+ * case), Latin text is about four characters per token. The store reports the
+ * number as an estimate, never as a billed count.
+ */
+export function estimatePromptTokens(text: string): number {
+  let cjk = 0;
+  let other = 0;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (isCjkCodePoint(cp)) cjk++;
+    else other++;
+  }
+  return cjk + Math.ceil(other / 4);
+}
+
+function isCjkCodePoint(cp: number): boolean {
+  return (
+    (cp >= 0x3400 && cp <= 0x4dbf) ||   // CJK extension A
+    (cp >= 0x4e00 && cp <= 0x9fff) ||   // CJK unified ideographs
+    (cp >= 0xf900 && cp <= 0xfaff) ||   // compatibility ideographs
+    (cp >= 0x20000 && cp <= 0x2a6df) || // CJK extension B
+    (cp >= 0x3040 && cp <= 0x30ff) ||   // kana
+    (cp >= 0xac00 && cp <= 0xd7af) ||   // hangul
+    (cp >= 0x3000 && cp <= 0x303f) ||   // CJK punctuation
+    (cp >= 0xff00 && cp <= 0xffef)      // fullwidth forms
+  );
+}
+
+function codePointLength(text: string): number {
+  let n = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) i++;
+    n++;
+  }
+  return n;
+}
+
+/** Slice by code-point offset/length, the unit the block table stores. */
+function codePointSlice(text: string, start: number, count: number): string {
+  if (count <= 0) return "";
+  const out: string[] = [];
+  let offset = 0;
+  let taken = 0;
+  for (const ch of text) {
+    if (offset >= start && taken < count) {
+      out.push(ch);
+      taken++;
+      if (taken >= count) break;
+    }
+    offset++;
+  }
+  return out.join("");
+}
+
+/** Cut text at the last character that fits the token budget. */
+function truncateToTokenBudget(text: string, budget: number): string {
+  if (budget <= 0) return "";
+  let used = 0;
+  const out: string[] = [];
+  for (const ch of text) {
+    const cp = ch.codePointAt(0) ?? 0;
+    const cost = isCjkCodePoint(cp) ? 1 : 0.25;
+    if (used + cost > budget + 1e-9) break;
+    used += cost;
+    out.push(ch);
+  }
+  return out.join("");
+}
+
+/** Words for Latin text, bigrams for CJK, used only to rank sections. */
+function relevanceTokens(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of text.toLowerCase().matchAll(/[a-z0-9]+/g)) out.add(m[0] ?? "");
+  for (const m of text.matchAll(/[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]+/g)) {
+    const run = m[0] ?? "";
+    if (run.length <= 2) {
+      if (run) out.add(run);
+      continue;
+    }
+    for (let i = 0; i < run.length - 1; i++) out.add(run.slice(i, i + 2));
+  }
+  out.delete("");
+  return out;
+}
+
+function sectionRelevance(headingPath: string, focus: Set<string>): number {
+  const tokens = relevanceTokens(headingPath);
+  if (tokens.size === 0) return 0;
+  let overlap = 0;
+  for (const t of tokens) if (focus.has(t)) overlap++;
+  // Length-normalised so a long heading does not outrank a precise short one
+  // just by containing more words.
+  return overlap / Math.sqrt(tokens.size);
+}
+
+function evidenceSource(e: ConsolidateEvidence): { text: string; source: "content" | "snippet" } {
+  if (typeof e.content === "string" && e.content.trim().length > 0) {
+    return { text: e.content, source: "content" };
+  }
+  return { text: e.snippet ?? "", source: "snippet" };
+}
+
+interface PlannedEvidenceCandidate {
+  materialIndex: number;
+  material: ConsolidateEvidence;
+  section: ConsolidateEvidenceSection | null;
+  heading: string;
+  text: string;
+  score: number;
+  truncated: boolean;
+}
+
+function renderCandidate(c: PlannedEvidenceCandidate, ordinal: number): { block: string; header: string; textChars: number; tokens: number } {
+  const heading = c.heading.trim() || "(untitled)";
+  const header = "[" + ordinal + "] " + heading + " (" + c.material.url + ")\n";
+  const block = header + c.text;
+  return { block, header, textChars: codePointLength(c.text), tokens: estimatePromptTokens(block) };
+}
+
+/**
+ * Lay materials out for one summary call under the 24k-token budget.
+ *
+ * Under the cap the whole body (or snippet) goes in, in the caller's order.
+ * Over the cap the planner reads only section metadata (heading path, offset,
+ * length) to rank sections against the cluster's titles; the selected sections
+ * are then sliced out of the body. Blocks are placed most-relevant LAST and
+ * least-relevant in the middle, because the model attends to both ends of a
+ * long prompt more than the middle.
+ */
+export function planClusterEvidence(
+  episodes: ConsolidateEvidence[],
+  tokenBudget: number = CONSOLIDATION_CLUSTER_TOKEN_BUDGET,
+): { prompt: string; materials: ConsolidateMaterialFeed[]; overBudget: boolean } {
+  const budget = Number.isFinite(tokenBudget) && tokenBudget > 0
+    ? Math.floor(tokenBudget)
+    : CONSOLIDATION_CLUSTER_TOKEN_BUDGET;
+  const sources = episodes.map(evidenceSource);
+
+  const focus = new Set<string>();
+  for (const e of episodes) {
+    for (const t of relevanceTokens(e.title)) focus.add(t);
+  }
+
+  const whole: PlannedEvidenceCandidate[] = episodes.map((e, i) => ({
+    materialIndex: i,
+    material: e,
+    section: null,
+    heading: e.title,
+    text: sources[i]!.text,
+    score: 0,
+    truncated: false,
+  }));
+
+  // Whole-page path. The ordinal used for the estimate is the worst case
+  // (every material has a 2+ digit index), so the decision never undercounts.
+  const wholeTokens = whole.reduce((n, c) => n + renderCandidate(c, episodes.length).tokens, 0);
+  if (wholeTokens <= budget) {
+    const rendered = whole.map((c, i) => renderCandidate(c, i + 1));
+    return {
+      prompt: rendered.map((r) => r.block).join("\n\n"),
+      materials: episodes.map((e, i) => ({
+        cluster: 0,
+        materialId: e.materialId ?? null,
+        url: e.url,
+        title: e.title,
+        originalChars: codePointLength(sources[i]!.text),
+        fedChars: rendered[i]!.textChars,
+        estimatedTokens: rendered[i]!.tokens,
+        sections: [],
+        overBudget: false,
+        truncated: false,
+        cacheHit: false,
+        source: sources[i]!.source,
+      })),
+      overBudget: false,
+    };
+  }
+
+  // Over budget: every section is a candidate; a material without section data
+  // competes as one whole block (a snippet-only row has nothing finer to pick).
+  const candidates: PlannedEvidenceCandidate[] = [];
+  for (let i = 0; i < episodes.length; i++) {
+    const e = episodes[i]!;
+    const src = sources[i]!;
+    if (src.source === "content" && e.sections && e.sections.length > 0) {
+      for (const s of e.sections) {
+        const text = codePointSlice(src.text, s.startOffset, s.chars);
+        if (!text.trim()) continue;
+        candidates.push({
+          materialIndex: i,
+          material: e,
+          section: s,
+          heading: s.headingPath,
+          text,
+          score: sectionRelevance(s.headingPath, focus),
+          truncated: false,
+        });
+      }
+      continue;
+    }
+    candidates.push(whole[i]!);
+  }
+
+  const ranked = candidates.slice().sort((a, b) =>
+    b.score - a.score ||
+    a.materialIndex - b.materialIndex ||
+    (a.section?.startOffset ?? -1) - (b.section?.startOffset ?? -1));
+  const chosen: PlannedEvidenceCandidate[] = [];
+  let used = 0;
+  for (const c of ranked) {
+    const tokens = renderCandidate(c, ranked.length).tokens;
+    if (used + tokens <= budget) {
+      chosen.push(c);
+      used += tokens;
+    }
+  }
+  if (chosen.length === 0 && ranked.length > 0) {
+    // Not even the best single block fits: keep its head so the prompt still
+    // carries evidence instead of degrading to an empty materials section.
+    const best = ranked[0]!;
+    const header = renderCandidate({ ...best, text: "" }, 1).header;
+    const room = Math.max(0, budget - estimatePromptTokens(header));
+    const text = truncateToTokenBudget(best.text, room);
+    if (text.length > 0) {
+      chosen.push({ ...best, text, truncated: text.length < best.text.length });
+    }
+  } else {
+    // A snippet-only material has no sections to select, so a too-large whole
+    // block would otherwise be dropped entirely once anything else fits. Keep
+    // its head in the space that is left: "whole text within budget, or
+    // truncate" applies per material, not only when the prompt is empty.
+    const droppedWhole = ranked.find((c) => c.section === null && !chosen.includes(c));
+    if (droppedWhole) {
+      const header = renderCandidate({ ...droppedWhole, text: "" }, 1).header;
+      const room = Math.max(0, budget - used - estimatePromptTokens(header));
+      const text = truncateToTokenBudget(droppedWhole.text, room);
+      if (text.length > 0) {
+        chosen.push({ ...droppedWhole, text, truncated: text.length < droppedWhole.text.length });
+      }
+    }
+  }
+
+  // Most relevant last, least relevant in the middle.
+  const ordered = arrangeByRelevance(chosen);
+  const materials: ConsolidateMaterialFeed[] = episodes.map((e, i) => ({
+    cluster: 0,
+    materialId: e.materialId ?? null,
+    url: e.url,
+    title: e.title,
+    originalChars: codePointLength(sources[i]!.text),
+    fedChars: 0,
+    estimatedTokens: 0,
+    sections: [],
+    overBudget: true,
+    truncated: false,
+    cacheHit: false,
+    source: sources[i]!.source,
+  }));
+  const firstSeen = ordered
+    .map((c) => c.materialIndex)
+    .filter((i, at, all) => all.indexOf(i) === at);
+  const blocks: string[] = [];
+  for (let i = 0; i < ordered.length; i++) {
+    const c = ordered[i]!;
+    const r = renderCandidate(c, i + 1);
+    blocks.push(r.block);
+    const feed = materials[c.materialIndex]!;
+    feed.fedChars += r.textChars;
+    feed.estimatedTokens += r.tokens;
+    feed.truncated = feed.truncated || c.truncated;
+    if (c.section) {
+      feed.sections.push({
+        sectionId: c.section.sectionId,
+        headingPath: c.section.headingPath,
+        chars: r.textChars,
+      });
+    }
+  }
+  // Prompt order first; materials that did not fit follow with fedChars 0 so
+  // the report can say what was dropped instead of silently omitting it.
+  const rest = episodes.map((_, i) => i).filter((i) => !firstSeen.includes(i));
+  return {
+    prompt: blocks.join("\n\n"),
+    materials: [...firstSeen, ...rest].map((i) => materials[i]!),
+    overBudget: true,
+  };
+}
+
+function arrangeByRelevance<T extends { score: number; materialIndex: number }>(chosen: T[]): T[] {
+  if (chosen.length <= 1) return chosen.slice();
+  const ranked = chosen.slice().sort((a, b) => b.score - a.score || a.materialIndex - b.materialIndex);
+  if (ranked.length === 2) return [ranked[1]!, ranked[0]!];
+  const out: Array<T | null> = new Array(ranked.length).fill(null);
+  out[out.length - 1] = ranked[0]!;
+  const middle = Math.floor((ranked.length - 1) / 2);
+  out[middle] = ranked[ranked.length - 1]!;
+  const rest = ranked.slice(1, -1);
+  let r = 0;
+  for (let i = 0; i < out.length; i++) {
+    if (out[i] === null) out[i] = rest[r++]!;
+  }
+  return out as T[];
+}
+
+/**
  * Build the summarize/classify seams over one LLM session.
  *
  * `usage` accumulates for the lifetime of the returned object; a caller that
@@ -580,12 +907,29 @@ export function createConsolidationSeams(
   const evidenceLines = (evidence: ConsolidateEvidence[]): string =>
     evidence.map((e, i) => "[" + (i + 1) + "] " + e.title + " - " + e.snippet + " (" + e.url + ")").join("\n");
 
-  const summarize: ConsolidateSummarizeFn = async (episodes) => {
-    const prompt = [CONSOLIDATION_SUMMARY_PROMPT, evidenceLines(episodes)].join("\n");
+  const summarize: ConsolidateSummarizeFn = async (episodes, summarizeOpts) => {
+    const planned = planClusterEvidence(
+      episodes,
+      summarizeOpts?.tokenBudget ?? CONSOLIDATION_CLUSTER_TOKEN_BUDGET,
+    );
+    // Materials first, instructions last: the model reads the evidence before
+    // it is told what to do, and the stable instruction block stays at the end
+    // where a prefix cache can still match it across calls.
+    const prompt = planned.prompt.length > 0
+      ? planned.prompt + "\n\n" + CONSOLIDATION_SUMMARY_PROMPT
+      : CONSOLIDATION_SUMMARY_PROMPT;
     const result = await completeText(session, prompt, opts.budget);
     account(result.usage);
     finish();
-    return result.text || null;
+    // A provider that reports cache reads says the stable part of this prompt
+    // was already in its cache. The report copies that fact per material.
+    const cacheHit = (Number(result.usage?.cacheRead) || 0) > 0;
+    return {
+      text: result.text || null,
+      materials: planned.materials.map((m) => ({ ...m, cacheHit })),
+      overBudget: planned.overBudget,
+      cacheHit,
+    };
   };
 
   const classify = (claim: string, evidence: ConsolidateEvidence[]): ConsolidateClaimVerdict => {
@@ -648,15 +992,21 @@ export function createConsolidationSeams(
     }
   };
 
-  const verify: ConsolidateVerifyFn = async ({ oldContent, summary, evidence }) => {
+  const verify: ConsolidateVerifyFn = async ({ oldContent, summary, quotes, evidence }) => {
     // Fill the template in one pass. Chained `.replace()` calls re-scan text the
     // earlier step just inserted, so content containing a literal `{NEW}` (for
     // example a note that documents this very prompt) would have its own body
     // overwritten and the candidate section left empty (#273 review).
+    //
+    // #613: the judge reads the summarizer's verbatim quotes, not the full
+    // evidence. `undefined` means an old caller that has no quotes yet; only
+    // then fall back to the evidence lines. An empty string is a real answer
+    // ("the model quoted nothing") and must not be replaced with the evidence.
+    const quoteText = quotes === undefined ? evidenceLines(evidence) : quotes;
     const prompt = fillTemplate(CORRECTION_CHECK_PROMPT, {
       OLD: oldContent,
       NEW: summary,
-      EVIDENCE: evidenceLines(evidence),
+      QUOTES: quoteText,
     });
     const result = await completeText(session, prompt, opts.budget);
     account(result.usage);
@@ -664,12 +1014,13 @@ export function createConsolidationSeams(
     return parseVerifyReply(result.text);
   };
 
-  const verifyFinal: ConsolidateFinalCheckFn = async ({ oldContent, finalContent, correctedContent, evidence }) => {
+  const verifyFinal: ConsolidateFinalCheckFn = async ({ oldContent, finalContent, correctedContent, quotes, evidence }) => {
+    const quoteText = quotes === undefined ? evidenceLines(evidence) : quotes;
     const prompt = fillTemplate(FINAL_CONTENT_CHECK_PROMPT, {
       OLD: oldContent,
       FINAL: finalContent,
       CORRECTED: correctedContent,
-      EVIDENCE: evidenceLines(evidence),
+      QUOTES: quoteText,
     });
     const result = await completeText(session, prompt, opts.budget);
     account(result.usage);

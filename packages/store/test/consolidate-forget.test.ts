@@ -69,12 +69,27 @@ const store = new SqliteSessionStore(dbPath, {
   consolidateClassify: () => ({ label: "supported", confidence: 0.92 }),
 });
 const session = await store.createSession("eval");
-// Supersede chain: 3 writes, one entity -> 2 closed + 1 live episode (the history cluster, D2).
+// #613: three LIVE materials, not three versions of one row. Temporal supersede
+// is per session, so seeding each version in its own session keeps all three
+// live while the shared entity still puts them in one cluster.
 for (let i = 1; i <= 3; i++) {
-  const r = await store.adjudicateMemory(session.id, [
-    { url: "https://ex.com/alpha", title: "Alpha build note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9 },
+  const s = i === 1 ? session : await store.createSession("eval");
+  const r = await store.adjudicateMemory(s.id, [
+    { url: "https://ex.com/alpha/" + i, title: "Alpha build note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9, entity: "AlphaBuild" },
   ]);
   assert(r[0] && (r[0].action === "accept" || r[0].action === "supersede"), "write " + i + " accepted");
+}
+// #613 lock: the fixture really is three LIVE materials, so the batch reaches
+// CLUSTER_MIN because of three current rows, not because a superseded row was
+// counted.
+{
+  const d = new Database(dbPath, { readonly: true });
+  const live = d.prepare(
+    "SELECT COUNT(*) c, COUNT(DISTINCT url) u FROM retrieval_results WHERE superseded_by IS NULL AND valid_until IS NULL",
+  ).get() as { c: number; u: number };
+  d.close();
+  assert(live.c === 3 && live.u === 3,
+    "fixture: three live materials with distinct URLs (got live=" + live.c + " urls=" + live.u + ")");
 }
 
 // dry-run == apply prediction (D7-6), and dry-run writes nothing
@@ -121,10 +136,10 @@ assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
 {
   const gateDb2 = join(dir, "gate-negative.db");
   const seed = new SqliteSessionStore(gateDb2, { consolidateSummarize: async () => SUMMARY_C });
-  const gs = await seed.createSession("eval");
   for (let i = 1; i <= 3; i++) {
+    const gs = await seed.createSession("eval");
     await seed.adjudicateMemory(gs.id, [
-      { url: "https://ex.com/delta", title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9 },
+      { url: "https://ex.com/delta/" + i, title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9, entity: "Delta" },
     ]);
   }
   const rejecting = new SqliteSessionStore(gateDb2, {
@@ -152,10 +167,10 @@ assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
 {
   const gateDb = join(dir, "gate-absent.db");
   const seed = new SqliteSessionStore(gateDb, { consolidateSummarize: async () => SUMMARY_C });
-  const gs = await seed.createSession("eval");
   for (let i = 1; i <= 3; i++) {
+    const gs = await seed.createSession("eval");
     await seed.adjudicateMemory(gs.id, [
-      { url: "https://ex.com/delta", title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9 },
+      { url: "https://ex.com/delta/" + i, title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9, entity: "Delta" },
     ]);
   }
   const rep4 = await seed.consolidateMemory();
@@ -192,10 +207,10 @@ assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
     consolidateSummarize: async () => SUMMARY_A,
     consolidateClassify: () => ({ label: "supported", confidence: 0.92 }),
   });
-  const ns = await seed.createSession("eval");
   for (let i = 1; i <= 3; i++) {
+    const ns = await seed.createSession("eval");
     await seed.adjudicateMemory(ns.id, [
-      { url: "https://ex.com/alpha", title: "Alpha build note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9 },
+      { url: "https://ex.com/alpha/" + i, title: "Alpha build note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9, entity: "AlphaBuild" },
     ]);
   }
   const seededReport = await seed.consolidateMemory();
@@ -241,10 +256,10 @@ assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
 {
   const llmDb = join(dir, "no-summarizer.db");
   const seed = new SqliteSessionStore(llmDb, { consolidateSummarize: async () => SUMMARY_C });
-  const ls = await seed.createSession("eval");
   for (let i = 1; i <= 3; i++) {
+    const ls = await seed.createSession("eval");
     await seed.adjudicateMemory(ls.id, [
-      { url: "https://ex.com/delta", title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9 },
+      { url: "https://ex.com/delta/" + i, title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9, entity: "Delta" },
     ]);
   }
   // A store with no summarize seam at all: the cluster triggers, the missing
@@ -330,8 +345,8 @@ assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at
       consolidateSummarize: async () => "pnpm pins prevent lockfile drift; corepack enforces packageManager",
       consolidateClassify: () => ({ label: "supported" as const, confidence: 0.95 }),
     });
-    const sess2 = await storeA.createSession("eval");
     for (let i = 1; i <= 3; i++) {
+      const sess2 = await storeA.createSession("eval");
       await storeA.adjudicateMemory(sess2.id, [
         { url: "https://ex.com/pn" + i, title: "pnpm note v" + i, snippet: "pin drift note revision " + i, source: "exa", evidence: 0.9, entity: "PnpmPinning" },
       ]);

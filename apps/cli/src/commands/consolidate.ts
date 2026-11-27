@@ -339,6 +339,12 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       (r.conflicts > 0 ? ", conflicts " + r.conflicts : "") +
       (r.resolvedCollisions.length > 0 ? ", collisionsResolved " + r.resolvedCollisions.length : "") +
       (r.budgetRejected > 0 ? ", budgetRejected " + r.budgetRejected : "") +
+      // #613: the cluster material budget. Printed only when it mattered, so a
+      // small run reads exactly as before.
+      (r.clustersOverBudget > 0
+        ? ", clusterTokenBudget " + r.clusterTokenBudget + ", clustersOverBudget " + r.clustersOverBudget
+        : "") +
+      (r.quotesMissing > 0 ? ", quotesMissing " + r.quotesMissing : "") +
       // #277: how the cross-script pass went. Printed only when it did
       // something, so a run over same-language material reads exactly as before.
       (r.crossScriptDeclared > 0 ? ", crossScriptDeclared " + r.crossScriptDeclared : "") +
@@ -348,6 +354,31 @@ export async function runConsolidate(argv: string[]): Promise<number> {
 
   // The scope that was really used, not the one the caller thinks it passed.
   process.stdout.write("scope: " + formatConsolidateScope(r.scope) + "\n");
+  // #613: what each material actually contributed. fedChars is the code-point
+  // count placed in the prompt, originalChars the source size, estimatedTokens
+  // the language-aware estimate (not a tokenizer). A material with fedChars 0
+  // did not fit the 24k budget and is reported instead of silently dropped.
+  for (const m of r.materialsFed) {
+    process.stdout.write(
+      "material: cluster " + m.cluster + " #" + (m.materialId ?? "?") + " " + m.url +
+        " - fed " + m.fedChars + "/" + m.originalChars + " chars, ~" + m.estimatedTokens + " tokens" +
+        ", source " + m.source +
+        (m.overBudget ? ", over budget" : "") +
+        (m.truncated ? ", truncated" : "") +
+        (m.cacheHit ? ", cache hit" : "") + "\n" +
+        (m.sections.length > 0
+          ? "  sections: " + m.sections.map((s) => s.headingPath + " (" + s.chars + " chars)").join("; ") + "\n"
+          : ""),
+    );
+  }
+  // #613: the verbatim quotes the summarizer selected. They are not persisted
+  // in semantic memory; the report is the only place they survive.
+  for (const q of r.quotes) {
+    process.stdout.write(
+      "quotes: cluster " + q.cluster + "\n" +
+        q.quotes.split("\n").map((line) => "  " + line).join("\n") + "\n",
+    );
+  }
   if (dryRun) {
     process.stdout.write(
       "dry-run: nothing saved. The counts describe the state read now; a concurrent write\n" +
