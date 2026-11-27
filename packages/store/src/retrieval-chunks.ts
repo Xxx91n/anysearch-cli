@@ -90,9 +90,12 @@ export function ensureChunksForPage(db: Database.Database, pageId: number): Ensu
   const row = db
     .prepare("SELECT content, title FROM retrieval_results WHERE id = ?")
     .get(pageId) as { content: string | null; title: string | null } | undefined;
-  const content = row && typeof row.content === "string" ? row.content : "";
+  // The page can be gone by the time a repair reaches it; writing the marker
+  // row would then fail on its foreign key instead of doing nothing.
+  if (row === undefined) return { sections: 0, blocks: 0 };
+  const content = typeof row.content === "string" ? row.content : "";
   const chars = [...content];
-  const sections = content.length > 0 ? chunkMarkdownFromChars(chars, row?.title ?? null) : [];
+  const sections = content.length > 0 ? chunkMarkdownFromChars(chars, row.title) : [];
   const blocks = sections.reduce((n, s) => n + s.blocks.length, 0);
   // Tokenizing is the expensive half and must not run under BEGIN IMMEDIATE.
   const ftsTexts = sections.map((section) =>
@@ -104,6 +107,8 @@ export function ensureChunksForPage(db: Database.Database, pageId: number): Ensu
   const write = db.transaction(() => {
     // Deleting the chunk rows fires retrieval_chunks_ad, which removes their
     // FTS rows; the contentless table needs no separate rebuild.
+    // Rebuilt blocks get new ids, so their vectors go with them: repairing one
+    // lost block re-embeds every block of the page.
     db.prepare("DELETE FROM retrieval_chunk_vectors WHERE chunk_id IN (SELECT id FROM retrieval_chunks WHERE page_id = ?)").run(pageId);
     db.prepare("DELETE FROM retrieval_chunks WHERE page_id = ?").run(pageId);
     // A page that yields no section is still "attempted": without this marker,
@@ -364,6 +369,8 @@ function keywordSections(
   // instr counts characters, the same unit as the stored offsets, so the first
   // position comes from SQL and no page body crosses into JS. Recency is the
   // order: counting occurrences would copy every matching page body in SQL.
+  // Only the newest fetchLimit pages are scanned, so a character that appears
+  // solely in an older page is not found.
   const hanChars = terms.singleHan;
   if (hanChars.length > 0) {
     // One table scan for all the single characters, not one scan per char.
@@ -417,19 +424,6 @@ function vectorSections(db: Database.Database, queryVector: Float32Array, limit:
   }
   scored.sort((a, b) => b.s - a.s);
   return sectionIds(scored.slice(0, limit * CANDIDATE_SLACK).map(({ row }) => ({ id: row.id, parent_id: row.parent_id as number | null })));
-}
-
-/** Code-point slice without materializing the whole page as an array. */
-function sliceCodePoints(text: string, start: number, length: number): string {
-  let out = "";
-  let at = 0;
-  let taken = 0;
-  for (const ch of text) {
-    if (at >= start) { out += ch; taken += 1; }
-    at += 1;
-    if (taken >= length) break;
-  }
-  return out;
 }
 
 function pageLane(keywordPages: ReadonlySet<number | undefined>, vectorPages: ReadonlySet<number | undefined>, pageId: number): "both" | "keyword" | "vector" {
@@ -512,25 +506,20 @@ export function searchChunkPages(
       ).all(...sectionIdsForText) as Array<{ id: number; text: string; truncated: number }>;
   const textBySection = new Map(texts.map((t) => [t.id, t.truncated ? t.text + "…" : t.text]));
   // A heading-line or gap hit has no section body covering it; cut the preview
-  // from that position so the searched character is actually in the text. Read
-  // only the pages that end up in the answer, in one batch.
+  // from that position so the searched character is actually in the text.
+  // substr counts code points like the stored offsets, so the body stays in
+  // SQLite and only the preview crosses into JS.
   const outsideText = new Map<number, string>();
   const outsideBest = [...bestSection.values()].filter((id) => keyword.outsideAt.has(id));
   if (outsideBest.length > 0) {
-    const outsidePageIds = [...new Set(outsideBest.map((id) => sectionToPage.get(id)))].filter(
-      (id): id is number => id !== undefined,
+    const previewFrom = db.prepare(
+      "SELECT substr(r.content, ? + 1, " + MATCH_PREVIEW_MAX_CHARS + ") AS text " +
+        "FROM retrieval_chunks s JOIN retrieval_results r ON r.id = s.page_id WHERE s.id = ?",
     );
-    const bodies = outsidePageIds.length === 0 ? [] : db.prepare(
-      "SELECT id, content FROM retrieval_results WHERE id IN (" +
-        outsidePageIds.map(() => "?").join(", ") + ")",
-    ).all(...outsidePageIds) as Array<{ id: number; content: string | null }>;
-    const bodyById = new Map(bodies.map((row) => [row.id, row.content ?? ""]));
     for (const sectionId of outsideBest) {
       const at = keyword.outsideAt.get(sectionId)!;
-      const pageId = sectionToPage.get(sectionId);
-      if (pageId === undefined) continue;
-      const text = sliceCodePoints(bodyById.get(pageId) ?? "", at, MATCH_PREVIEW_MAX_CHARS);
-      if (text) outsideText.set(sectionId, text);
+      const row = previewFrom.get(at, sectionId) as { text: string | null } | undefined;
+      if (row?.text) outsideText.set(sectionId, row.text);
     }
   }
   const hits: ChunkPageHit[] = [];

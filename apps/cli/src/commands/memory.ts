@@ -70,6 +70,9 @@ export async function runMemory(args: string[]): Promise<number> {
             "and any proxy/firewall, or pre-seed the cache dir (ANYSEARCH_MODEL_CACHE, default ~/.ans/models) " +
             "from a connected host; run ans doctor to confirm the vector arm is present.\n"
       );
+      // A row whose title and snippet are both empty counts as failed too, and
+      // no network fix or retry will change that.
+      process.stderr.write("note: an entry with an empty title and snippet also counts as failed; it has nothing to embed and needs no retry.\n");
     }
     if (r.failed > 0 || chunks.failed > 0 || chunks.rebuildFailed > 0) return 1;
     return 0;

@@ -83,7 +83,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
           internal: hits.map((h) => ({
             role: h.role,
             content: h.content.slice(0, 200),
-            rank: h.rank,
+            rank: h.rank ?? null,
             sessionId: h.sessionId,
             // The archive row this hit came from. A summary records
             // its dependencies by id, so the material the model actually read
@@ -91,8 +91,10 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             // material, negative = knowledge row (SessionStore's semantic arm).
             rowid: h.rowid,
             provenance: "internal",
-            // The four fields always appear: url/fetchedAt are null when absent,
-            // hasContent is false, sections is []. Field meanings live in
+            // The five fields always appear: url/fetchedAt are null when absent,
+            // rank is null when the lane has no score (a page found only by its
+            // body), hasContent is false, sections is []. sectionsTotal is the
+            // full count before the 20-section cut. Field meanings live in
             // docs/mcp-server.md.
             url: h.url ?? null,
             fetchedAt: h.fetchedAt ?? null,

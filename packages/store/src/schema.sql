@@ -119,12 +119,9 @@ CREATE TABLE IF NOT EXISTS retrieval_results (
 -- correction's closed predecessor).
 CREATE INDEX IF NOT EXISTS idx_retrieval_results_url ON retrieval_results(url);
 
--- Sections and blocks of a page body. The body stays in
--- retrieval_results.content; this table records where a section/block sits and
--- its heading path. Offsets are code points. level 0 = section, 1 = block;
--- parent_id is set for level 1 only. Governance columns stay on the page row
--- (retrieval_results) and are joined at read time. AUTOINCREMENT keeps deleted
--- ids retired.
+-- Sections and blocks of a page body; the body itself stays in
+-- retrieval_results.content. Offsets are code points. Governance columns stay
+-- on the page row and are joined at read time.
 CREATE TABLE IF NOT EXISTS retrieval_chunks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   page_id INTEGER NOT NULL REFERENCES retrieval_results(id) ON DELETE CASCADE,
@@ -136,7 +133,7 @@ CREATE TABLE IF NOT EXISTS retrieval_chunks (
   heading_path TEXT NOT NULL,
   CHECK (start_offset >= 0 AND end_offset >= start_offset),
   CHECK ((level = 0 AND parent_id IS NULL) OR (level = 1 AND parent_id IS NOT NULL)),
-  -- Parent key for the composite FK below; not a redundant index on the PK.
+  -- Parent key for the composite FK below.
   UNIQUE (id, page_id),
   FOREIGN KEY (parent_id, page_id) REFERENCES retrieval_chunks(id, page_id) ON DELETE CASCADE
 );
@@ -157,9 +154,11 @@ CREATE TABLE IF NOT EXISTS retrieval_page_chunks (
 CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_chunks_fts
   USING fts5(body, content='', contentless_delete=1);
 
--- Re-chunking deletes the chunk rows; this trigger clears their FTS rows. A
--- page delete cascades to the same chunk rows, so the same trigger fires.
-CREATE TRIGGER IF NOT EXISTS retrieval_chunks_ad AFTER DELETE ON retrieval_chunks BEGIN
+-- Re-chunking deletes the chunk rows; this trigger clears their FTS rows. Only
+-- blocks (level 1) are indexed, so a section row has nothing to delete. A page
+-- delete cascades to the same chunk rows, so the same trigger fires.
+CREATE TRIGGER IF NOT EXISTS retrieval_chunks_ad AFTER DELETE ON retrieval_chunks
+WHEN old.level = 1 BEGIN
   DELETE FROM retrieval_chunks_fts WHERE rowid = old.id;
 END;
 

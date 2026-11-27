@@ -53,9 +53,10 @@ export interface OpRecord {
 }
 
 export type MemoryArmLabel = "fts" | "content" | "entity" | "vector" | "relation" | "semantic";
-export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "observational"> = {
+/** Arms this evaluation measures. `content` is excluded: no case writes a page body. */
+export type MeasuredMemoryArm = Exclude<MemoryArmLabel, "content">;
+export const MEMORY_ARM_ROLES: Record<MeasuredMemoryArm, "anchor" | "critical" | "observational"> = {
   fts: "anchor",
-  content: "observational",
   entity: "critical",
   vector: "critical",
   relation: "critical",
@@ -66,7 +67,7 @@ export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "o
  * cases never write a page body, so it stays out: an n=0 arm would trip the
  * weakest-link warning and change the beta correction for the other four.
  */
-export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts" | "content">[] = [
+export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MeasuredMemoryArm, "fts">[] = [
   "entity",
   "vector",
   "relation",
@@ -74,7 +75,7 @@ export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts" | "c
 ];
 
 export interface ArmDeltaRecord {
-  label: Exclude<MemoryArmLabel, "fts" | "content">;
+  label: Exclude<MeasuredMemoryArm, "fts">;
   role: "critical" | "observational";
   rankOn: number;
   rankOff: number;

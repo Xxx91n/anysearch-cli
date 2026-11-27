@@ -1,7 +1,7 @@
-// /: @anysearch-cli/embedding is an
-// OPTIONAL PEER (peerDependencies + peerDependenciesMeta.optional; 's
-// optionalDependencies form migrated in — npm auto-install of a heavy
-// optional runtime is the bomb regression). The vector arm is a capability, not
+// @anysearch-cli/embedding is an OPTIONAL PEER (peerDependencies +
+// peerDependenciesMeta.optional; its optionalDependencies form was migrated
+// away because npm auto-installing a heavy optional runtime broke installs).
+// The vector arm is a capability, not
 // a requirement. When the package is absent from the install closure (peer not
 // installed), the arm is absent: embedText ≡ null, telemetry all-zero +
 // absent:true — a legal FTS-only state, never a throw.

@@ -2,7 +2,7 @@
 // Covers: band boundaries, pinned/evergreen exemptions, fusion monotonicity,
 // year-literal-free QDF, kernel decayMultiplier legacy checks.
 
-import { freshnessFactor, scoreWithFreshness, decayMultiplier, classifyTier, isTimeSensitive, isEvergreen, invalidateOldRecords } from "../src/time-decay.js";
+import { freshnessFactor, scoreWithFreshness, decayMultiplier, classifyTier, isTimeSensitive, isEvergreen } from "../src/time-decay.js";
 
 let passed = 0;
 let failed = 0;

@@ -1,14 +1,13 @@
 // Splits a page body into sections and blocks, and holds the one tokenizer
 // both the index and the query use.
 //
-// Offsets count code points — the unit SQLite's substr/length use.
-// Han runs become overlapping bigrams, a lone Han character keeps its own
-// token, every other letter/digit run stays one word, and the rest separates.
-// FTS positions are kept because a Han query is a phrase; a one-character Han
-// query cannot be a bigram and goes through a page-level instr scan instead.
-// Kana and Thai write without spaces and stay one word token here, so a query
-// matches them only from the start of the run. Combining marks stay inside the
-// run, so an accented word is not split at its accents.
+// Offsets count code points — the unit SQLite's substr/length use. Han runs
+// become overlapping bigrams, so a Han query is a phrase and FTS positions must
+// stay on; a lone Han character cannot be a bigram and is found only by the
+// page-level instr scan in retrieval-chunks.ts. Kana and Thai write without
+// spaces and stay one word token, so a query matches them only from the start
+// of the run. Combining marks stay inside the word run, so an accented word is
+// not split at its accents.
 
 export interface MarkdownBlock {
   /** First code point of the block (inclusive). */
@@ -33,10 +32,7 @@ export interface MarkdownSection {
 export const BLOCK_TARGET_CHARS = 400;
 /** Blocks shorter than this merge into a predecessor when the total stays under the 1200 hard cap. */
 export const BLOCK_MIN_CHARS = 200;
-/**
- * Packing target, not a hard cap: whole units push a block past it, and a
- * runt-tail merge may reach the 1200 prose hard cap.
- */
+/** Size a block is packed toward; a whole fence/table goes past it, and a runt-tail merge may reach {@link BLOCK_HARD_CAP_CHARS}. */
 export const BLOCK_MAX_CHARS = 800;
 /**
  * Ceiling for a prose block. A code fence or table is exempt from it and is
@@ -187,31 +183,50 @@ interface SourceLine {
   text: string;
 }
 
-function splitLines(chars: string[]): SourceLine[] {
-  const lines: SourceLine[] = [];
-  let start = 0;
-  for (let i = 0; i <= chars.length; i++) {
-    if (i === chars.length || chars[i] === "\n") {
-      // A CRLF body keeps its "\r" at the end of the line; drop it so an ATX
-      // heading still matches ("## x\r" would fail a "$"-anchored regex).
-      lines.push({ start, end: i, text: chars.slice(start, i).join("").replace(/\r$/, "") });
-      start = i + 1;
+interface ScannedLine extends SourceLine {
+  /** The opening fence, its body lines and the closing fence line. */
+  fenced: boolean;
+  /** The closing fence line of the fence this line belongs to. */
+  fenceClose: boolean;
+}
+
+/**
+ * Walk `range` line by line, tracking fenced code blocks.
+ *
+ * Every caller that asks "is this line inside a fence" goes through this, so the
+ * fence rules and the line offsets exist in one place. `range.end` is exclusive
+ * and code-point based, like every offset here.
+ */
+function* scanLines(chars: string[], range: Range): Generator<ScannedLine> {
+  let start = range.start;
+  let fence: Fence | null = null;
+  for (let i = range.start; i <= range.end; i++) {
+    if (i < range.end && chars[i] !== "\n") continue;
+    // A CRLF body keeps its "\r" at the end of the line; drop it so an ATX
+    // heading still matches ("## x\r" would fail a "$"-anchored regex).
+    const text = chars.slice(start, i).join("").replace(/\r$/, "");
+    let fenced = false;
+    let fenceClose = false;
+    if (fence) {
+      fenced = true;
+      if (isFenceClose(text, fence)) {
+        fence = null;
+        fenceClose = true;
+      }
+    } else {
+      const marker = isFenceStart(text);
+      if (marker) {
+        fence = marker;
+        fenced = true;
+      }
     }
+    yield { start, end: i, text, fenced, fenceClose };
+    start = i + 1;
   }
-  return lines;
 }
 
 function rangeLength(r: Range): number {
   return r.end - r.start;
-}
-
-/** Lines of a range, with offsets made absolute again. */
-function linesIn(chars: string[], r: Range): SourceLine[] {
-  return splitLines(chars.slice(r.start, r.end)).map((l) => ({
-    start: l.start + r.start,
-    end: l.end + r.start,
-    text: l.text,
-  }));
 }
 
 function trimRange(chars: string[], r: Range): Range {
@@ -226,9 +241,8 @@ function trimText(text: string): string {
   return text.replace(/^\s+|\s+$/g, "");
 }
 
-interface RawSection extends MarkdownBlock {
-  headingPath: string;
-}
+/** A section as split from the body, before its blocks are packed. */
+type RawSection = MarkdownBlock & Pick<MarkdownSection, "headingPath">;
 
 interface Heading {
   level: number;
@@ -236,7 +250,7 @@ interface Heading {
 }
 
 /** ATX heading at the very start of a line: `#`, `##`, … with a space or EOL. */
-function parseHeading(line: SourceLine): { level: number; text: string } | null {
+function parseHeading(line: SourceLine): Heading | null {
   const m = /^ {0,3}(#{1,6})(?:[ \t]+|$)(.*)$/.exec(line.text);
   if (!m) return null;
   // An optional closing sequence (`## 部署 ##`) is not part of the heading text;
@@ -279,14 +293,12 @@ function isFenceClose(text: string, fence: Fence): boolean {
  * to cut at.
  */
 export function markdownSections(chars: string[], pageTitle: string | null): RawSection[] {
-  const lines = splitLines(chars);
   const raw: RawSection[] = [];
   const stack: Heading[] = [];
   const root = trimText(pageTitle ?? "");
   const pathFor = (): string => [root, ...stack.map((h) => h.text)].filter((s) => s.length > 0).join(" > ");
 
   let cursor = 0;
-  let fence: Fence | null = null;
   let bodyStart = 0;
   let bodyPath = pathFor();
   const closeBody = (end: number): void => {
@@ -294,15 +306,9 @@ export function markdownSections(chars: string[], pageTitle: string | null): Raw
     if (rangeLength(trimmed) > 0) raw.push({ ...trimmed, headingPath: bodyPath });
   };
 
-  for (const line of lines) {
-    if (fence) {
-      if (isFenceClose(line.text, fence)) fence = null;
-      cursor = line.end;
-      continue;
-    }
-    const fenceMarker = isFenceStart(line.text);
-    if (fenceMarker) {
-      fence = fenceMarker;
+  for (const line of scanLines(chars, { start: 0, end: chars.length })) {
+    // A fence line and everything inside its block is body text, never a heading.
+    if (line.fenced) {
       cursor = line.end;
       continue;
     }
@@ -335,31 +341,18 @@ function paragraphs(chars: string[], r: Range): Range[] {
   const out: Range[] = [];
   let start: number | null = null;
   let end = 0;
-  let fence: Fence | null = null;
   const flush = (): void => {
     if (start !== null && end > start) out.push({ start, end });
     start = null;
   };
-  for (const line of linesIn(chars, r)) {
-    if (fence) {
+  for (const line of scanLines(chars, r)) {
+    // A fenced block stays one paragraph, blank lines included.
+    if (line.fenced || trimText(line.text).length > 0) {
       if (start === null) start = line.start;
       end = line.end;
-      if (isFenceClose(line.text, fence)) fence = null;
       continue;
     }
-    const marker = isFenceStart(line.text);
-    if (marker) {
-      if (start === null) start = line.start;
-      end = line.end;
-      fence = marker;
-      continue;
-    }
-    if (trimText(line.text).length === 0) {
-      flush();
-      continue;
-    }
-    if (start === null) start = line.start;
-    end = line.end;
+    flush();
   }
   flush();
   return out.map((p) => trimRange(chars, p)).filter((p) => rangeLength(p) > 0);
@@ -414,29 +407,22 @@ interface Atom extends Range {
  * a table (consecutive lines starting with `|`), or a paragraph.
  */
 function atoms(chars: string[], section: Range): Atom[] {
-  const lines = linesIn(chars, section);
   const out: Atom[] = [];
-  let fence: Fence | null = null;
   let current: Atom | null = null;
   const flush = (): void => {
     if (current) out.push({ ...trimRange(chars, current), kind: current.kind });
     current = null;
   };
-  for (const line of lines) {
+  for (const line of scanLines(chars, section)) {
     const t = line.text.replace(/^\s+/, "");
-    if (fence) {
-      if (current) current.end = line.end;
-      if (isFenceClose(line.text, fence)) {
-        fence = null;
+    if (line.fenced) {
+      if (!current || current.kind !== "fence") {
         flush();
+        current = { start: line.start, end: line.end, kind: "fence" };
+      } else {
+        current.end = line.end;
       }
-      continue;
-    }
-    const fenceMarker = isFenceStart(line.text);
-    if (fenceMarker) {
-      flush();
-      fence = fenceMarker;
-      current = { start: line.start, end: line.end, kind: "fence" };
+      if (line.fenceClose) flush();
       continue;
     }
     if (t.startsWith("|")) {
@@ -466,10 +452,9 @@ function atoms(chars: string[], section: Range): Atom[] {
 /** Split a range into pieces of at most `limit`, at line boundaries. */
 function splitByLines(chars: string[], r: Range, limit: number): Range[] {
   const out: Range[] = [];
-  const lines = linesIn(chars, r);
   let start: number | null = null;
   let end = 0;
-  for (const line of lines) {
+  for (const line of scanLines(chars, r)) {
     if (start === null) {
       start = line.start;
       end = line.end;
@@ -534,10 +519,9 @@ function splitProse(chars: string[], r: Range): Range[] {
 /**
  * Break one atom down to a block-sized piece.
  *
- * A paragraph over the max splits at whitespace. A code fence or table is kept
- * whole until it passes the whole-unit threshold, then split by lines; it is
- * deliberately exempt from the 800-character target because half a code block
- * is not a better answer than a long one.
+ * A paragraph over the max splits at whitespace. A code fence or table stays
+ * whole until it passes {@link WHOLE_UNIT_SPLIT_CHARS}, then splits by lines; it
+ * never splits at {@link BLOCK_MAX_CHARS}.
  */
 function splitAtom(chars: string[], atom: Atom): Atom[] {
   const len = rangeLength(atom);
@@ -598,9 +582,8 @@ function packAtoms(atomsList: Atom[]): PackedBlock[] {
   }
   flush();
 
-  // Merge a runt into its predecessor: a short tail is worse than a block a
-  // little over the 800 target, as long as it stays under the 1200 hard cap.
-  // A whole unit is never merged: its size is the reason it stands alone.
+  // Merge a block under BLOCK_MIN_CHARS into its predecessor when the total
+  // stays under BLOCK_HARD_CAP_CHARS. A whole unit is never merged.
   const merged: PackedBlock[] = [];
   for (const block of blocks) {
     const prev = merged[merged.length - 1];

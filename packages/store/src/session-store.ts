@@ -19,7 +19,6 @@ import {
 } from "./sqlite-init.js";
 import { containsSecret } from "./secret.js";
 import { writeStderr } from "./stderr.js";
-import { writeStderr } from "./stderr.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -270,6 +269,11 @@ export interface MemoryHit {
   role: string;
   /** Preview. A content-arm hit carries the matched section (length follows the section); without one it carries the page opening, 4000 characters at most. */
   content: string;
+  /**
+   * Score of the arm that recalled this hit (bigger is better). Absent when the
+   * lane has no score to give: a content-arm hit is ordered by section fusion,
+   * not by a number. `recall_memory` serializes the absent case as `null`.
+   */
   rank?: number;
   // arm provenance ("fts" | "content" | "entity" | "vector" | "relation" | "semantic"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
   arms?: string[];
@@ -632,6 +636,17 @@ function migrateSwitchEventSchema(db: Database.Database): void {
       `);
     }).immediate();
   });
+}
+
+/**
+ * Split content-arm hits by the lane that selected them. A block-vector hit is
+ * semantic evidence (0.5); a keyword or both hit is full-text evidence (1.0).
+ */
+function splitContentHits(hits: MemoryHit[]): { lexical: MemoryHit[]; vector: MemoryHit[] } {
+  return {
+    lexical: hits.filter((h) => h.contentVia !== "vector"),
+    vector: hits.filter((h) => h.contentVia === "vector"),
+  };
 }
 
 export class SqliteSessionStore implements SessionStore {
@@ -1391,135 +1406,135 @@ export class SqliteSessionStore implements SessionStore {
     // left to refill it with and the answer came back short. Reading a small
     // margin past `limit` gives the filter something to promote.
     const fetchLimit = limit + Math.max(4, Math.ceil(limit / 4));
-   // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
-   let rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, fetchLimit) as MemoryHit[];
-   // strict rung under-fills → append the relaxed rung (decay keyed on the strict string).
-   if (rawHits.length < fetchLimit) {
-     const relaxed = fts5RelaxedQuery(query);
-     if (relaxed) {
-       const terms = relaxedTerms(query);
-       const wide = (this.stmts.searchAllResults.all(safeQuery, relaxed, fetchLimit * 4) as MemoryHit[])
-         .filter((h) => coversMajority(terms, `${h.role ?? ""} ${h.content ?? ""}`));
-       rawHits = appendRelaxed(rawHits, wide, fetchLimit);
-     }
-   }
-   // entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
-   const armHits = this.entityArmRows(query, fetchLimit);
-   // One query embedding feeds the memory vector lane, the content arm and the
-   // semantic arm.
-   const queryVector = await embedText(query, "query");
-   const chunkModel = queryVector ? await embeddingModelId() : null;
-   const vecHits = await this.vectorArmRows(fetchLimit, queryVector);
-   // Page bodies through sections + blocks; absent when no page has chunks.
-   const contentHits = this.contentArmRows(query, fetchLimit, queryVector, chunkModel);
-   // A page selected only by block vectors is semantic evidence (weight 0.5);
-   // only a keyword/both hit carries the full-text content weight.
-   const contentLexical = contentHits.filter((h) => h.contentVia !== "vector");
-   const contentVector = contentHits.filter((h) => h.contentVia === "vector");
-   // relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
-   const relHits = this.relationArmRows(query, fetchLimit);
-   // #277: which object this query names, resolved BEFORE the knowledge lane
-   // reads. The ambiguity bites there — a Han-named knowledge row and a Latin
-   // query share no characters, so the keyword slices match BOTH companies' rows
-   // and whichever ranks first answers. One object means only its own names may
-   // answer; an unresolved collision means no knowledge row is offered at all.
-   //
-   // Resolved here and pushed DOWN into the lane on purpose: filtering the
-   // finished `limit` rows would drop the answering row whenever the head of the
-   // list belongs to another object, returning empty while the right row sat one
-   // position past the cut.
-   const objectResolution = resolveQueryObject(this.liveEntities(), query);
-   if (objectResolution.kind === "ambiguous") this.entityTel.crossScriptAmbiguousQueries += 1;
-   const objectForms = objectResolution.kind === "resolved" ? objectResolution.forms : undefined;
-   // Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
-   // Each knowledge lane reads up to `limit`, then relevance decides their
-   // combined order. The Chinese keyword lane stays active without vectors.
-   const semHitsRaw = await this.semanticArmRows(query, limit, objectForms, queryVector);
-   // An undetermined object offers no knowledge row: "cannot tell which object"
-   // is the answer, not a guess. Materials stay (they carry their own URL).
-   const semHits = objectResolution.kind === "ambiguous" ? [] : semHitsRaw;
-   const semHitsGated = semHits;
-   const byId = new Map<number, MemoryHit>();
-   for (const h of rawHits) byId.set(h.rowid, h);
-   // A page hit by the title/snippet lane keeps its rank, but the content arm's
-   // matched-section text replaces the page-opening snippet; a content-only
-   // page enters with the content hit.
-   for (const h of contentHits) {
-     const prev = byId.get(h.rowid);
-     if (prev) prev.content = h.content;
-     else byId.set(h.rowid, h);
-   }
-   // Side arms only fill gaps: they carry a snippet, not the matched passage.
-   for (const h of armHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
-   for (const h of vecHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
-   for (const h of relHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
-   for (const h of semHitsGated) byId.set(h.rowid, h); // semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
-   // RRF arms, in push order: FTS (1.0), content (1.0), vector (0.5), entity
-   // (0.5), relation (0.5), semantic (0.5); an absent arm adds no list.
-   // MemoryFusion consumes the registry — k_fusion.memory + weights.memory.
-   // The content arm carries the same weight as FTS: a body hit is a full-text
-   // hit on the page, not a side signal like an entity edge.
-   const lists = [rawHits.map((h) => String(h.rowid))];
-   const weights: number[] = [registryWeight("memory", "fts")];
-   if (contentLexical.length > 0) { lists.push(contentLexical.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "content")); }
-   // Two vector lists that share the label: each keeps its own similarity order
-   // (block distance vs page cosine); the provenance drop-arm removes both by label.
-   if (contentVector.length > 0) { lists.push(contentVector.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
-   if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
-   if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "entity")); }
-
-   if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
-   if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) { lists.push(semHitsGated.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "semantic")); }
-   // Material candidates from the episode arms were read BEFORE the awaits that
-   // fetch vectors and knowledge. A correction committed in that window leaves
-   // them holding rows that are now closed, while the knowledge lane already
-   // sees the successor — one answer would then carry both versions (#273
-   // review). The semantic lane rechecks its own rows; this covers the rest.
-   //
-   // Read over every candidate id (not just the first `limit`) because the
-   // filter now runs DURING the collection below: a stale row must not take a
-   // slot and then be dropped, which would return fewer than `limit` hits
-   // while a live successor sat further down the fusion order (#273 review).
-   // That read also answers the body tie-break and the recall payload.
-   const materialIds = Array.from(byId.values()).filter((h) => h.rowid > 0).map((h) => h.rowid);
-   const { live: liveMaterials, body: bodyMaterials, facts: materialFacts } = this.materialState(materialIds);
-   const fusedIds = lists.length === 1
-     ? lists[0]!
-     : rrfRankWithPreferred(lists, FUSION_REGISTRY.k_fusion.memory, new Set([...bodyMaterials].map(String)), weights);
-   const fusedHits: MemoryHit[] = [];
-   // read-side exit: rows written before the write guard (or via seed/test seams)
-   // must never surface back to the caller either. Applied while collecting so
-   // each dropped row frees its slot instead of shortening the answer.
-   for (const id of fusedIds) {
-     const h = byId.get(Number(id));
-     if (!h) continue;
-     if (h.rowid > 0 && !liveMaterials.has(h.rowid)) continue;
-     if (containsSecret(h.role + " " + h.content)) continue;
-     fusedHits.push(h);
-     if (fusedHits.length >= limit) break;
-   }
-   // arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
-   const ftsIds = new Set(rawHits.map((h) => h.rowid));
-   const contentIds = new Set(contentLexical.map((h) => h.rowid));
-   const entIds = new Set(armHits.map((h) => h.rowid));
-   const vecIds = new Set([...vecHits.map((h) => h.rowid), ...contentVector.map((h) => h.rowid)]);
-   const relIds = new Set(relHits.map((h) => h.rowid));
-   const semIds = new Set(semHitsGated.map((h) => h.rowid));
-   // provenance snapshot taken BEFORE the read-side secret filter (the filter can
-   // only remove rows; golden fixtures carry no secrets, so on/off deltas are unaffected).
-   { const armLabels: string[] = ["fts"];
-     if (contentLexical.length > 0) armLabels.push("content");
-     if (contentVector.length > 0 || vecHits.length > 0) armLabels.push("vector");
-     if (armHits.length > 0) armLabels.push("entity");
-
-     if (relHits.length > 0) armLabels.push("relation");
-     if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) armLabels.push("semantic");
-     const provTexts = new Map<number, string>();
-     for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
-     this.lastArmProvenance = { instance: "memory", labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], scoreKind: SCORE_KIND, texts: provTexts }; }
-   for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (contentIds.has(h.rowid)) al.push("content"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); if (SEMANTIC_ARM_MODE === "serve" && semIds.has(h.rowid)) al.push("semantic"); h.arms = al; }
-   // URL / fetch time / body flag / section list, one batch for every hit.
-   this.attachPageFacts(fusedHits, materialFacts);
+    // Params: (query_for_decay, fts_match_query, limit) — same string passed twice for both ? slots.
+    let rawHits = this.stmts.searchAllResults.all(safeQuery, safeQuery, fetchLimit) as MemoryHit[];
+    // strict rung under-fills → append the relaxed rung (decay keyed on the strict string).
+    if (rawHits.length < fetchLimit) {
+      const relaxed = fts5RelaxedQuery(query);
+      if (relaxed) {
+        const terms = relaxedTerms(query);
+        const wide = (this.stmts.searchAllResults.all(safeQuery, relaxed, fetchLimit * 4) as MemoryHit[])
+          .filter((h) => coversMajority(terms, `${h.role ?? ""} ${h.content ?? ""}`));
+        rawHits = appendRelaxed(rawHits, wide, fetchLimit);
+      }
+    }
+    // entity arm — conditional activation (absent when query has no entity match), weight 0.5 vs FTS 1.0.
+    const armHits = this.entityArmRows(query, fetchLimit);
+    // One query embedding feeds the memory vector lane, the content arm and the
+    // semantic arm.
+    const queryVector = await embedText(query, "query");
+    const chunkModel = queryVector ? await embeddingModelId() : null;
+    const vecHits = await this.vectorArmRows(fetchLimit, queryVector);
+    // Page bodies through sections + blocks; absent when no page has chunks.
+    const contentHits = this.contentArmRows(query, fetchLimit, queryVector, chunkModel);
+    // A page selected only by block vectors is semantic evidence (weight 0.5);
+    // only a keyword/both hit carries the full-text content weight.
+    const { lexical: contentLexical, vector: contentVector } = splitContentHits(contentHits);
+    // relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
+    const relHits = this.relationArmRows(query, fetchLimit);
+    // #277: which object this query names, resolved BEFORE the knowledge lane
+    // reads. The ambiguity bites there — a Han-named knowledge row and a Latin
+    // query share no characters, so the keyword slices match BOTH companies' rows
+    // and whichever ranks first answers. One object means only its own names may
+    // answer; an unresolved collision means no knowledge row is offered at all.
+    //
+    // Resolved here and pushed DOWN into the lane on purpose: filtering the
+    // finished `limit` rows would drop the answering row whenever the head of the
+    // list belongs to another object, returning empty while the right row sat one
+    // position past the cut.
+    const objectResolution = resolveQueryObject(this.liveEntities(), query);
+    if (objectResolution.kind === "ambiguous") this.entityTel.crossScriptAmbiguousQueries += 1;
+    const objectForms = objectResolution.kind === "resolved" ? objectResolution.forms : undefined;
+    // Phase-2: semantic arm (sixth, weight 0.5, conditional activation).
+    // Each knowledge lane reads up to `limit`, then relevance decides their
+    // combined order. The Chinese keyword lane stays active without vectors.
+    const semHitsRaw = await this.semanticArmRows(query, limit, objectForms, queryVector);
+    // An undetermined object offers no knowledge row: "cannot tell which object"
+    // is the answer, not a guess. Materials stay (they carry their own URL).
+    const semHits = objectResolution.kind === "ambiguous" ? [] : semHitsRaw;
+    const semHitsGated = semHits;
+    const byId = new Map<number, MemoryHit>();
+    for (const h of rawHits) byId.set(h.rowid, h);
+    // A page hit by the title/snippet lane keeps its rank, but the content arm's
+    // matched-section text replaces the page-opening snippet; a content-only
+    // page enters with the content hit.
+    for (const h of contentHits) {
+      const prev = byId.get(h.rowid);
+      if (prev) prev.content = h.content;
+      else byId.set(h.rowid, h);
+    }
+    // Side arms only fill gaps: they carry a snippet, not the matched passage.
+    for (const h of armHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
+    for (const h of vecHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
+    for (const h of relHits) if (!byId.has(h.rowid)) byId.set(h.rowid, h);
+    for (const h of semHitsGated) byId.set(h.rowid, h); // semantic ids must resolve on the single-query path (was silent drop, atomcode Spec-1)
+    // RRF arms, in push order: FTS (1.0), content (1.0), vector (0.5), entity
+    // (0.5), relation (0.5), semantic (0.5); an absent arm adds no list.
+    // MemoryFusion consumes the registry — k_fusion.memory + weights.memory.
+    // The content arm carries the same weight as FTS: a body hit is a full-text
+    // hit on the page, not a side signal like an entity edge. A page matched by
+    // both the opening and a body section sits in two 1.0 lists and outranks a
+    // body-only page (about 2.0 vs 1.0) — two independent matches beat one.
+    // `content` here is the fusion arm's label, not a text field.
+    const lists = [rawHits.map((h) => String(h.rowid))];
+    const weights: number[] = [registryWeight("memory", "fts")];
+    if (contentLexical.length > 0) { lists.push(contentLexical.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "content")); }
+    // Two vector lists that share the label: each keeps its own similarity order
+    // (block distance vs page cosine); the provenance drop-arm removes both by label.
+    if (contentVector.length > 0) { lists.push(contentVector.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
+    if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
+    if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "entity")); }
+    if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
+    if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) { lists.push(semHitsGated.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "semantic")); }
+    // Material candidates from the episode arms were read BEFORE the awaits that
+    // fetch vectors and knowledge. A correction committed in that window leaves
+    // them holding rows that are now closed, while the knowledge lane already
+    // sees the successor — one answer would then carry both versions (#273
+    // review). The semantic lane rechecks its own rows; this covers the rest.
+    //
+    // Read over every candidate id (not just the first `limit`) because the
+    // filter now runs DURING the collection below: a stale row must not take a
+    // slot and then be dropped, which would return fewer than `limit` hits
+    // while a live successor sat further down the fusion order (#273 review).
+    // That read also answers the body tie-break and the recall payload.
+    const materialIds = Array.from(byId.values()).filter((h) => h.rowid > 0).map((h) => h.rowid);
+    const { live: liveMaterials, body: bodyMaterials, facts: materialFacts } = this.materialState(materialIds);
+    const fusedIds = lists.length === 1
+      ? lists[0]!
+      : rrfRankWithPreferred(lists, FUSION_REGISTRY.k_fusion.memory, new Set([...bodyMaterials].map(String)), weights);
+    const fusedHits: MemoryHit[] = [];
+    // read-side exit: rows written before the write guard (or via seed/test seams)
+    // must never surface back to the caller either. Applied while collecting so
+    // each dropped row frees its slot instead of shortening the answer.
+    for (const id of fusedIds) {
+      const h = byId.get(Number(id));
+      if (!h) continue;
+      if (h.rowid > 0 && !liveMaterials.has(h.rowid)) continue;
+      if (containsSecret(h.role + " " + h.content)) continue;
+      fusedHits.push(h);
+      if (fusedHits.length >= limit) break;
+    }
+    // arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
+    const ftsIds = new Set(rawHits.map((h) => h.rowid));
+    const contentIds = new Set(contentLexical.map((h) => h.rowid));
+    const entIds = new Set(armHits.map((h) => h.rowid));
+    const vecIds = new Set([...vecHits.map((h) => h.rowid), ...contentVector.map((h) => h.rowid)]);
+    const relIds = new Set(relHits.map((h) => h.rowid));
+    const semIds = new Set(semHitsGated.map((h) => h.rowid));
+    // provenance snapshot taken BEFORE the read-side secret filter (the filter can
+    // only remove rows; golden fixtures carry no secrets, so on/off deltas are unaffected).
+    const armLabels: string[] = ["fts"];
+    if (contentLexical.length > 0) armLabels.push("content");
+    if (contentVector.length > 0 || vecHits.length > 0) armLabels.push("vector");
+    if (armHits.length > 0) armLabels.push("entity");
+    if (relHits.length > 0) armLabels.push("relation");
+    if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) armLabels.push("semantic");
+    const provTexts = new Map<number, string>();
+    for (const h of byId.values()) provTexts.set(h.rowid, h.role + " " + h.content);
+    this.lastArmProvenance = { instance: "memory", labels: armLabels, lists: lists.map((l) => [...l]), weights: [...weights], fusedIds: [...fusedIds], scoreKind: SCORE_KIND, texts: provTexts };
+    for (const h of fusedHits) { const al: string[] = []; if (ftsIds.has(h.rowid)) al.push("fts"); if (contentIds.has(h.rowid)) al.push("content"); if (entIds.has(h.rowid)) al.push("entity"); if (vecIds.has(h.rowid)) al.push("vector"); if (relIds.has(h.rowid)) al.push("relation"); if (SEMANTIC_ARM_MODE === "serve" && semIds.has(h.rowid)) al.push("semantic"); h.arms = al; }
+    // URL / fetch time / body flag / section list, one batch for every hit.
+    this.attachPageFacts(fusedHits, materialFacts);
     // L2: refresh last_accessed for each hit (access-time signal).
     for (const hit of fusedHits) {
       try { this.stmts.touchAccessed.run(hit.rowid); this.recordAccessEventChained(hit.rowid); } catch { this.accessEventTel.writeFailures += 1; }
@@ -1538,13 +1553,11 @@ export class SqliteSessionStore implements SessionStore {
     const contentHits = this.contentArmRows(queries[0] ?? "", limit, queryVector, chunkModel);
     // content + entity + vector arms; weights come from the registry. Labeled
     // arms so searchMemoryMultiQuery can annotate hit.arms provenance.
+    const { lexical: contentLexical, vector: contentVector } = splitContentHits(contentHits);
     const arms: { label: string; ids: string[] }[] = [];
-    if (contentHits.some((h) => h.contentVia !== "vector")) {
-      arms.push({ label: "content", ids: contentHits.filter((h) => h.contentVia !== "vector").map((h) => String(h.rowid)) });
-    }
+    if (contentLexical.length > 0) arms.push({ label: "content", ids: contentLexical.map((h) => String(h.rowid)) });
     if (armHits.length > 0) arms.push({ label: "entity", ids: armHits.map((h) => String(h.rowid)) });
-    const contentVectorIds = contentHits.filter((h) => h.contentVia === "vector").map((h) => String(h.rowid));
-    if (contentVectorIds.length > 0) arms.push({ label: "vector", ids: contentVectorIds });
+    if (contentVector.length > 0) arms.push({ label: "vector", ids: contentVector.map((h) => String(h.rowid)) });
     if (vecHits.length > 0) arms.push({ label: "vector", ids: vecHits.map((h) => String(h.rowid)) });
     // relation arm on the raw query (weight 0.5 in fts5.ts like the other side arms).
     // the relation arm attaches to queries[0] only — the multi-query lane keeps the
