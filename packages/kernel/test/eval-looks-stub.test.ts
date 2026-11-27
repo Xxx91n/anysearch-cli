@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RetroaererdEngine } from "../src/engine";
-import { loadDomainByNameIn, resolvePolicyFromSchema, defaultDomainsDirs } from "@anysearch-cli/store";
+import { loadDomainByNameIn, resolvePolicyFromSchema, defaultDomainsDirs, isLiveScope, isStubScope } from "@anysearch-cli/store";
 import type { SearchProvider, SearchRequest, ProviderEnvelope, NormalizedResult } from "@anysearch-cli/retriever";
 import type { RetrievalObservationSink } from "../src/ports";
 
@@ -188,11 +188,11 @@ async function main() {
   const mustHit = (e: any) => (e.expected?.mustHitHosts?.length ?? 0) > 0 || (e.expected?.mustHitUrls?.length ?? 0) > 0;
   for (const e of entries) {
     if (e.expected?.verdict === "answer" && mustHit(e))
-      assert(scopes[e.id] === "live" || scopes[e.id] === "both", e.id + " answer+mustHit* needs live-capable scope (explicit, not defaulted)");
+      assert(isLiveScope(scopes[e.id]), e.id + " answer+mustHit* needs live-capable scope (explicit, not defaulted)");
   }
 
   // Execute the stub slice.
-  const stubEntries = entries.filter((e) => scopes[e.id] === "stub" || scopes[e.id] === "both");
+  const stubEntries = entries.filter((e) => isStubScope(scopes[e.id]));
   assert(stubEntries.length >= 3, "stub slice covers the three abstain entries (got " + stubEntries.length + ")");
   for (const e of stubEntries) {
     const sc = scenarioFor(e);

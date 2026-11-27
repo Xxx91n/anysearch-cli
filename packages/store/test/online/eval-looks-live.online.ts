@@ -30,7 +30,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { readQuarantine, activeIds } from "../../src/eval/quarantine-ledger";
-import { GOLDEN_FILE, readGoldenFile } from "../../src/eval/golden-file";
+import { GOLDEN_FILE, isLiveScope, readGoldenFile } from "../../src/eval/golden-file";
 
 let passed = 0, failed = 0, skipped = 0;
 function assert(cond: boolean, msg: string) {
@@ -138,7 +138,7 @@ function main() {
   }
 
   const scopes = golden.scopes;
-  const entries = golden.entries.filter((e) => scopes[e.id] === "live" || scopes[e.id] === "both");
+  const entries = golden.entries.filter((e) => isLiveScope(scopes[e.id]));
   assert(entries.length > 0, "live slice non-empty (got " + entries.length + ")");
   // Baseline asserts can never be quarantine-attributable.
   let nonQuarFailed = failed;

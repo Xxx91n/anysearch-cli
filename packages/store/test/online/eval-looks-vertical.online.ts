@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GOLDEN_FILE, readGoldenFile } from "../../src/eval/golden-file";
+import { GOLDEN_FILE, isLiveScope, readGoldenFile } from "../../src/eval/golden-file";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..", "..", "..", "..");
@@ -120,7 +120,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
   const golden = readGoldenFile(join(root, GOLDEN_FILE));
   const scopes = golden.scopes;
   const all = golden.entries.filter(
-    (e) => (scopes[e.id] === "live" || scopes[e.id] === "both") && e.expected?.vertical !== undefined,
+    (e) => isLiveScope(scopes[e.id]) && e.expected?.vertical !== undefined,
   );
   if (all.length === 0) { console.error("FAIL: no live-scoped vertical entries"); process.exit(1); }
   const entries = limitNum > 0 ? all.slice(0, limitNum) : all;
