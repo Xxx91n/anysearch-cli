@@ -30,9 +30,13 @@ export const DEFAULT_GATE: SufficiencyGate = {
   crossEngineVerify: true,
 };
 
-// Design: one 4s cap per request, counted from fan-out; `requestTimeoutMs`
-// exists only so tests can shrink it.
+// Design: one 4s cap per request by default, counted from fan-out. setTimeout's
+// ceiling is 2^31-1; the constructor rejects non-integers, <=0 and anything
+// above it, which is the only guard for callers that construct this class
+// directly. Exported so composition reads both and help reads the 4s default.
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
+const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
+export { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS };
 
 // Extract domain from URL for sufficiency gate domain counting.
 function extractDomain(url: string): string {
@@ -222,8 +226,9 @@ export class RetroaererdEngine {
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
   // constructor-time knobs. `gate` used to ride on a per-search config object
-  // no caller could pass (#478); it lives here now. `requestTimeoutMs`
-  // exists only so tests can shrink the 4s deadline.
+  // no caller could pass; it lives here now. `requestTimeoutMs` is the caller's
+  // per-request cap: tests shrink it, eval raises it, and `ans search --deadline`
+  // passes the terminal's choice; absent is 4s.
   private gate: SufficiencyGate;
   private requestTimeoutMs: number;
 
@@ -236,6 +241,12 @@ export class RetroaererdEngine {
     this.attributionJudge = opts?.attributionJudge;
     this.sourceWeights = opts?.sourceWeights;
     this.gate = { ...DEFAULT_GATE, ...opts?.gate };
+    const requestedTimeout = opts?.requestTimeoutMs;
+    // setTimeout truncates fractions and clamps values above 2^31-1 ms to 1ms;
+    // both would cut a search off at once, so reject them here.
+    if (requestedTimeout !== undefined && (!Number.isInteger(requestedTimeout) || requestedTimeout <= 0 || requestedTimeout > MAX_REQUEST_TIMEOUT_MS)) {
+      throw new RangeError("requestTimeoutMs must be a positive whole number of milliseconds no greater than " + MAX_REQUEST_TIMEOUT_MS);
+    }
     this.requestTimeoutMs = opts?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     // immutable at the injection seam, even when the caller
     // bypasses the wiring.
