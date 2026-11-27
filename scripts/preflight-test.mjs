@@ -12,11 +12,19 @@
 // for one full run. See AGENTS.md.
 //
 // Design: the exit code is the answer — 0 = skipped or green, 1 = the run did
-// not pass, 2 = the gate itself could not do its job. An interrupt keeps its
-// signal's code (130/143) instead of borrowing one of the three, because a
-// person pressing Ctrl-C did not fail a test. Nothing out of the gate's own
-// control borrows 1 either: that would read as "the code is bad" when the
-// truth is "nobody looked".
+// not pass or did not finish, 2 = the gate itself could not do its job. An
+// interrupt keeps its signal's code (130/143) instead of borrowing one of the
+// three, because a person pressing Ctrl-C did not fail a test. Nothing out of
+// the gate's own control borrows 1 either: that would read as "the code is bad"
+// when the truth is "nobody looked".
+//
+// Design: the suite runs under a budget (ANS_PUSH_GATE_TIMEOUT, 600 seconds by
+// default). A gate that waits forever cannot be told apart from a gate that is
+// stuck, so at the budget it stops the whole process tree and answers "not
+// finished" — never "passed". While the suite runs, a heartbeat says how long it
+// has been going; without one, a silent nine-minute wait reads as a hang. The
+// whole output lands in a timestamped file in the temp directory, which a red,
+// timed-out or interrupted run keeps and a green run deletes.
 //
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
@@ -46,6 +54,8 @@ import { flushStreams } from "./preflight-flush.mjs";
 import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { gitEnv } from "./preflight-git.mjs";
+import { reportRunOutput } from "./preflight-output.mjs";
+import { CLOSE_CAP_MS, DUMP_FLUSH_MS } from "./preflight-timings.mjs";
 import { broken, planPreflight, strictPushGate } from "./preflight-plan.mjs";
 import { writeStderr } from "./preflight-stderr.mjs";
 
@@ -174,18 +184,35 @@ if (args.includes("--dry-run")) {
   process.exit(0);
 }
 
+// The default budget: ten minutes, so a rerun of the heaviest push has room.
+const DEFAULT_SUITE_TIMEOUT_SECONDS = 600;
+
+// setTimeout's own ceiling, in seconds: past it the timer clamps to a
+// millisecond and a huge budget would stop the suite before it starts.
+const MAX_SUITE_TIMEOUT_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
+
+// The suite's budget and heartbeat, read before any temp state exists: a budget
+// the gate cannot read stops the push (exit 2) and leaves no home behind.
+const suiteTimeoutSeconds = readSuiteTimeout();
+const heartbeatSeconds = Math.min(15, Math.max(1, Math.round(suiteTimeoutSeconds / 4)));
+
 const started = Date.now();
 const testHome = makeTestHome();
 let child;
 let interrupted = 0;
+// The suite's output file, opened when the suite starts. Declared here so the
+// signal handler can name it even when the run is interrupted.
+let dump = null;
 
-// An interrupt is not a green run. Keep the home, forward the signal so pnpm
-// and turbo stop too, and let the child close before exiting — a hard exit
-// here would leave them writing into the directory this run is keeping.
+// An interrupt is not a green run. Keep the home and the run's output, forward
+// the signal so pnpm and turbo stop too, and let the child close before exiting —
+// a hard exit here would leave them writing into the directory this run keeps.
 for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
   process.once(signal, () => {
     interrupted = code;
     reportKeptTestHome(testHome);
+    // The run was cut short: the file is a partial record, not the whole run.
+    reportRunOutput(dump, { finished: false });
     stopChild(child, signal);
   });
 }
@@ -232,6 +259,14 @@ if (selfTest) {
   console.log(`[preflight] gate self-test green: ${describeCount(result.tests, GATE_GROUPS.length)}`);
 }
 
+// Design: the count comes from the file, not the 64 KiB tail — a talkative suite
+// can push the summary out of a fixed-size tail.
+const suiteStarted = Date.now();
+dump = openDump();
+console.log(
+  `[preflight] suite budget: ${suiteTimeoutSeconds}s, heartbeat every ${heartbeatSeconds}s (ANS_PUSH_GATE_TIMEOUT changes the budget)`,
+);
+
 child = spawn("pnpm", runArgs, {
   cwd: root,
   env: testHome.env,
@@ -240,35 +275,115 @@ child = spawn("pnpm", runArgs, {
   detached: process.platform !== "win32",
 });
 
-const readTail = forwardKeepingTail(child, 64 * 1024);
+const readTail = forwardKeepingTail(child, 64 * 1024, dump);
+
+// Design: a silent suite reads as a hang. The interval is a quarter of the budget,
+// clamped to 1–15 seconds: a short budget still gets several beats before it ends,
+// and the default ten-minute budget does not print one every second.
+const heartbeat = setInterval(() => {
+  console.log(`[preflight] still running: ${Math.round((Date.now() - suiteStarted) / 1000)}s elapsed`);
+}, heartbeatSeconds * 1000);
+heartbeat.unref();
+
+// Design: the budget stops the whole tree — a child pnpm leaves behind would keep
+// writing to the home this run keeps. A run that hit its budget did not finish, so
+// it is not a pass. The close wait is capped: a process outside the killed group
+// can hold the pipe open.
+let timedOut = false;
+let settleClose = null;
+let closeCap = null;
+const deadline = setTimeout(() => {
+  // A suite that already exited or was killed is the answer, not a timeout: keep
+  // its exit code and just cap the wait, because a pipe holder can outlive it. A
+  // signal leaves exitCode null too, so both are checked.
+  if (child.exitCode === null && child.signalCode === null) {
+    timedOut = true;
+    stopChild(child, "SIGTERM");
+  }
+  closeCap = setTimeout(() => settleClose?.(child.exitCode), CLOSE_CAP_MS);
+}, suiteTimeoutSeconds * 1000);
+deadline.unref();
 
 let status;
+let spawnError = null;
 try {
   status = await new Promise((resolve, reject) => {
+    settleClose = resolve;
     child.on("error", reject);
     child.on("close", resolve);
   });
 } catch (error) {
+  spawnError = error;
+} finally {
+  clearInterval(heartbeat);
+  clearTimeout(deadline);
+  clearTimeout(closeCap);
+}
+
+// Read the run's output once the child is gone and the file is flushed.
+await closeDump(dump);
+const output = readDump(dump);
+
+if (spawnError) {
   reportKeptTestHome(testHome);
-  writeStderr(`[preflight] could not start pnpm: ${error.message}`);
+  writeStderr(`[preflight] could not start pnpm: ${spawnError.message}`);
+  // The file holds nothing when pnpm never started, so it is litter, not evidence.
+  removeDump(dump);
   // Design: no test ran, so this is the gate failing, not the code — exit 2.
-  process.exit(2);
+  await exitAfterFlush(2);
 }
 
 const seconds = ((Date.now() - started) / 1000).toFixed(1);
-if (interrupted) {
-  process.exitCode = interrupted;
+if (timedOut) {
+  writeStderr(`[preflight] timed out after ${suiteTimeoutSeconds}s: the suite did not finish — this is not a pass`);
+  writeStderr(`[preflight] run the rest yourself: pnpm ${runArgs.join(" ")}`);
+  reportRunOutput(dump, { finished: false });
+  reportKeptTestHome(testHome, console.error);
+  // Design: exit after the flush instead of setting the code and falling off —
+  // a process outside the killed tree can still hold the pipe, and its data
+  // handlers would keep this process alive past the budget the gate just spent.
+  await exitAfterFlush(1);
+} else if (interrupted) {
+  await exitAfterFlush(interrupted);
 } else if (status !== 0) {
-  const failed = failedTask(readTail());
-  console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
+  // A run whose file never finished still has its in-memory tail; show that
+  // rather than nothing.
+  const lines = lastLines(output ?? readTail(), 100);
+  if (lines.length > 0) {
+    console.error(`\n[preflight] last ${lines.length} line(s) of the run:`);
+    for (const line of lines) console.error(line);
+  }
+  // A suite killed from outside has no failed task to name: an external signal is
+  // not a test failure.
+  const failed = child.signalCode ? null : failedTask(output ?? readTail());
+  // A read that throws leaves dump.failed false, so whether the file holds
+  // anything comes from `output`.
+  let where;
+  if (output) where = "see the output file";
+  else if (lines.length > 0) where = "see the output above";
+  else where = "no output to show";
+  let reason;
+  if (child.signalCode) reason = `killed by ${child.signalCode}, ${where}`;
+  else if (failed) reason = `${failed}, ${where}`;
+  else reason = `a task failed, ${where}`;
+  console.error(`\n[preflight] blocked after ${seconds}s: ${reason}`);
+  // A signal leaves no exit code, and the file it left is a prefix: a run nobody
+  // let finish is not named as the whole run.
+  reportRunOutput(dump, { write: console.error, finished: status !== null && child.signalCode === null });
   reportKeptTestHome(testHome, console.error);
   // Design: a run that did not pass is 1 whatever pnpm exited with — its own
   // code is not the answer to "were the tests green", and forwarding a 2 here
-  // would read as "the gate is broken" instead.
-  process.exitCode = 1;
+  // would read as "the gate is broken" instead. Exit rather than fall off: a
+  // process outside the killed tree can hold the pipe and keep the loop alive.
+  await exitAfterFlush(1);
 } else {
-  console.log(`\n[preflight] green in ${seconds}s (${plan.mode})`);
+  const count = totalTests(output);
+  console.log(`\n[preflight] green in ${seconds}s (${plan.mode})${count === null ? "" : `, ${count} test(s)`}`);
+  removeDump(dump);
   removeTestHome(testHome);
+  // Exit rather than fall off, for the same reason as the red branch: a pipe
+  // holder must not decide when the gate ends.
+  await exitAfterFlush(0);
 }
 
 function readChange() {
@@ -313,10 +428,13 @@ function planRun() {
   return broken(change.unknown, change.fix, []);
 }
 
-// turbo names a failed task on its summary line, e.g. "Failed: @scope/app#test".
+// turbo names each failed task on its own summary line, e.g.
+// "Failed: @scope/app#test". A package that prints a line starting "Failed:" is
+// named too, which is the lesser risk than dropping one of two that failed.
 function failedTask(output) {
-  const match = /^Failed:\s*(.+)$/m.exec(output.replace(/\u001b\[[0-9;]*m/g, ""));
-  return match ? match[1].trim() : null;
+  const plain = output.replace(/\u001b\[[0-9;]*m/g, "");
+  const names = [...plain.matchAll(/^Failed:\s*(.+)$/gm)].map((match) => match[1].trim());
+  return names.length > 0 ? names.join(", ") : null;
 }
 
 function readStdin() {
@@ -442,8 +560,9 @@ async function runGateTests() {
 
 // Forward both streams and keep the last bytes, so a caller can read a line out
 // of output the operator has already seen. Design: decode through StringDecoder —
-// a `ℹ` split across two chunks would otherwise fail the count's regex.
-function forwardKeepingTail(source, limit) {
+// a `ℹ` split across two chunks would otherwise fail the count's regex. The dump
+// gets the same bytes, so the file holds the whole run, not just the tail.
+function forwardKeepingTail(source, limit, dump) {
   let tail = "";
   for (const [stream, out] of [
     [source.stdout, process.stdout],
@@ -452,10 +571,116 @@ function forwardKeepingTail(source, limit) {
     const decoder = new StringDecoder("utf8");
     stream.on("data", (chunk) => {
       out.write(chunk);
+      if (dump && !dump.failed && !dump.stream.writableEnded) dump.stream.write(chunk);
       tail = (tail + decoder.write(chunk)).slice(-limit);
     });
   }
   return () => tail;
+}
+
+// The suite's output file: a timestamped file in the system temp directory. A
+// write that fails turns the dump off rather than the run: the suite's answer is
+// its exit code, and a full disk should not hide a failing test. The exclusive
+// create refuses a name already taken, so a planted symlink is not followed.
+function openDump() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const handle = { file: path.join(os.tmpdir(), `ans-preflight-${stamp}.log`), failed: false };
+  handle.stream = fs.createWriteStream(handle.file, { flags: "wx", mode: 0o600 });
+  handle.stream.on("error", (error) => {
+    if (handle.failed) return;
+    handle.failed = true;
+    writeStderr(`[preflight] could not write the run's output to ${handle.file}: ${error.message}`);
+  });
+  return handle;
+}
+
+// Wait for the file to flush, at most two seconds: a stream that never finishes
+// must not hold the answer, and a cap that wins makes the file incomplete.
+function closeDump(handle) {
+  if (!handle?.stream || handle.failed) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(cap);
+      resolve();
+    };
+    const cap = setTimeout(() => {
+      if (settled) return;
+      handle.failed = true;
+      done();
+    }, DUMP_FLUSH_MS);
+    cap.unref();
+    handle.stream.once("error", () => {
+      handle.failed = true;
+      done();
+    });
+    handle.stream.end(done);
+  });
+}
+
+// A write that failed leaves a truncated file: read as the run, it would pass a
+// partial count off as the total.
+function readDump(handle) {
+  if (!handle?.file || handle.failed) return null;
+  try {
+    return fs.readFileSync(handle.file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function removeDump(handle) {
+  if (!handle?.file) return;
+  try {
+    fs.rmSync(handle.file, { force: true });
+  } catch (error) {
+    // A green run that cannot delete its own output file is not a failed run.
+    console.error(`[preflight] could not delete the run's output file ${handle.file}: ${error.message}`);
+  }
+}
+
+// The last N lines of a run, for the failure report. A run that printed nothing
+// gives an empty list, and the report leaves the slice out.
+function lastLines(output, count) {
+  if (!output) return [];
+  const lines = output.replace(/\r\n/g, "\n").split("\n");
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return lines.slice(-count);
+}
+
+// The suite runs one test command per package, so the total is the sum of every
+// summary line in the file. A run with no summary line reports no count rather
+// than a wrong one. The summary is matched anywhere in the line, because turbo
+// prefixes a task's output with the task's name in some output modes.
+function totalTests(output) {
+  if (!output) return null;
+  const plain = output.replace(/\u001b\[[0-9;]*m/g, "");
+  let total = 0;
+  let seen = false;
+  for (const match of plain.matchAll(/ℹ tests (\d+)/g)) {
+    total += Number(match[1]);
+    seen = true;
+  }
+  return seen ? total : null;
+}
+
+// Design: setTimeout takes a 32-bit delay, so a budget past MAX_SUITE_TIMEOUT_SECONDS
+// would overflow and fire at once — such a value exits 2 instead.
+function readSuiteTimeout() {
+  const raw = process.env.ANS_PUSH_GATE_TIMEOUT;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_SUITE_TIMEOUT_SECONDS;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    writeStderr(`[preflight] blocked: ANS_PUSH_GATE_TIMEOUT is not a positive number of seconds: "${raw}"`);
+    process.exit(2);
+  }
+  if (seconds > MAX_SUITE_TIMEOUT_SECONDS) {
+    writeStderr(`[preflight] blocked: ANS_PUSH_GATE_TIMEOUT is larger than the timer can take (max ${MAX_SUITE_TIMEOUT_SECONDS}s): "${raw}"`);
+    process.exit(2);
+  }
+  return seconds;
 }
 
 // Design: the flush lives in preflight-flush.mjs so a test can give it a fake
