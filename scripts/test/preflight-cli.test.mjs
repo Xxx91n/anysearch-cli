@@ -158,9 +158,11 @@ test(
   async () => {
     await withTempDir(async ({ overrides }) => {
       await withPnpmShim(writePipeHoldingPnpm, async (bin) => {
+        // The budget and the cleanup's clock both come from this one number.
+        const budgetMs = 2000;
         // spawnSync would block until the holder closes the pipe, so this test
         // measures the gate's own exit instead of waiting for the streams.
-        const env = gateEnv(bin, { ...overrides, ANS_PUSH_GATE_TIMEOUT: "2" });
+        const env = gateEnv(bin, { ...overrides, ANS_PUSH_GATE_TIMEOUT: String(budgetMs / 1000) });
         env.PREFLIGHT_SELF_TEST = "0";
         const gate = spawn(process.execPath, [join(repoRoot, "scripts", "preflight-test.mjs"), "--full"], {
           cwd: repoRoot,
@@ -192,19 +194,18 @@ test(
           waited = Date.now() - started;
           // The exit and the pipe's last bytes are separate events: wait for the
           // line the assertions read, bounded, before judging the answer.
-          await waitForText(() => /timed out after 2s/.test(err), 5000);
+          await waitForText(() => new RegExp(`timed out after ${budgetMs / 1000}s`).test(err), 5000);
           // 2s budget + 10s cap + flush; the holder's own minute is not the gate's.
           assert.ok(waited < 20000, `the gate waited ${waited}ms on a pipe holder`);
           assert.equal(code, 1, err);
-          assert.match(err, /timed out after 2s/);
+          assert.match(err, new RegExp(`timed out after ${budgetMs / 1000}s`));
         } finally {
           // The holder never exits on its own and holds this test's pipe open, so
-          // it always goes. pnpm's group goes only when the gate ended before its
-          // deadline, read off the clock rather than the message text: a gate that
-          // did reach it already killed the group, and that pid may belong to
-          // someone else by now. No answer at all counts as unfinished.
+          // it always goes. pnpm's group is taken only when the gate ended before
+          // its deadline: a gate that reached it already killed the group, and
+          // that pid may belong to someone else by now.
           killHolder(out);
-          if (waited === null || waited < 2000) killGroup(out);
+          if (waited === null || waited < budgetMs) killGroup(out);
           gate.kill("SIGKILL");
         }
       });
