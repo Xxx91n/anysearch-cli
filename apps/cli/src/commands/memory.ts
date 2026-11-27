@@ -48,12 +48,13 @@ export async function runMemory(args: string[]): Promise<number> {
     const r = await store.backfillEmbeddings(dryRun, dryRun ? undefined : limit);
     const chunks = await store.backfillChunkVectors(dryRun, dryRun ? undefined : limit);
     if (dryRun) {
-      process.stdout.write("dry-run: the whole archive has " + r.scanned + " row(s) pending embedding; " +
-        chunks.rebuiltPages + " page(s) missing chunks; " + chunks.scanned +
+      process.stdout.write("dry-run: the whole archive has " + r.scanned + " row(s) pending embedding" +
+        (r.skipped > 0 ? " (" + r.skipped + " more have an empty title and snippet: nothing to embed)" : "") +
+        "; " + chunks.rebuiltPages + " page(s) missing chunks; " + chunks.scanned +
         " block(s) pending embedding (no writes; --limit ignored)\n");
       return 0;
     }
-    process.stdout.write("backfilled" + r.embedded + "/" + r.scanned + " vector(s)" +
+    process.stdout.write("backfilled " + r.embedded + "/" + r.scanned + " vector(s)" +
       (r.failed > 0 ? " (" + r.failed + " failed)" : "") +
       (r.skipped > 0 ? " (" + r.skipped + " skipped: nothing to embed)" : "") + "\n");
     process.stdout.write("chunk index: rebuilt " + chunks.rebuiltPages + " page(s); backfilled " +

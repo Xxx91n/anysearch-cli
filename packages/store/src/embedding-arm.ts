@@ -1,9 +1,10 @@
 // @anysearch-cli/embedding is an OPTIONAL PEER (peerDependencies +
-// peerDependenciesMeta.optional), so a missing install leaves the vector arm
-// absent instead of broken: embedText ≡ null, telemetry all-zero + absent:true,
-// a legal FTS-only state that never throws. fail-open semantics are preserved
-// end-to-end. consolidate dedup degrades to jaccard-only (decideOp null-cos
-// branch, THETA_JAC=0.80) when this arm is absent — see
+// peerDependenciesMeta.optional). If it is not installed, embedText returns null,
+// telemetry reads all-zero with absent:true, and every caller falls back to the
+// FTS-only path — a legal state, not an error. Nothing throws: loadEmbedding
+// catches a failed import and answers null, and importEmbeddingFallback guards
+// each candidate copy the same way. consolidate dedup degrades to jaccard-only
+// (decideOp null-cos branch, THETA_JAC=0.80) when this arm is absent — see
 // packages/store/src/consolidate.ts.
 //
 // cosineSimilarity is pure math — inlined here (dot product over L2-normalized

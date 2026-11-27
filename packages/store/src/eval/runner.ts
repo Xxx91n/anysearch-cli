@@ -54,13 +54,10 @@ export interface OpRecord {
 
 export type MemoryArmLabel = "fts" | "content" | "entity" | "vector" | "relation" | "semantic";
 /**
- * Arms this evaluation measures. `content` is deliberately outside: no case
- * writes a page body, and an n=0 arm would trip the weakest-link warning and
- * shift the beta correction for the other four. The arm still runs, and a hit it
- * recalls counts as strong evidence in `isWeak` below — that call classifies
- * evidence (a keyword hit on a page body is a literal hit), it does not measure
- * the arm. When a case starts writing a body, add content here and to
- * NON_ANCHOR_MEMORY_ARMS; the pin test fails until it has a critical role.
+ * Arms this evaluation measures. content is outside because no case writes a
+ * page body: an n=0 arm would trip the weakest-link warning and shift the beta
+ * correction for the other four. Add it here, with a critical role in
+ * MEMORY_ARM_ROLES, once a case writes a body; the pin test fails until then.
  */
 export type MeasuredMemoryArm = Exclude<MemoryArmLabel, "content">;
 export const MEMORY_ARM_ROLES: Record<MeasuredMemoryArm, "anchor" | "critical" | "observational"> = {

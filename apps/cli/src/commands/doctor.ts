@@ -100,7 +100,7 @@ export interface DoctorOptions {
 
 const BACKFILL_COMMAND = "ans memory backfill-vectors";
 
-/** 正文块向量这一行的四态和说明。积压判定只在这里算一次，state 和 detail 不会走散。 */
+/** 正文块向量这一行的状态和说明。积压判定只在这里算一次，state 和 detail 不会走散。 */
 function chunkBacklogReport(backlog: ChunkVectorBacklog, chunkModel: string): { state: "ready" | "unconfigured"; detail: string } {
   const facts = [`已补 ${backlog.embedded} 块 / 待补 ${backlog.pending} 块`];
   if (chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {

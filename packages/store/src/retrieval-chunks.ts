@@ -37,6 +37,11 @@ const VECTOR_SCAN_MAX = 2_000;
 const KEYWORD_BLOCK_SCAN_MAX = 2_000;
 /** Preview cap for a matched section in recall JSON. */
 const MATCH_PREVIEW_MAX_CHARS = 1000;
+/**
+ * Hit positions one preview statement may bind. Two variables per pair, kept far
+ * under SQLite's 32766 bound-variable ceiling.
+ */
+const PREVIEW_PAIRS_PER_QUERY = 400;
 /** Default batch for a repair/backfill pass. */
 export const PENDING_BATCH_DEFAULT = 200;
 
@@ -512,16 +517,20 @@ export function searchChunkPages(
   const outsideText = new Map<number, string>();
   const outsideBest = [...bestSection.values()].filter((id) => keyword.outsideAt.has(id));
   if (outsideBest.length > 0) {
-    // One statement for every section: each hit position goes in as a pair, so
-    // substr cuts inside SQLite and only the previews cross into JS.
+    // Each hit position goes in as a (section, at) pair, so substr cuts inside
+    // SQLite and only previews cross into JS. Batched because one statement
+    // would exceed SQLite's 32766-variable limit at a large `limit`.
     const pairs = outsideBest.map((sectionId) => [sectionId, keyword.outsideAt.get(sectionId)!] as const);
-    const previews = db.prepare(
-      "WITH outside(section_id, at) AS (VALUES " + pairs.map(() => "(?, ?)").join(", ") + ") " +
-        "SELECT o.section_id AS id, substr(r.content, o.at + 1, " + MATCH_PREVIEW_MAX_CHARS + ") AS text " +
-        "FROM outside o JOIN retrieval_chunks s ON s.id = o.section_id " +
-        "JOIN retrieval_results r ON r.id = s.page_id",
-    ).all(...pairs.flat()) as Array<{ id: number; text: string | null }>;
-    for (const row of previews) if (row.text) outsideText.set(row.id, row.text);
+    const previewSql = (n: number): string =>
+      "WITH outside(section_id, at) AS (VALUES " + Array.from({ length: n }, () => "(?, ?)").join(", ") + ") " +
+      "SELECT o.section_id AS id, substr(r.content, o.at + 1, " + MATCH_PREVIEW_MAX_CHARS + ") AS text " +
+      "FROM outside o JOIN retrieval_chunks s ON s.id = o.section_id " +
+      "JOIN retrieval_results r ON r.id = s.page_id";
+    for (let i = 0; i < pairs.length; i += PREVIEW_PAIRS_PER_QUERY) {
+      const batch = pairs.slice(i, i + PREVIEW_PAIRS_PER_QUERY);
+      const previews = db.prepare(previewSql(batch.length)).all(...batch.flat()) as Array<{ id: number; text: string | null }>;
+      for (const row of previews) if (row.text) outsideText.set(row.id, row.text);
+    }
   }
   const hits: ChunkPageHit[] = [];
   for (const pageId of pageIds) {

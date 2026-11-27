@@ -273,8 +273,11 @@ export interface MemoryHit {
    * The recalling arm's score, lower is better: FTS hands back
    * `freshness_factor(bm25(...))` (bm25 is negative, more negative = better
    * match) and the vector arms hand back `-cosine`. Values are comparable only
-   * within one arm, not across arms. Absent when the lane has no score to give:
-   * a content-arm hit is ordered by section fusion, not by a number, and
+   * within one arm, not across arms.
+   *
+   * `0` is a placeholder, not a score: the entity arm, the relation arm and the
+   * knowledge keyword lanes have no score to give, and their rows are ordered by
+   * fusion position. A content-arm hit carries no `rank` at all, and
    * `recall_memory` serializes that as `null`.
    */
   rank?: number;
@@ -2301,19 +2304,25 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   // idempotent backfill for rows missing an embedding (write failures, pre-rename upgrade, model re-embed).
-  // `skipped` is a row with nothing to embed (empty title and snippet). It is not a
-  // failure: no retry or network fix would change it, so it stays out of `failed`
-  // and out of the caller's exit code.
+  // A row with no title and no snippet can never get a vector, so it never enters
+  // `scanned`: it is counted in `skipped` instead, stays out of the exit code, and
+  // no retry or network fix would change it.
   async backfillEmbeddings(dryRun = false, limit?: number): Promise<{ scanned: number; embedded: number; failed: number; skipped: number }> {
+    const hasText = "trim(coalesce(r.title, '') || ' ' || coalesce(r.snippet, '')) <> ''";
     const rows = this.db.prepare(
-      "SELECT r.id, r.title, r.snippet FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL AND r.archived = 0" +
+      "SELECT r.id, r.title, r.snippet FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL AND r.archived = 0 AND " + hasText +
       (limit ? " LIMIT " + Math.max(1, Math.floor(limit)) : "")
     ).all() as Array<{ id: number; title: string | null; snippet: string | null }>;
-    let embedded = 0, failed = 0, skipped = 0;
+    let skipped = (this.db.prepare(
+      "SELECT COUNT(*) AS n FROM retrieval_results r LEFT JOIN memory_embeddings m ON m.memory_id = r.id WHERE m.memory_id IS NULL AND r.archived = 0 AND NOT (" + hasText + ")",
+    ).get() as { n: number }).n;
+    let embedded = 0, failed = 0;
     if (!dryRun) {
       for (const r of rows) {
         const text = ((r.title ?? "") + " " + (r.snippet ?? "")).trim();
-        if (!text) { skipped++; continue; }
+        // SQLite's trim only covers ASCII whitespace, so a row of other spaces
+        // reaches this point and is reported as skipped.
+        if (!text) { skipped += 1; continue; }
         const v = await embedText(text, "passage");
         if (!v) { failed++; continue; }
         this.db.prepare("INSERT OR REPLACE INTO memory_embeddings (memory_id, embedding, model) VALUES (?, ?, ?)")
