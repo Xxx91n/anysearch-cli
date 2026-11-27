@@ -278,14 +278,15 @@ export async function runSearch(args: string[]): Promise<number> {
 
     // --json pure — single JSON document on stdout, nothing else.
     if (isJson) {
+      // 这次跑用的预算。评测是另起一个进程跑 --json 的，看不到内存里的
+      // CompositionResult，钟只能跟着这份输出走，否则量出来的数说不清是几秒。
+      const deadlineMs = reportedDeadlineMs(engine);
       const out = {
         query: queryClean,
         mode,
-        // 这次跑用的预算。评测是另起一个进程跑 --json 的，看不到内存里的
-        // CompositionResult，钟只能跟着这份输出走，否则量出来的数说不清是几秒。
-        requestTimeoutMs: reportedDeadlineMs(engine),
+        requestTimeoutMs: deadlineMs,
         // 两个键同一个数：评测报告认准上面那个，`deadlineMs` 是给脚本新加的键。
-        deadlineMs: reportedDeadlineMs(engine),
+        deadlineMs,
         results: envelope.results,
         // providersFailed exposed so install-smoke's fault leg names the failed
         // arm from a structured field, not a string match on human output.
