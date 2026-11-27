@@ -360,7 +360,6 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
 
 /** The budget to report for one fanout: the result's copy, the engine's own, then 4s. */
 export function reportedDeadlineMs(eng: { requestTimeoutMs?: number; retriever?: RetrieverPort }): number {
-  // Fall back to the engine's own budget; a wrapper that omits it reports 4s.
   return eng.requestTimeoutMs ?? eng.retriever?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 }
 

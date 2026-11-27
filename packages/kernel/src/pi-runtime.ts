@@ -717,8 +717,6 @@ export class PiAgentRuntime {
     this.archive = wiredSessionId ? { store: opts.store!, sessionId: wiredSessionId } : undefined;
     this.scopedRetriever = wiredSessionId || opts.taskBudget || opts.includeAnswer
       ? {
-        // Forwarded so a surface still reports the engine's real budget.
-        ...(opts.retriever.requestTimeoutMs !== undefined ? { requestTimeoutMs: opts.retriever.requestTimeoutMs } : {}),
         search: (q) => opts.retriever.search({
           ...q,
           ...(wiredSessionId ? { sessionId: q.sessionId ?? wiredSessionId } : {}),
