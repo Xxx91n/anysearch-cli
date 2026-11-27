@@ -38,6 +38,19 @@ function fail(msg) {
   console.error("badcase-backfill: " + msg);
   process.exit(2);
 }
+function readJson(file, label) {
+  let text;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (err) {
+    fail("cannot read " + label + ": " + (err.code ?? err.message));
+  }
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    fail("invalid JSON in " + label + ": " + err.message);
+  }
+}
 function arg(name) {
   const i = process.argv.indexOf("--" + name);
   return i === -1 ? null : process.argv[i + 1];
@@ -48,7 +61,7 @@ const into = arg("into");
 const create = process.argv.includes("--new");
 if (!id || (!into && !create)) fail("usage: --id <docs-bcNNNN> (--into <docs-gNNNN> | --new)");
 
-const badcases = JSON.parse(readFileSync(BADCASES, "utf8"));
+const badcases = readJson(BADCASES, "eval-badcases.json");
 const bc = (badcases.badcases ?? []).find((b) => b.id === id);
 if (!bc) fail("badcase not found: " + id);
 if (bc.status !== "open") fail("badcase " + id + " is not open (status=" + bc.status + ")");
@@ -59,7 +72,7 @@ if (typeof bc.question !== "string" || bc.question.trim().length < 8) fail(id + 
 if (typeof bc.domain !== "string" || bc.domain.length === 0) fail(id + " has no domain — record it on the badcase before backfill");
 if (!bc.expected || typeof bc.expected !== "object" || Array.isArray(bc.expected)) fail(id + " has no expected block");
 
-const golden = JSON.parse(readFileSync(GOLDEN, "utf8"));
+const golden = readJson(GOLDEN, "eval-golden.json");
 // Keep this schema literal in sync with DOCS_GOLDEN_SCHEMA in
 // packages/store/src/eval/docs-golden.ts; this script runs as plain node.
 if (!golden || golden.schema !== "anysearch/docs-golden@1") fail("eval-golden.json schema must be anysearch/docs-golden@1");
@@ -194,7 +207,7 @@ if (into) {
 
 // Recount covered dimension counts AND class histograms so the manifest stays
 // honest after backfill (count-only recount let classes drift).
-const cov = JSON.parse(readFileSync(COVERAGE, "utf8"));
+const cov = readJson(COVERAGE, "eval-looks.coverage.json");
 const counts = new Map();
 const classHist = new Map();
 for (const e of golden.entries) {
