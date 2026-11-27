@@ -230,9 +230,9 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
         }
       }
     } else if (docs.length === 0) {
-      const body = lines.join("\n").trim();
-      const nonBlank = lines.filter((line) => line.trim()).length;
-      if (body && nonBlank >= 3) pages.push({ url: requested[0]!, text: body });
+      const bodyLines = lines.filter((line) => line.trim() && !/^\s*Error fetching\s/i.test(line));
+      const body = bodyLines.join("\n").trim();
+      if (body && bodyLines.length >= 3) pages.push({ url: requested[0]!, text: body });
     }
   }
 

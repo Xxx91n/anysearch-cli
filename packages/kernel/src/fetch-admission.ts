@@ -167,14 +167,6 @@ function looksHighEntropy(value: string): boolean {
   return /^[A-Za-z0-9+/=]+$/.test(value);
 }
 
-function looksBase64UrlToken(value: string): boolean {
-  return value.length >= 32
-    && /^[A-Za-z0-9_-]+$/.test(value)
-    && /[A-Z]/.test(value)
-    && /[0-9]/.test(value)
-    && (value.includes("-") || value.includes("_"));
-}
-
 function normalizeParamName(name: string): string {
   return name.toLowerCase().replace(/-/g, "_").replace(/\[\]$/, "");
 }
@@ -197,7 +189,7 @@ export function fetchCredentialHit(rawHandle: string, identity: string): boolean
       // with three or more `-`/`_` parts are title slugs, not keys.
       if (containsSecret(segment) && segment.split(/[-_]/).filter(Boolean).length <= 2) return true;
       if (/^(?:sk-(?:proj|ant)-|ghp_|gho_|xox[baprs]-|glpat-)/i.test(segment)) return true;
-      if (looksHighEntropy(segment) || looksBase64UrlToken(segment)) return true;
+      if (looksHighEntropy(segment)) return true;
     }
     const inline = /(?:^|[?&;/])([A-Za-z0-9_.\-]+)=/g;
     for (const match of text.matchAll(inline)) {

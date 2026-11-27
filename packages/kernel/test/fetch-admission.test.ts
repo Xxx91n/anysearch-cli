@@ -110,6 +110,9 @@ assert(!fetchCredentialHit("https://example.com/550e8400-e29b-41d4-a716-44665544
 assert(!fetchCredentialHit("https://en.wikipedia.org/wiki/List_of_countries_by_population",
   "en.wikipedia.org/wiki/List_of_countries_by_population"),
   "a long underscored article title is not a credential");
+assert(!fetchCredentialHit("https://en.wikipedia.org/wiki/List_of_countries_by_population_2024",
+  "en.wikipedia.org/wiki/List_of_countries_by_population_2024"),
+  "an underscored article title with a year suffix is not a credential");
 assert(!fetchCredentialHit("https://en.wikipedia.org/wiki/ListOfCountriesByPopulation",
   "en.wikipedia.org/wiki/ListOfCountriesByPopulation"),
   "a long camel-case title is not a credential");
