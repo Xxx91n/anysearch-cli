@@ -274,17 +274,18 @@ export function computeArmDeltas(
   const rankOn = onIdx >= 0 ? onIdx + 1 : ROR_CLIP;
   const out: Record<string, ArmDeltaRecord> = {};
   for (const label of NON_ANCHOR_MEMORY_ARMS) {
-    const drop = prov.labels.indexOf(label);
+    const present = prov.labels.includes(label);
     const role = MEMORY_ARM_ROLES[label];
     if (role !== "critical" && role !== "observational") continue;
-    if (drop < 0) {
+    if (!present) {
       out[label] = { label, role, rankOn, rankOff: ROR_CLIP, excluded: true };
       continue;
     }
     const lists: string[][] = [];
     const weights: number[] = [];
     for (let i = 0; i < prov.labels.length; i++) {
-      if (i === drop) continue;
+      // A label may cover several lists (two vector lanes); drop all of them.
+      if (prov.labels[i] === label) continue;
       lists.push(prov.lists[i]!);
       weights.push(prov.weights[i]!);
     }

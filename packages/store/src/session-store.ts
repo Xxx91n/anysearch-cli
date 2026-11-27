@@ -1462,10 +1462,10 @@ export class SqliteSessionStore implements SessionStore {
    const lists = [rawHits.map((h) => String(h.rowid))];
    const weights: number[] = [registryWeight("memory", "fts")];
    if (contentLexical.length > 0) { lists.push(contentLexical.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "content")); }
-   // One vector list: content-vector and page-vector hits share the label, so
-   // two lists would make the provenance drop-arm remove only the first.
-   const vectorOnly = [...new Set([...contentVector, ...vecHits].map((h) => h.rowid))];
-   if (vectorOnly.length > 0) { lists.push(vectorOnly.map(String)); weights.push(registryWeight("memory", "vector")); }
+   // Two vector lists that share the label: each keeps its own similarity order
+   // (block distance vs page cosine); the provenance drop-arm removes both by label.
+   if (contentVector.length > 0) { lists.push(contentVector.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
+   if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
    if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "entity")); }
 
    if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
@@ -1543,11 +1543,9 @@ export class SqliteSessionStore implements SessionStore {
       arms.push({ label: "content", ids: contentHits.filter((h) => h.contentVia !== "vector").map((h) => String(h.rowid)) });
     }
     if (armHits.length > 0) arms.push({ label: "entity", ids: armHits.map((h) => String(h.rowid)) });
-    const vectorOnlyIds = [...new Set([
-      ...contentHits.filter((h) => h.contentVia === "vector").map((h) => String(h.rowid)),
-      ...vecHits.map((h) => String(h.rowid)),
-    ])];
-    if (vectorOnlyIds.length > 0) arms.push({ label: "vector", ids: vectorOnlyIds });
+    const contentVectorIds = contentHits.filter((h) => h.contentVia === "vector").map((h) => String(h.rowid));
+    if (contentVectorIds.length > 0) arms.push({ label: "vector", ids: contentVectorIds });
+    if (vecHits.length > 0) arms.push({ label: "vector", ids: vecHits.map((h) => String(h.rowid)) });
     // relation arm on the raw query (weight 0.5 in fts5.ts like the other side arms).
     // the relation arm attaches to queries[0] only — the multi-query lane keeps the
     // conditional-activation contract on the primary query (documented to avoid
@@ -1816,18 +1814,26 @@ export class SqliteSessionStore implements SessionStore {
   private async embedChunkRows(rows: PendingChunkVector[], model: string): Promise<{ embedded: number; failed: number[] }> {
     let embedded = 0;
     const failed: number[] = [];
-    for (const chunk of rows) {
-      const vector = await embedText(blockSearchText(chunk.headingPath, chunk.text).trim(), "passage");
-      if (!vector) { failed.push(chunk.chunkId); continue; }
-      try {
-        insertChunkVector(this.db, chunk.chunkId, vector, model);
-        embedded += 1;
-      } catch {
-        // A page rebuilt by another process can invalidate this chunk id; keep
-        // the rest of the batch going and count it as failed.
-        failed.push(chunk.chunkId);
+    const queue = rows.slice();
+    // Embed 4 at a time: blocks are independent, but unbounded fan-out would
+    // swamp the local model. A failed block never stops the rest.
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const chunk = queue.shift();
+        if (!chunk) return;
+        const vector = await embedText(blockSearchText(chunk.headingPath, chunk.text).trim(), "passage");
+        if (!vector) { failed.push(chunk.chunkId); continue; }
+        try {
+          insertChunkVector(this.db, chunk.chunkId, vector, model);
+          embedded += 1;
+        } catch {
+          // A page rebuilt by another process can invalidate this chunk id; keep
+          // the rest of the batch going and count it as failed.
+          failed.push(chunk.chunkId);
+        }
       }
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, rows.length) }, () => worker()));
     return { embedded, failed };
   }
 
