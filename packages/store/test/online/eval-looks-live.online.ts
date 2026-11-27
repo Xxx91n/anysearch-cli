@@ -146,7 +146,7 @@ function main() {
   // Baseline asserts can never be quarantine-attributable.
   let nonQuarFailed = failed;
 
-  // +: active-quarantined entries are reported, not
+  // active-quarantined entries are reported, not
   // silently skipped — the quarantine mark is policy, the TTL clock lives in
   // eval-quarantine.json. Classification = the ledger's single implementation.
   const qPath = join(root, "packages", "store", "eval-quarantine.json");

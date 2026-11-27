@@ -258,7 +258,7 @@ async function main(): Promise<number> {
   let baseline: EvalBaseline | null = null;
   if (existsSync(baselinePath)) baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as EvalBaseline;
 
-  // +: per-fingerprint OF look ledger — the git-committed repo-root
+  // per-fingerprint OF look ledger — the git-committed repo-root
   // eval-looks.json. Reading always happens so the next look number comes from committed state;
   // the append happens AFTER evaluateGate (below) so each row can carry its verdict.
   const looksPath = LOOKS_LEDGER_PATH;
