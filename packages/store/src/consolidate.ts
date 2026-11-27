@@ -1491,11 +1491,8 @@ export async function consolidateMemoryRun(
       // write a brand-new long-term conclusion. That breaks the D6 rule that a
       // single material may only correct, never create.
       //
-      // live means current on BOTH axes — a row closed by a re-fetch
-      // (valid_until) is history even though no correction superseded it. The
-      // same URL may still appear in several versions; keep one (body first,
-      // then newer) so three fetches of one page can never pass CLUSTER_MIN as
-      // three independent materials.
+      // Dedupe before CLUSTER_MIN: three versions of one URL are one material,
+      // not three independent sources.
       const liveEps = dedupeLiveMaterials(liveRows);
       report.duplicateMaterialSkipped += liveRows.length - liveEps.length;
       // D6: single-evidence correction is an opt-in exception to the batch
