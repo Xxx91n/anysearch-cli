@@ -6,6 +6,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -15,6 +17,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { flushStreams } from "../preflight-flush.mjs";
 import { gitIn } from "../preflight-git.mjs";
+import { outputLabel, reportRunOutput } from "../preflight-output.mjs";
+import { CLOSE_CAP_MS, DUMP_FLUSH_MS, FLUSH_MS } from "../preflight-timings.mjs";
 import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
 import { assertOwnRepo } from "./preflight-git-fixture.mjs";
 import { EXPECTED_ROOT_READERS } from "./preflight-root-readers.mjs";
@@ -75,6 +79,245 @@ test("a green run reports the mode and how long it took", () => {
     const result = runCliIn(repoRoot, bin, ["--full"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /green in \d+\.\ds \(full\)/);
+  });
+});
+
+// The budget's three promises at once: the run stops, the tree goes with it, and
+// the output stays on disk for the operator to read. The fake pnpm starts a child
+// of its own, so "the whole tree" means more than the first process.
+test("a suite that runs past its budget stops the tree and keeps the output", async () => {
+  await withTempDir(async ({ dir, overrides }) => {
+    await withPnpmShim(writeStallingPnpm, async (bin) => {
+      const result = runCliIn(repoRoot, bin, ["--full"], {
+        overrides: { ...overrides, ANS_PUSH_GATE_TIMEOUT: "4" },
+      });
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stdout, /suite budget: 4s, heartbeat every 1s/);
+      // It says the run did not finish, and never calls it a failure.
+      assert.match(result.stderr, /timed out after 4s: the suite did not finish/);
+      assert.doesNotMatch(result.stderr, /blocked after/);
+      // The file holds a prefix of a cut run, and its label says so: calling it
+      // full output here would pass a partial record off as the whole run.
+      assert.match(result.stderr, /partial output \(the run did not finish\): /);
+      // The run is told how to finish the job, and the heartbeat proves it was
+      // alive: one line is a coincidence, two are a sign of life.
+      assert.match(result.stderr, /run the rest yourself: pnpm test/);
+      const beats = result.stdout.match(/still running: \d+s elapsed/g) ?? [];
+      assert.ok(beats.length >= 2, `one heartbeat is not a sign of life: ${result.stdout}`);
+      const file = runOutputFile(result.stderr);
+      assert.ok(file, `no output file named in: ${result.stderr}`);
+      assert.ok(file.startsWith(dir), `the output file is not in the temp dir: ${file}`);
+      assert.match(readFileSync(file, "utf8"), /suite started/);
+      // The child the fake pnpm started went with the rest of the tree.
+      const grandchild = Number(/GRANDCHILD=(\d+)/.exec(result.stdout)?.[1]);
+      assert.ok(grandchild, `the fake pnpm never named its child: ${result.stdout}`);
+      await waitGone(grandchild);
+    });
+  });
+});
+
+// A suite killed by something other than its budget — OOM, an operator's SIGTERM —
+// leaves a prefix too. The gate sees no exit code, so the red branch is where the
+// label can lie.
+test(
+  "a suite killed by a signal is not named as a full run",
+  { skip: process.platform === "win32" ? "Windows has no signals to die from" : false },
+  async () => {
+    await withTempDir(async ({ overrides }) => {
+      await withPnpmShim(writeSignalPnpm, async (bin) => {
+        const result = runCliIn(repoRoot, bin, ["--full"], { overrides });
+        assert.equal(result.status, 1, result.stderr);
+        assert.match(result.stderr, /partial output \(the run did not finish\): /);
+        assert.doesNotMatch(result.stderr, /full output: /);
+        // The reason line must name the signal, not a task failure: nothing
+        // failed, the process was killed from outside.
+        assert.match(result.stderr, /blocked after \d+\.\ds: killed by SIGTERM, see the output file/);
+      });
+    });
+  },
+);
+
+// A bounded wait for text a child writes after it exits: the exit event and the
+// pipe's last bytes are separate events. The cap keeps a broken pipe from hanging
+// the test.
+async function waitForText(seen, limit) {
+  const until = Date.now() + limit;
+  while (Date.now() < until) {
+    if (seen()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+// The cap's reason for existing: a process outside the killed group keeps the
+// pipe open, so the close event never fires. The gate must still answer — the
+// wait is capped, and the answer must leave the process. POSIX only: `detached`
+// gives the holder its own process group there; on Windows taskkill /t walks the
+// parent tree and takes the holder with it, so this shape cannot be built.
+test(
+  "a budget answers even when a process outside the tree holds the pipe",
+  { skip: process.platform === "win32" ? "Windows taskkill /t takes the holder too" : false },
+  async () => {
+    await withTempDir(async ({ overrides }) => {
+      await withPnpmShim(writePipeHoldingPnpm, async (bin) => {
+        // The budget and the cleanup's clock both come from this one number.
+        const budgetMs = 2000;
+        const timeoutLine = `timed out after ${budgetMs / 1000}s`;
+        // Budget + the gate's close cap + dump flush + output flush, and 5s of
+        // slack for node and pnpm to start.
+        const answerCapMs = budgetMs + CLOSE_CAP_MS + DUMP_FLUSH_MS + FLUSH_MS + 5000;
+        // 5s above it, so a slow answer fails on `waited` and only no answer at
+        // all fails as "never exited".
+        const exitCapMs = answerCapMs + 5000;
+        // spawnSync would block until the holder closes the pipe, so this test
+        // measures the gate's own exit instead of waiting for the streams.
+        const env = gateEnv(bin, { ...overrides, ANS_PUSH_GATE_TIMEOUT: String(budgetMs / 1000) });
+        env.PREFLIGHT_SELF_TEST = "0";
+        const gate = spawn(process.execPath, [join(repoRoot, "scripts", "preflight-test.mjs"), "--full"], {
+          cwd: repoRoot,
+          env,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let out = "";
+        let err = "";
+        gate.stdout.on("data", (chunk) => {
+          out += chunk;
+        });
+        gate.stderr.on("data", (chunk) => {
+          err += chunk;
+        });
+        const started = Date.now();
+        let waited = null;
+        try {
+          const code = await new Promise((resolve, reject) => {
+            const cap = setTimeout(() => reject(new Error("the gate never exited")), exitCapMs);
+            gate.on("exit", (exitCode) => {
+              clearTimeout(cap);
+              resolve(exitCode);
+            });
+          });
+          // Measure the gate's own exit first: the wait below adds up to five
+          // seconds of polling that are not the gate's time.
+          waited = Date.now() - started;
+          // The exit and the pipe's last bytes are separate events: wait for the
+          // line the assertions read, bounded, before judging the answer.
+          await waitForText(() => err.includes(timeoutLine), 5000);
+          // The holder's own minute is not the gate's time.
+          assert.ok(waited < answerCapMs, `the gate waited ${waited}ms on a pipe holder`);
+          assert.equal(code, 1, err);
+          assert.ok(err.includes(timeoutLine), err);
+        } finally {
+          // The holder never exits on its own and holds this test's pipe open, so
+          // it always goes. pnpm's group is taken only when the gate ended before
+          // its deadline: a gate that reached it already killed the group, and
+          // that pid may belong to someone else by now.
+          killHolder(out);
+          if (waited === null || waited < budgetMs) killGroup(out);
+          gate.kill("SIGKILL");
+        }
+      });
+    });
+  },
+);
+
+// Design: the fixture prints more than the 64 KiB tail holds, so only the file can
+// supply the count. The banner also pins the default budget and heartbeat.
+test("a green run counts the tests from the file and deletes it", async () => {
+  await withTempDir(async ({ dir, overrides }) => {
+    await withPnpmShim(writeCountingPnpm, async (bin) => {
+      const result = runCliIn(repoRoot, bin, ["--full"], { overrides });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /suite budget: 600s, heartbeat every 15s/);
+      assert.match(result.stdout, /green in \d+\.\ds \(full\), 7 test\(s\)/);
+      const leftovers = readdirSync(dir).filter((name) => name.endsWith(".log"));
+      assert.deepEqual(leftovers, [], `the run left its output file behind: ${leftovers.join(", ")}`);
+    });
+  });
+});
+
+test("a red run shows the last 100 lines and names the output file", async () => {
+  await withTempDir(async ({ overrides }) => {
+    await withPnpmShim(writeNoisyFailingPnpm, async (bin) => {
+      const result = runCliIn(repoRoot, bin, ["--full"], { overrides });
+      assert.equal(result.status, 1, result.stderr);
+      // The tail is a slice, not the whole run: the first line stays in the file.
+      assert.match(result.stderr, /line 150/);
+      assert.doesNotMatch(result.stderr, /line 001/);
+      assert.match(result.stderr, /blocked after \d+\.\ds: @anysearch-cli\/kernel#test/);
+      // The run ended and its file is whole, so the label promises the whole run.
+      assert.match(result.stderr, /full output: /);
+      const file = runOutputFile(result.stderr);
+      assert.ok(file, `no output file named in: ${result.stderr}`);
+      const whole = readFileSync(file, "utf8");
+      assert.match(whole, /line 001/);
+      assert.match(whole, /Failed: @anysearch-cli\/kernel#test/);
+    });
+  });
+});
+
+// A write that fails mid-run leaves a truncated file: that is not the run, and the
+// label has to say so. The three labels are asked for directly because a real
+// failed write is a disk-full event, not something a test can stage.
+test("the output file's label names which of the three states it is in", () => {
+  assert.equal(outputLabel({ failed: false, finished: true }), "full output");
+  assert.equal(outputLabel({ failed: false, finished: false }), "partial output (the run did not finish)");
+  assert.equal(outputLabel({ failed: true, finished: true }), "incomplete output file");
+  assert.equal(outputLabel({ failed: true, finished: false }), "incomplete output file");
+  // A caller that forgets to say the run finished must not be handed the label of
+  // a whole run — and forgetting the whole argument is that mistake, not a crash.
+  assert.equal(outputLabel({ failed: false }), "partial output (the run did not finish)");
+  assert.equal(outputLabel(), "partial output (the run did not finish)");
+  // A run that never opened a file gets no line at all, and the line carries the
+  // label the state asked for.
+  const lines = [];
+  reportRunOutput(null, { write: (line) => lines.push(line) });
+  reportRunOutput({ file: "/tmp/run.log", failed: true }, { write: (line) => lines.push(line), finished: true });
+  assert.deepEqual(lines, ["[preflight] incomplete output file: /tmp/run.log"]);
+});
+
+// A run that printed nothing and left nothing in the file has neither a file's
+// content nor a tail: the reason must say so instead of pointing at either.
+test("a red run with no output at all points nowhere", () => {
+  withFakePnpm({ code: 1, lines: [] }, (bin) => {
+    const result = runCliIn(repoRoot, bin, ["--full"]);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /blocked after \d+\.\ds: a task failed, no output to show/);
+    assert.doesNotMatch(result.stderr, /see the output/);
+    // A red run keeps its home and its file on purpose: a fixture is not an
+    // operator's failed run, so the test takes them back.
+    dropLeftoverHome(result);
+  });
+});
+
+// Two packages failing at once is the common shape of a red full run: naming one
+// of them would hide the other.
+test("a red run with two failed tasks names both", () => {
+  const lines = ["Failed: @anysearch-cli/kernel#test", "Failed: @anysearch-cli/cli#test"];
+  withFakePnpm({ code: 1, lines }, (bin) => {
+    const result = runCliIn(repoRoot, bin, ["--full"]);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(
+      result.stderr,
+      /blocked after \d+\.\ds: @anysearch-cli\/kernel#test, @anysearch-cli\/cli#test/,
+    );
+    dropLeftoverHome(result);
+  });
+});
+
+test("a budget the gate cannot read stops the push", () => {
+  withFakePnpm({ code: 0, lines: [] }, (bin) => {
+    const result = runCliIn(repoRoot, bin, ["--full"], { overrides: { ANS_PUSH_GATE_TIMEOUT: "soon" } });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /blocked: ANS_PUSH_GATE_TIMEOUT is not a positive number of seconds: "soon"/);
+  });
+});
+
+// setTimeout clamps past its ceiling to a millisecond, so a huge budget would
+// stop the suite at once and call it a timeout. The gate refuses it instead.
+test("a budget past the timer's ceiling stops the push", () => {
+  withFakePnpm({ code: 0, lines: [] }, (bin) => {
+    const result = runCliIn(repoRoot, bin, ["--full"], { overrides: { ANS_PUSH_GATE_TIMEOUT: "9999999999" } });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /blocked: ANS_PUSH_GATE_TIMEOUT is larger than the timer can take/);
   });
 });
 
@@ -172,15 +415,19 @@ test("a red run keeps the test home and prints where it is", async () => {
     assert.ok(home, `no kept test home in: ${result.stderr}`);
     assert.equal(existsSync(home), true, "the kept home is gone");
     assert.equal(existsSync(join(home, ".ans", "leak")), true, "the test's write did not land in the kept home");
-    rmSync(home, { recursive: true, force: true });
+    // The output file is kept too; the fixture takes both back.
+    const file = runOutputFile(result.stderr);
+    assert.ok(file, `no kept output file in: ${result.stderr}`);
+    assert.equal(existsSync(file), true, "the kept output file is gone");
+    dropLeftoverHome(result);
   });
 });
 
 test("an interrupted run keeps the test home and stops the whole tree", { skip: process.platform === "win32" }, async () => {
   await withWorkspace({ pnpm: writeSleepingPnpm }, async ({ root, bin }) => {
-    const env = { ...process.env };
-    env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
-    delete env.PREFLIGHT_GATE_TESTS;
+    const env = gateEnv(bin);
+    // The workspace's own copy of the gate would otherwise run its self-test,
+    // which needs the three group files it does not carry.
     env.PREFLIGHT_SELF_TEST = "0";
     const gate = spawn(process.execPath, [join(root, "scripts", "preflight-test.mjs"), "--full"], {
       cwd: root,
@@ -205,6 +452,8 @@ test("an interrupted run keeps the test home and stops the whole tree", { skip: 
       gate.kill("SIGTERM");
       const code = await new Promise((resolve) => gate.on("close", resolve));
       assert.equal(code, 143, err);
+      // Ctrl-C cut the run, so the file is a prefix and named as one.
+      assert.match(err, /partial output \(the run did not finish\): /);
       const home = keptHome(err);
       assert.ok(home, `no kept test home in: ${err}`);
       assert.equal(existsSync(join(home, ".ans", "leak")), true, "the leak is not in the kept home");
@@ -212,17 +461,8 @@ test("an interrupted run keeps the test home and stops the whole tree", { skip: 
       await waitGone(Number(/^GRANDCHILD=(\d+)$/m.exec(out)[1]));
     } finally {
       gate.kill("SIGKILL");
-      // pnpm is the group leader (the gate spawns it detached), so one group
-      // kill takes the grandchild with it; killing the grandchild's own pid as
-      // a group would target an unrelated group number on a busy machine.
-      const pnpm = /^PNPM=(\d+)$/m.exec(out);
-      if (pnpm) {
-        try {
-          process.kill(-Number(pnpm[1]), "SIGKILL");
-        } catch {}
-      }
-      const home = keptHome(err);
-      if (home) rmSync(home, { recursive: true, force: true });
+      killLeftovers(out);
+      dropLeftoverHome({ stdout: out, stderr: err });
     }
   });
 });
@@ -737,8 +977,14 @@ test("no refs on stdin falls back to the working tree and says so", async () => 
   });
 });
 
-function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrides } = {}) {
+// The environment a gate run gets: the fixture's bin first on PATH and the
+// operator's own gate settings removed, so a shell variable cannot change what a
+// fixture asserts. One copy, so the two callers cannot drift apart.
+function gateEnv(bin, overrides) {
   const env = { ...process.env };
+  delete env.ANS_PUSH_GATE_TIMEOUT;
+  delete env.PREFLIGHT_GATE_TESTS;
+  delete env.PREFLIGHT_SELF_TEST;
   // Read PATH through process.env, which is case-insensitive on Windows: the
   // spread above keeps the original key's casing, so env.PATH can be undefined
   // and the real PATH would be dropped, hiding git from the child.
@@ -749,9 +995,12 @@ function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrid
   // it through overrides.
   delete env.ANS_PUSH_GATE;
   if (overrides) Object.assign(env, overrides);
-  delete env.PREFLIGHT_GATE_TESTS;
+  return env;
+}
+
+function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrides } = {}) {
+  const env = gateEnv(bin, overrides);
   if (gateTests || selfTest) {
-    delete env.PREFLIGHT_SELF_TEST;
     if (gateTests) env.PREFLIGHT_GATE_TESTS = gateTests;
   } else {
     // A full run would re-enter this file's own tests through the self-test.
@@ -793,7 +1042,9 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files, extraPa
     "preflight-git.mjs",
     "preflight-plan.mjs",
     "preflight-command.mjs",
+    "preflight-output.mjs",
     "preflight-stderr.mjs",
+    "preflight-timings.mjs",
   ]) {
     copyFileSync(join(scripts, name), join(root, "scripts", name));
   }
@@ -841,20 +1092,124 @@ function rev(root, ref) {
   return result.stdout.trim();
 }
 
-function withFakePnpm({ code = 0, lines = [] }, run) {
-  const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
-  try {
-    writeFakePnpm(bin, { code, lines });
-    run(bin);
-  } finally {
-    rmSync(bin, { recursive: true, force: true });
-  }
+function withFakePnpm(options, run) {
+  return withPnpmShim((bin) => writeFakePnpm(bin, options), run);
 }
 
 function writeFakePnpm(bin, { code = 0, lines = [], echoArgs = false }) {
   const sh = ["#!/bin/sh", ...(echoArgs ? ['echo "$@"'] : lines.map((line) => `echo "${line}"`)), `exit ${code}`].join("\n");
   const cmd = ["@echo off", ...(echoArgs ? ["echo %*"] : lines.map((line) => `echo ${line}`)), `exit /b ${code}`].join("\r\n");
   writePnpmShim(bin, { sh, cmd });
+}
+
+// A stand-in pnpm written as a Node script, so a fixture can print text a .cmd
+// cannot carry safely (the ℹ in a test summary) or keep a child of its own alive.
+function writeNodePnpm(bin, name, body) {
+  const script = join(bin, name);
+  writeFileSync(script, body.join("\n"));
+  writePnpmShim(bin, {
+    sh: `#!/bin/sh\nexec "${process.execPath}" "${script}"\n`,
+    cmd: `@echo off\r\n"${process.execPath}" "${script}"\r\n`,
+  });
+}
+
+// A pnpm that never finishes and starts a child of its own, so the test can prove
+// the budget killed the whole tree rather than the first process.
+function writeStallingPnpm(bin) {
+  writeNodePnpm(bin, "stall.mjs", [
+    'import { spawn } from "node:child_process";',
+    'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });',
+    'console.log("suite started");',
+    'console.log(`GRANDCHILD=${child.pid}`);',
+    "setInterval(() => {}, 1000);",
+    "",
+  ]);
+}
+
+// A pnpm whose child escapes the killed process group and keeps the pipe open.
+// The gate's close event can never fire on its own, so only the post-deadline cap
+// can end the wait — and the answer must still leave the process.
+function writePipeHoldingPnpm(bin) {
+  writeNodePnpm(bin, "hold.mjs", [
+    'import { spawn } from "node:child_process";',
+    'const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "inherit", detached: true });',
+    "child.unref();",
+    'console.log(`HOLDER=${child.pid}`);',
+    // Named so the test can take the whole group down when the gate never gets
+    // far enough to stop it.
+    "console.log(`PNPM=${process.pid}`);",
+    "setInterval(() => {}, 1000);",
+    "",
+  ]);
+}
+
+// A pnpm that prints two test summaries and passes: the green line's count is the
+// sum of both, read from the file rather than from a tail in memory.
+function writeCountingPnpm(bin) {
+  // The summaries come first and more than the 64 KiB tail follows them, so only
+  // the file on disk can supply the count.
+  const lines = ['console.log("pnpm ran");', 'console.log("ℹ tests 3");', 'console.log("ℹ tests 4");'];
+  for (let i = 0; i < 2000; i += 1) lines.push(`console.log("padding ${"x".repeat(60)} ${i}");`);
+  lines.push("");
+  writeNodePnpm(bin, "count.mjs", lines);
+}
+
+// A pnpm that dies of a signal instead of exiting: the gate gets no exit code, so
+// the file it kept is a prefix of the run and has to be named as one.
+function writeSignalPnpm(bin) {
+  // Write first, then signal: a signal that wins the race leaves an empty file,
+  // the reason line reads `no output to show`, and the test's pointer assertion
+  // goes red.
+  writeNodePnpm(bin, "signal.mjs", [
+    'process.stdout.write("suite started" + "\\n", () => process.kill(process.pid, "SIGTERM"));',
+    "",
+  ]);
+}
+
+// A pnpm whose output is longer than the failure recap: 150 lines, then a failed
+// task. The first lines prove the recap is a slice, not the whole run.
+function writeNoisyFailingPnpm(bin) {
+  const lines = [];
+  for (let i = 1; i <= 150; i += 1) lines.push(`console.log("line ${String(i).padStart(3, "0")}");`);
+  lines.push('console.log("Failed: @anysearch-cli/kernel#test");');
+  lines.push("process.exitCode = 1;");
+  writeNodePnpm(bin, "noisy.mjs", lines);
+}
+
+// Runs a fixture's shim against a throwaway bin dir. The caller's own assertions
+// run inside, awaited, so the dir outlives them; it goes away afterwards either
+// way.
+function withPnpmShim(writeShim, run) {
+  return withScratchDir("ans-preflight-bin-", (bin) => {
+    writeShim(bin);
+    return run(bin);
+  });
+}
+
+// A throwaway directory removed when `run` returns or throws. A sync callback
+// keeps its result and its throw; an async one is cleaned up when it settles.
+function withScratchDir(prefix, run) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  const drop = () => rmSync(dir, { recursive: true, force: true });
+  let result;
+  try {
+    result = run(dir);
+  } catch (error) {
+    drop();
+    throw error;
+  }
+  if (result && typeof result.then === "function") return result.finally(drop);
+  drop();
+  return result;
+}
+
+// A temp dir the gate's own temp files land in: the output file and the throwaway
+// home both come from os.tmpdir(), so pointing TMPDIR/TEMP/TMP here keeps each
+// test's evidence in one place the test deletes.
+async function withTempDir(run) {
+  await withScratchDir("ans-preflight-run-", (dir) =>
+    run({ dir, overrides: { TMPDIR: dir, TEMP: dir, TMP: dir } }),
+  );
 }
 
 // A stand-in pnpm that passes and says it ran, so a test can tell whether the
@@ -936,6 +1291,8 @@ function writeRealTurboPnpm(bin) {
 
 // A gate run can leave its home behind two ways: a red run says it kept it for
 // inspection, and a green run that could not delete it says where it left it.
+// A red or timed-out run also keeps its output file. A fixture is not an
+// operator's failed push, so the test takes back what the gate printed.
 //
 // Design: retry, then swallow a cleanup failure — a Windows file lock keeping the
 // dir is not news this test reports, and throwing in the finally hides the
@@ -945,10 +1302,24 @@ function dropLeftoverHome(result) {
   const home =
     keptHome(output) ??
     /\[preflight\] could not delete the test home, left it at (.+?): /m.exec(output)?.[1];
-  if (!home) return;
-  try {
-    rmSync(home.trim(), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-  } catch {}
+  if (home) {
+    try {
+      rmSync(home.trim(), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch {}
+  }
+  const file = runOutputFile(output);
+  if (file) {
+    try {
+      rmSync(file, { force: true });
+    } catch {}
+  }
+}
+
+// The path the gate prints for a run's output file. A red or timed-out run keeps
+// the file and names it; a green run deletes it and names nothing.
+function runOutputFile(output) {
+  const match = /\[preflight\] (?:full output|partial output[^:]*|incomplete output file): (.+)$/m.exec(output);
+  return match ? match[1].trim() : null;
 }
 
 function turboEntry() {
@@ -991,6 +1362,33 @@ function writeSleepingPnpm(bin) {
   ].join("\n");
   write(join(bin, "pnpm"), `${sh}\n`);
   chmodSync(join(bin, "pnpm"), 0o755);
+}
+
+// pnpm is the group leader (the gate spawns it detached), so one group kill takes
+// the grandchild with it; killing a grandchild's own pid as a group would target
+// an unrelated group number on a busy machine.
+function killGroup(out) {
+  const group = Number(/^PNPM=(\d+)$/m.exec(out)?.[1]);
+  if (!group) return;
+  try {
+    process.kill(-group, "SIGKILL");
+  } catch {}
+}
+
+// The holder is detached into its own group and outlives the gate by design, so a
+// fixture's pipe stays open until it goes.
+function killHolder(out) {
+  const holder = Number(/^HOLDER=(\d+)$/m.exec(out)?.[1]);
+  if (!holder) return;
+  try {
+    process.kill(holder, "SIGKILL");
+  } catch {}
+}
+
+// Everything a fixture left behind: its group and the holder outside it.
+function killLeftovers(out) {
+  killGroup(out);
+  killHolder(out);
 }
 
 async function waitGone(pid) {

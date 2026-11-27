@@ -1,3 +1,14 @@
+## Unreleased — #678: 推送门规矩和文档跟新门对齐（#671 收口）
+
+一句话说清：**本地推送门在前三票（#675、#676、#677）已经改成「无主改动只提示不跑、门坏了退 2、真跑时守 10 分钟并打心跳落盘」，`AGENTS.md` 里的规矩还停在旧写法。现在把 `### Gate rules` 和 `## How to run` 的门自测说明全部对齐过来：本地门只负责早发现，合并前必须亲眼看到 CI 的 `check-build` 绿了才算放行（同时直说 `main` 没设 required status checks，靠人守、没机器挡）；退出码 0/1/2、「跳过不等于通过」、推代码和跑整套的工具 `timeout` 规矩，以及「考虑过 required status checks 但决定不做」的理由，全白纸黑字写进去了。**
+
+### Changed
+
+- **本地门和 CI 的分工翻过来了**（`AGENTS.md` 的 `### Gate rules`）：不再把本地推送门说成「唯一的机械强制点」，删掉冲突的「CI 红了只是参考、不拦合并」；改成明说「本地门管早发现，合并前看到 `check-build` 绿了才是放行依据」，并且老实写清这一条没有机器强制，完全靠合并的人自己守。
+- **分道和退出码跟代码对上号**（`AGENTS.md` 的 `### Gate rules` 和 `## How to run`）：按 `scripts/preflight-plan.mjs` 的 `planPreflight` 写清包内改动（`incremental`）、有读者的根文件（`ROOT_READERS`）、纯文档（`isDocumentation`）和无主改动（`unowned` 只打印 `skipped` 不跑测试、交给 CI 的 `check-build`）以及坏仓库/读不出改动集（`broken` 停下退 2）；写清退出码三档语义（`0` = 跳过或通过，`1` = 测试红了或超时没跑完，`2` = 门自己坏了，和 `pnpm hooks:status` 一致），并重申「跳过不等于通过」这条老契约一字没松。`## How to run` 的门自测说明同步去掉「无主文件回退跑整套」的旧话，改成直说只有全量模式（`--full` / `ANS_PUSH_GATE=strict`）才在本地跑门自测，其余推送（增量、读者根文件、纯文档、无主改动）都跳过，交给 CI 的 `check-build`。
+- **工具 `timeout` 规矩写进文档**：推代码时把工具 `timeout` 设成 `0` 或 `≥600` 秒，跑整套（`--full` 或 `ANS_PUSH_GATE=strict`）设成 `0` 或 `≥900` 秒；写明理由——光 `store` 一个包实测就要 4 分 15 秒（Windows 整套 6–9 分钟），默认 300 秒一定会把本来能绿的运行半路掐死。
+- **记下不设 required status checks 的决定，免得半年后重提**：明确记录考虑过把 `check-build`（ubuntu 和 windows）设成 `main` 的 required status checks（#671、#674）但决定不做——`scripts/ci-changes.mjs` 的 `LANES` 里 `check-build` 已经列全八个包，非纯文档改动本来就在跑整套，设必过不补漏洞，只防手快点合并，代价却是 CI 一抖就合不了；同时更新早年私有库阶段 #58/#59 的旧记述，说明仓库如今已公开、这项本来免费，依然主动不设。
+
 ## Unreleased — #651: 被切掉的时候说真话
 
 一句话说清：**有源到点被切时，终端不再说「结果够了，没等它回来」——引擎从没看过结果够不够，那句话是假的，现在改成「到时限了，没等它回来」；结果那行补 `(partial)`，0 条也一样。`ans search --json` 和 MCP 的 `search_web` / `research_web` 都恒带 `partial`（有臂被切为 true）和 `deadlineMs`（这次实际用的预算，默认 4000）。`outcome` 五个取值、退出码、拒答规则一个没动。**
@@ -11,6 +22,7 @@
 - **`ans search --json`**（`apps/cli/src/commands/search.ts`）：恒有 `partial` 和 `deadlineMs`，脚本不用拼三个字段才看得出池子被截短。`requestTimeoutMs` 原样保留，和 `deadlineMs` 同一个数：前者是评测读的钟，后者是这次新增的字段，两个数同源，不会打架。
 - **MCP 两个搜索工具**（`apps/mcp/src/tools/search-web.tool.ts`、`research-web.tool.ts`）：正文 JSON 和 `structuredContent` 都带这两个字段；没有完赛轮时 `partial=false`，`deadlineMs` 仍是每轮检索的预算（`research_web` 整次最多等到轮数倍）。
 - **文档**：`docs/mcp-server.md` 的「Result shape」和结果案例表补这两个字段。
+
 ## Unreleased — #608: 内部 agent 能读一页，正文进库
 
 一句话说清：**`ans chat` / `ans_chat` 多了一个内部 `fetch` 工具。模型只能拿本会话的句柄换页：搜索结果的 `m:<行号>` 或用户自己贴的网址；伪造、本会话没搜到过的句柄、正文里的链接和模型自拼网址都在工具里当场拒掉，不拦整轮、不进 HITL；搜索挂到别的会话已有的正文行时，本会话的票照样能读。Exa 有 key 走付费 `/contents`，没 key 走免费 `web_fetch_exa`；正文全文入库，模型只看截到 4000 字的副本。一次提问最多 10 页、单次最多 5 个网址，连续两批没有新页或两批全被拒就停。对外三扇门仍然没开。**

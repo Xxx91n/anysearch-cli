@@ -9,9 +9,10 @@
 // Design: the streams and the wait are parameters so a test can hand in a fake
 // stream instead of betting on a real pipe, the way preflight-stderr.mjs takes
 // the sink it writes to.
+import { FLUSH_MS } from "./preflight-timings.mjs";
 
 /** Empty-write every stream and wait for the flush, but never longer than timeoutMs. */
-export async function flushStreams(streams, timeoutMs = 1000) {
+export async function flushStreams(streams, timeoutMs = FLUSH_MS) {
   const flushed = streams.map(
     (stream) =>
       new Promise((resolve) => {
