@@ -12,7 +12,8 @@
 // Control entries (role:"control") record existence facts — their failures
 // walk the degraded list, never the red gate (iii).
 // ANS_VERTICAL_DELTA_LIMIT=N caps the corpus slice for smoke runs.
-// If set, it must be a positive integer; an invalid value fails the run.
+// If set, it must be a positive integer; an invalid value fails the run. The
+// check runs after the missing-dist SKIP, so a lane that skips still skips.
 
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
@@ -32,10 +33,6 @@ const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
 const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT?.trim();
 const limitSet = rawLimit !== undefined && rawLimit !== "";
 const limitNum = limitSet ? Number(rawLimit) : 0;
-if (limitSet && (!Number.isInteger(limitNum) || limitNum <= 0)) {
-  console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (got " + rawLimit + "; unset or empty means full run)");
-  process.exit(1);
-}
 const CONCURRENCY = 4;
 
 function hostOf(url: string): string {
@@ -117,6 +114,12 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
 
 (async () => {
   if (!existsSync(dist)) { console.log("SKIP: dist/index.js missing — run pnpm -C apps/cli build first"); process.exit(0); }
+  // The limit check comes after the SKIP branch: a lane that skips must skip
+  // for every environment reason, not fail on a leftover variable.
+  if (limitSet && (!Number.isInteger(limitNum) || limitNum <= 0)) {
+    console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (got " + rawLimit + "; unset or empty means full run)");
+    process.exit(1);
+  }
   const golden = readGoldenFile(join(root, GOLDEN_FILE));
   const scopes = golden.scopes;
   const all = golden.entries.filter(

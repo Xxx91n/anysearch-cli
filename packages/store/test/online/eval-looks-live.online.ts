@@ -40,7 +40,6 @@ function assert(cond: boolean, msg: string) {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const dist = join(root, "apps", "cli", "dist", "index.js");
-const golden = readGoldenFile(join(root, GOLDEN_FILE));
 
 const keyed = ["EXA_API_KEY", "TAVILY_API_KEY", "ANYSEARCH_API_KEY"].some((k) => !!process.env[k]);
 
@@ -137,6 +136,9 @@ function main() {
     return;
   }
 
+  // Read the corpus only after both SKIP branches: a broken or missing
+  // eval-golden.json must not turn a lane that should skip into a red run.
+  const golden = readGoldenFile(join(root, GOLDEN_FILE));
   const scopes = golden.scopes;
   const entries = golden.entries.filter((e) => isLiveScope(scopes[e.id]));
   assert(entries.length > 0, "live slice non-empty (got " + entries.length + ")");
