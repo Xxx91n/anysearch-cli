@@ -147,16 +147,14 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
     assert.deepEqual(plan.packages, readers, files.join(","));
   }
 
-  // The two corpus rows are the ones this PR added kernel to. Pin them as
-  // literals so the table and the mirror in preflight-root-readers.mjs cannot
-  // both lose kernel without a red test.
-  for (const file of ["eval-golden.json", "eval-badcases.json"]) {
-    assert.deepEqual(
-      planPreflight(root, [file]).packages,
-      ["@anysearch-cli/kernel", "@anysearch-cli/store"],
-      file,
-    );
-  }
+  // eval-badcases.json already mapped to kernel+store before this change; pin
+  // it as a literal so the table and the mirror in preflight-root-readers.mjs
+  // cannot both lose kernel without a red test. eval-golden.json's own literal
+  // pin lives in "docs next to a root file run the readers" below.
+  assert.deepEqual(
+    planPreflight(root, ["eval-badcases.json"]).packages,
+    ["@anysearch-cli/kernel", "@anysearch-cli/store"],
+  );
 });
 
 // Everything the table does not name belongs to no package: the lockfile, the
