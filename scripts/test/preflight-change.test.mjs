@@ -28,7 +28,7 @@ test("deleting a ref runs nothing, and no refs falls back to the working tree", 
   });
 });
 
-test("a ref git cannot read asks for the full suite", () => {
+test("a ref git cannot read returns PUSH_UNKNOWN", () => {
   withRepo((root) => {
     const head = rev(root, "HEAD");
     assert.equal(pushedFiles(root, "not a ref line"), PUSH_UNKNOWN);
@@ -38,13 +38,13 @@ test("a ref git cannot read asks for the full suite", () => {
   });
 });
 
-test("no origin/HEAD asks for the full suite", () => {
+test("no origin/HEAD reads as an unreadable change", () => {
   withRepo((root) => {
     assert.equal(localFiles(root), null);
   });
 });
 
-test("outside a git repo the reader asks for the full suite", () => {
+test("outside a git repo the reader reads no change", () => {
   const dir = mkdtempSync(join(tmpdir(), "ans-preflight-nogit-"));
   try {
     assert.equal(localFiles(dir), null);

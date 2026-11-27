@@ -59,6 +59,17 @@ test("a red run exits non-zero and names the failed task", () => {
   });
 });
 
+// Design: 2 means the gate itself could not do its job, so a child that
+// exits 2 is still a red run — forwarding it would turn "the tests failed" into
+// "the gate is broken".
+test("a red run reports 1 even when the child exited 2", () => {
+  withFakePnpm({ code: 2, lines: [" Tasks:    1 failed"] }, (bin) => {
+    const result = runCliIn(repoRoot, bin, ["--full"]);
+    assert.equal(result.status, 1);
+    clearKeptHome(result);
+  });
+});
+
 test("a green run reports the mode and how long it took", () => {
   withFakePnpm({ code: 0, lines: [" Tasks:    1 successful, 1 total"] }, (bin) => {
     const result = runCliIn(repoRoot, bin, ["--full"]);
@@ -288,7 +299,7 @@ test("a full run without a resolvable parser says which command to run", async (
   await withWorkspace({ pnpm: passingPnpm }, ({ root, bin }) => {
     rmSync(join(root, "node_modules", ".pnpm"), { recursive: true, force: true });
     const result = runCliIn(root, bin, ["--full"], { selfTest: true });
-    assert.equal(result.status, 1);
+    assert.equal(result.status, 2);
     assert.match(result.stderr, /no YAML parser under node_modules — run `pnpm install --ignore-scripts` first/);
     assert.equal(result.stderr.includes("gate self-test failed"), false, result.stderr);
     assert.equal(result.stdout.includes("pnpm ran"), false);
@@ -458,19 +469,21 @@ test("a root file plus a package file runs both, and the readers do not bring th
   );
 });
 
-test("a root file whose reader is missing from the workspace runs the suite and says which", async () => {
-  await withWorkspace({ changed: "domains/docs.toml", echoArgs: true }, ({ root, bin }) => {
+test("a root file whose reader is missing stops the push and says which", async () => {
+  await withWorkspace({ changed: "domains/docs.toml" }, ({ root, bin }) => {
     // The fixture workspace has only dsh-plugin, so every reader domains names
     // is missing: a renamed package would otherwise filter turbo down to no
     // task and still exit 0, which reads as green.
     const result = runCliIn(root, bin, []);
-    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.status, 2, result.stderr);
     assert.match(
-      result.stdout,
-      new RegExp(`full suite: no workspace package named: ${EXPECTED_ROOT_READERS.domains.join(", ")}`),
+      result.stderr,
+      new RegExp(`blocked: no workspace package named: ${EXPECTED_ROOT_READERS.domains.join(", ")}`),
     );
-    assert.match(result.stdout, /^test$/m, result.stdout);
-    assert.equal(result.stdout.includes("--filter="), false, result.stdout);
+    assert.match(result.stderr, /fix: ROOT_READERS names a package/);
+    assert.match(result.stderr, /to push anyway: git push --no-verify/);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+    assert.equal(result.stdout.includes("full suite"), false);
   });
 });
 
@@ -495,6 +508,107 @@ test("a docs-only change says skipped, runs nothing, and never claims green", as
     assert.equal(result.stdout.includes("pnpm ran"), false);
     assert.equal(result.stdout.includes("green"), false);
     assert.equal(result.stdout.includes("gate self-test"), false);
+  });
+});
+
+// A change a package cannot own is skipped instead of spending the suite, and
+// it never reads as green. The file is the gate's own test, so this also pins
+// that the self-test no longer runs for scripts/.
+test("a change no package owns is skipped, runs nothing, and never claims green", async () => {
+  await withWorkspace({ changed: "scripts/test/preflight-plan.test.mjs" }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, [], { selfTest: true });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /skipped: 1 changed file\(s\) belong to no workspace package — no test ran for the whole change/,
+    );
+    assert.match(result.stdout, /skipped files: scripts\/test\/preflight-plan\.test\.mjs/);
+    assert.match(result.stdout, /not a pass/);
+    assert.match(
+      result.stdout,
+      /this coverage is CI's: check-build runs the full suite when no package owns a file/,
+    );
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+    assert.equal(result.stdout.includes("running the gate's own tests"), false);
+    assert.equal(result.stdout.includes("green"), false);
+    assert.equal(result.stdout.includes("full suite:"), false);
+  });
+});
+
+test("--full still runs the whole suite for a change no package owns", async () => {
+  await withWorkspace({ changed: "scripts/release.mjs", pnpm: passingPnpm }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--full"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /full suite: forced/);
+    assert.match(result.stdout, /pnpm ran/);
+    assert.match(result.stdout, /green in \d+\.\ds \(full\)/);
+  });
+});
+
+// A package file next to an unowned one loses its run too: the whole change is
+// skipped, and the line has to say so — otherwise the package half looks covered.
+test("a package file next to an unowned one skips the whole change", async () => {
+  await withWorkspace(
+    { changed: ["apps/dsh-plugin/src/index.ts", "scripts/release.mjs"] },
+    ({ root, bin }) => {
+      const result = runCliIn(root, bin, []);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(
+        result.stdout,
+        /skipped: 1 changed file\(s\) belong to no workspace package — no test ran for the whole change/,
+      );
+      assert.match(result.stdout, /skipped files: scripts\/release\.mjs/);
+      assert.equal(result.stdout.includes("pnpm ran"), false);
+      assert.equal(result.stdout.includes("green"), false);
+    },
+  );
+});
+
+// A gate that cannot start pnpm is the gate failing: exit 2, not a red run.
+// POSIX only — on Windows the gate spawns through a shell, so a missing pnpm is
+// a child that exits non-zero instead of a spawn error, and this path cannot be
+// reached there.
+test(
+  "a gate that cannot start pnpm exits 2",
+  { skip: process.platform === "win32" ? "Windows runs pnpm through a shell" : false },
+  async () => {
+    // No pnpm anywhere on PATH: the fake bin dir is empty and PATH points at it.
+    // --full needs no change set, so git being absent from PATH is fine too.
+    await withWorkspace({ pnpm: () => {} }, ({ root, bin }) => {
+      const result = runCliIn(root, bin, ["--full"], { overrides: { PATH: bin } });
+      assert.equal(result.status, 2, result.stderr);
+      assert.match(result.stderr, /could not start pnpm/);
+      // This path keeps the throwaway home as well; clearKeptHome pins that and
+      // takes it back.
+      clearKeptHome(result);
+    });
+  },
+);
+
+// A damaged manifest is a fault, not a skip: it stops the push and names the
+// file, because a green or skipped line here would hide a broken tree.
+test("a broken manifest stops the push, names the file, and starts nothing", async () => {
+  const files = { "apps/broken/package.json": "{ not json" };
+  await withWorkspace({ files, changed: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, []);
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /blocked: cannot read apps\/broken\/package\.json/);
+    assert.match(result.stderr, /fix: repair it, then push again/);
+    assert.match(result.stderr, /to push anyway: git push --no-verify/);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+    assert.equal(result.stdout.includes("full suite"), false);
+  });
+});
+
+// Without the workspace declaration nothing can be attributed: same answer as
+// a damaged manifest, and the fix names the file to repair.
+test("a workspace with no declaration stops the push", async () => {
+  await withWorkspace({ workspace: false, changed: "apps/dsh-plugin/src/index.ts" }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, []);
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /blocked: no workspace packages found/);
+    assert.match(result.stderr, /pnpm-workspace\.yaml names the workspace packages/);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
   });
 });
 
@@ -576,13 +690,29 @@ test("a pushed ref runs the gate on the files it carries", async () => {
   });
 });
 
-test("an unreadable push ref runs the full suite", async () => {
+test("--full still runs the suite when the change set cannot be read", async () => {
+  // --full never consults the change set, so an unreadable one does not stop
+  // it: that is what "run everything anyway" means.
+  await withWorkspace({ pnpm: passingPnpm }, ({ root, bin }) => {
+    const result = runCliIn(root, bin, ["--pushed", "--full"], { input: "not a ref line" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /full suite: could not read the pushed commits; --full runs everything anyway/,
+    );
+    assert.match(result.stdout, /pnpm ran/);
+  });
+});
+
+test("an unreadable push ref stops the push and names both ways out", async () => {
   await withWorkspace({}, ({ root, bin }) => {
     const result = runCliIn(root, bin, ["--pushed"], { input: "not a ref line" });
-    assert.equal(result.status, 1); // the fixture's fake pnpm exits 1
-    assert.match(result.stdout, /full suite: could not read the pushed commits/);
-    assert.match(result.stdout, /pnpm ran/);
-    clearKeptHome(result);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /blocked: could not read the pushed commits/);
+    assert.match(result.stderr, /fix: run `git fetch origin`, then `git remote set-head origin -a`/);
+    assert.match(result.stderr, /to push anyway: git push --no-verify/);
+    assert.equal(result.stdout.includes("pnpm ran"), false);
+    assert.equal(result.stdout.includes("full suite"), false);
   });
 });
 
@@ -635,7 +765,7 @@ async function withWorkspace(options = {}, run) {
 // a pre-push hook would send. `pnpm` writes a different fake pnpm when a test
 // needs one; the default echoes its argv when echoArgs is set and fails
 // otherwise.
-function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files, extraPackages } = {}) {
+function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files, extraPackages, workspace = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), "ans-preflight-ws-"));
   const bin = mkdtempSync(join(tmpdir(), "ans-preflight-bin-"));
   mkdirSync(join(root, "scripts"));
@@ -657,7 +787,7 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files, extraPa
   const yaml = join(root, "node_modules", ".pnpm", "yaml@0.0.0", "node_modules", "yaml");
   write(join(yaml, "package.json"), JSON.stringify({ name: "yaml", version: "0.0.0", main: "index.js" }));
   write(join(yaml, "index.js"), "module.exports = {};\n");
-  write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
+  if (workspace) write(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "apps/*"\n');
   write(join(root, "apps", "dsh-plugin", "package.json"), JSON.stringify({ name: "@anysearch-cli/dsh-plugin" }));
   for (const [dir, manifest] of Object.entries(extraPackages ?? {})) {
     write(join(root, dir, "package.json"), JSON.stringify(manifest));
