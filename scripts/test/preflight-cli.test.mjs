@@ -161,6 +161,8 @@ test(
         // The budget and the cleanup's clock both come from this one number.
         const budgetMs = 2000;
         const timeoutLine = `timed out after ${budgetMs / 1000}s`;
+        // What the gate's answer may cost: the budget, its 10s close cap, a flush.
+        const answerCapMs = budgetMs + 15000;
         // spawnSync would block until the holder closes the pipe, so this test
         // measures the gate's own exit instead of waiting for the streams.
         const env = gateEnv(bin, { ...overrides, ANS_PUSH_GATE_TIMEOUT: String(budgetMs / 1000) });
@@ -196,8 +198,8 @@ test(
           // The exit and the pipe's last bytes are separate events: wait for the
           // line the assertions read, bounded, before judging the answer.
           await waitForText(() => err.includes(timeoutLine), 5000);
-          // Budget + 10s cap + flush; the holder's own minute is not the gate's.
-          assert.ok(waited < 20000, `the gate waited ${waited}ms on a pipe holder`);
+          // The holder's own minute is not the gate's time.
+          assert.ok(waited < answerCapMs, `the gate waited ${waited}ms on a pipe holder`);
           assert.equal(code, 1, err);
           assert.ok(err.includes(timeoutLine), err);
         } finally {
