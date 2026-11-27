@@ -145,7 +145,7 @@ const km = (url: string, title: string, snippet: string, evidence: number, entit
   // E2 read-side: query token only known via the alias activates the arm
   const byAlias = await store.searchMemory("vv9x quarterly", 10);
   assert.ok(byAlias.some((h) => (h.role ?? "").includes("zvn ledger growth audit")), "E2 read: alias-only token activates arm");
-  assert.ok(byAlias.every((h) => typeof h.rank === "number"), "E5: arm rows carry numeric rank");
+  assert.ok(byAlias.filter((h) => (h.role ?? "").includes("zvn ledger growth audit")).every((h) => h.rank === undefined), "E5: entity/relation arm rows carry no rank");
   // E2 write-side: new memory mentioning the alias links to the canonical entity
   const w = await store.adjudicateMemory(sr.id, [km("https://ex.com/z2", "vv9x reconciliation done", "vv9x reconciliation done mm", 0.9)]);
   const wid = w[0]!.insertedId ?? -1;

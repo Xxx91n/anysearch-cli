@@ -42,7 +42,8 @@ export * from "./fts5";
 // Only the read-only block-backlog reader and its return type are public here;
 // the writers stay inside the store.
 export { readChunkVectorBacklogFile, type ChunkVectorBacklog } from "./retrieval-chunks";
-// The active embedding model id, plus the sentinel for "package not installed".
+// The active embedding model id, plus the sentinel for "the package cannot be
+// loaded (not installed, or installed but broken)".
 export { embeddingModelId, EMBEDDING_MODEL_UNAVAILABLE } from "./embedding-arm";
 
 // entity-relation edge layer (fifth arm).

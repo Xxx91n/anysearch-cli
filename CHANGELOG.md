@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **三张新表**（`packages/store/src/schema.sql`）：`retrieval_chunks`（节 level 0 / 小块 level 1，只存码点偏移和标题路径）、`retrieval_chunks_fts`（contentless + `contentless_delete=1`，默认 detail，写入和删除都在块服务里显式做，不靠触发器也不 `rebuild`）、`retrieval_chunk_vectors`（一小块一条 384 维向量）。开库的幂等 DDL 会补表；老正文不回填。治理列不复制到块表，查询时 join 主表过滤；主表 `retrieval_results_fts` 仍然只索引 title/snippet。
+- **三张新表**（`packages/store/src/schema.sql`）：`retrieval_chunks`（节 level 0 / 小块 level 1，只存码点偏移和标题路径）、`retrieval_chunks_fts`（contentless + `contentless_delete=1`，默认 detail，FTS 行由块服务写入，块行被删时由 `retrieval_chunks` 上的 AFTER DELETE 触发器顺手清掉——级联删页走同一条路；块行只增删不改，原地改会被 `BEFORE UPDATE` 触发器挡下，正文或标题路径变了就整页重建）、`retrieval_chunk_vectors`（一小块一条 384 维向量）。开库的幂等 DDL 会补表；老正文不回填。治理列不复制到块表，查询时 join 主表过滤；主表 `retrieval_results_fts` 仍然只索引 title/snippet。
 - **切块**（`packages/store/src/chunk-text.ts`）：按 ATX 标题切节，标题路径以页面标题为根；节超过 1000 字在空行处再切，单个段落切不开就保留成一个节。节内小块目标 400 字、200–800、硬顶 1200：长段落按目标均分（不把尾巴剩成一个 100 字小块），过短的尾巴并进前一块；代码围栏和表格整块保留，超过 2000 字才按行拆，切节也绝不从围栏中间下刀。偏移一律按码点算，写侧用码点遍历，读侧走 SQL `substr`。`ensureChunksForPage` 可重入：正文后来才补进旧行时重建块，重复调用不叠行。
 - **分词与查询**（同文件）：索引侧中文连续段切重叠 bigram，单字独立段保留单字 token，中英边界、标点、换行都是分隔符；查询侧同一套规则，中文变成 bigram 短语，英文用 `word*` 前缀，整段题面里没有分隔符时拼成一条短语。整条查询只有一个汉字时 FTS 帮不上忙，走页面级 `LIKE`，命中后按码点偏移映射到所在的节。
 - **内容臂**（`packages/store/src/retrieval-chunks.ts`、`session-store.ts`）：关键词和块向量两路各自先按父节去重，再 RRF（k=60）融合；同一个节被多个小块命中只出现一次，同一页也只进融合一次。没有块的行不激活这条臂。内容臂以权重 1.0 并进记忆融合；融合排序里分数相同（量化到 1e-12）时有正文的行排在只有片段的行前面，单查询和多查询两条召回路径都走同一个比较器。

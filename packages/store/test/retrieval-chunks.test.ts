@@ -445,6 +445,51 @@ async function main() {
     assert(afterRepair.some((h) => h.rowid === damaged.id), "the rebuilt page is searchable again");
     assert((readChunkVectorBacklogFile(dbPath)?.pagesWithoutChunks ?? 0) === 0, "the repair empties the missing-chunks count");
 
+    // ---- a page that lost only its FTS row is repaired --------------------
+    // The chunk rows still add up, so counting blocks cannot see this loss.
+    // Without an index check the page never enters the repair queue: the
+    // keyword lane stays short and doctor reports no backlog.
+    const ftsLost = await store.savePage(session.id, {
+      url: "https://example.com/fts-lost",
+      title: "索引丢失页",
+      content: "## 索引\n\n这一块的行还在，索引行被删掉了。",
+      source: "exa",
+    });
+    const ftsLostBlock = chunks(ftsLost.id as number).find((r) => r.level === 1)!;
+    const rawFtsLost = new Database(dbPath);
+    try {
+      rawFtsLost.prepare("DELETE FROM retrieval_chunks_fts WHERE rowid = ?").run(ftsLostBlock.id);
+      const left = rawFtsLost.prepare(
+        "SELECT COUNT(*) AS n FROM retrieval_chunks_fts WHERE rowid = ?",
+      ).get(ftsLostBlock.id) as { n: number };
+      assert.equal(left.n, 0, "the block row survives its index row");
+    } finally {
+      rawFtsLost.close();
+    }
+    const rawFtsLostCheck = new Database(dbPath);
+    try {
+      assert(pagesMissingChunks(rawFtsLostCheck, 50).includes(ftsLost.id as number),
+        "a page whose block index went missing is queued for repair");
+    } finally {
+      rawFtsLostCheck.close();
+    }
+    assert((readChunkVectorBacklogFile(dbPath)?.pagesWithoutChunks ?? 0) >= 1,
+      "the durable backlog names a page whose block index went missing");
+    const ftsRepair = await store.backfillChunkVectors();
+    assert(ftsRepair.rebuiltPages >= 1, "backfill rebuilds the page whose index row was lost");
+    const rebuiltBlocks = chunks(ftsLost.id as number).filter((r) => r.level === 1);
+    const rawFtsBack = new Database(dbPath);
+    try {
+      const back = rawFtsBack.prepare(
+        "SELECT COUNT(*) AS n FROM retrieval_chunks_fts WHERE rowid IN (" + rebuiltBlocks.map(() => "?").join(", ") + ")",
+      ).get(...rebuiltBlocks.map((r) => r.id)) as { n: number };
+      assert.equal(back.n, rebuiltBlocks.length, "every rebuilt block has its index row back");
+    } finally {
+      rawFtsBack.close();
+    }
+    assert((readChunkVectorBacklogFile(dbPath)?.pagesWithoutChunks ?? 0) === 0,
+      "the index repair empties the missing-chunks count");
+
     // AUTOINCREMENT: a deleted block id is never handed out again, so a stale
     // FTS row can never attach to a new block.
     const maxIdBefore = (store.dbQuery<{ id: number }>("SELECT MAX(id) AS id FROM retrieval_chunks")[0]!.id);

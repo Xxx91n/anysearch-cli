@@ -127,7 +127,7 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
   const hasSeparator = [...query].some((ch) => charKind(ch) === null);
   // A lone Han character is a token only where it stood alone in the indexed
   // text; every other occurrence sits inside a bigram, so only a page-level
-  // LIKE can find it.
+  // instr scan can find it.
   if (runs.length === 1 && runs[0]!.kind === "han" && [...runs[0]!.text].length === 1) {
     return { fts: null, singleHan: [runs[0]!.text] };
   }
@@ -490,7 +490,6 @@ function splitByLines(chars: string[], r: Range, limit: number): Range[] {
  */
 function splitProse(chars: string[], r: Range): Range[] {
   const len = rangeLength(r);
-  if (len <= BLOCK_MAX_CHARS) return [r];
   const pieces = Math.ceil(len / BLOCK_TARGET_CHARS);
   const approx = Math.ceil(len / pieces);
   const window = Math.max(1, Math.floor(approx / 2));
@@ -562,11 +561,6 @@ function packAtoms(atomsList: Atom[]): PackedBlock[] {
     }
     const currentLen = rangeLength(current);
     const atomLen = rangeLength(atom);
-    if (currentLen >= BLOCK_TARGET_CHARS && currentLen + atomLen > BLOCK_MAX_CHARS) {
-      flush();
-      current = startBlock(atom);
-      continue;
-    }
     if (currentLen + atomLen <= BLOCK_MAX_CHARS) {
       current.end = atom.end;
       continue;

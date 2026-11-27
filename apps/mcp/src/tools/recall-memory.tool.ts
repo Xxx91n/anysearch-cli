@@ -91,11 +91,12 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             // material, negative = knowledge row (SessionStore's semantic arm).
             rowid: h.rowid,
             provenance: "internal",
-            // The five fields always appear: url/fetchedAt are null when absent,
-            // rank is null when the lane has no score (a page found only by its
-            // body), hasContent is false, sections is []. sectionsTotal is the
-            // full count before the 20-section cut. Field meanings live in
-            // docs/mcp-server.md.
+            // Every hit carries the same fields: url/fetchedAt are null when
+            // absent, rank is null when the arm has no score (a page found only
+            // by its body, or an entity/relation hit), hasContent is false and
+            // sections is []. sectionsTotal is the full count before the
+            // 20-section cut — the list itself is cut from the top. Field
+            // meanings live in docs/mcp-server.md.
             url: h.url ?? null,
             fetchedAt: h.fetchedAt ?? null,
             hasContent: h.hasContent === true,

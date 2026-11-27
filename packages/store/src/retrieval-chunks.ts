@@ -5,9 +5,10 @@
 // section/block sits and its heading path. Governance columns stay on the
 // page row and are joined when filtering.
 //
-// The FTS index is contentless and has no triggers of its own; writes and
-// deletes go through this module. A cascade delete of retrieval_results still
-// reaches the blocks, so a schema trigger removes their FTS rows.
+// The FTS index is contentless: this module inserts a block's FTS row right
+// after its chunk row. Deleting is not this module's job — the schema's AFTER
+// DELETE trigger on retrieval_chunks clears the row, which covers a re-chunk
+// and a page cascade alike.
 
 import type Database from "better-sqlite3";
 import { FUSION_REGISTRY, rrfRank } from "@anysearch-cli/retriever";
@@ -20,6 +21,19 @@ import { blockSearchText, chunkIndexText, chunkMarkdownFromChars, chunkQueryTerm
 const LEVEL_SECTION = 0;
 /** Block row (level 1) in `retrieval_chunks`. */
 const LEVEL_BLOCK = 1;
+
+/**
+ * SQLite binds at most 32766 variables in one statement, and `recall_memory`
+ * puts no upper bound on `limit`, so every id list goes in batches of this size.
+ */
+const IDS_PER_QUERY = 900;
+
+function inIdBatches<T>(ids: readonly number[], run: (batch: number[]) => T[]): T[] {
+  if (ids.length <= IDS_PER_QUERY) return run([...ids]);
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += IDS_PER_QUERY) out.push(...run(ids.slice(i, i + IDS_PER_QUERY)));
+  return out;
+}
 
 /** Pages whose read-side state is still live: not expired, quarantined, archived or replaced. */
 const LIVE_PAGE_SQL =
@@ -150,6 +164,11 @@ export function ensureChunksForPage(db: Database.Database, pageId: number): Ensu
 /**
  * A live page with a body whose sections or blocks were never built (or were
  * lost). A heading-only page stores `blocks = 0` and is not retried forever.
+ *
+ * `blocks` counts the chunk rows a build wrote; it cannot see an FTS row that
+ * went missing afterwards, and a block without one is unsearchable by keyword.
+ * So the check also compares every block row against the index: a page whose
+ * rows and index disagree is rebuilt whole.
  */
 const PAGES_NEEDING_CHUNKS_SQL =
   HAS_PAGE_BODY_EXPR + " AND " + LIVE_PAGE_SQL +
@@ -157,7 +176,9 @@ const PAGES_NEEDING_CHUNKS_SQL =
   " AND (NOT EXISTS (SELECT 1 FROM retrieval_chunks c WHERE c.page_id = r.id AND c.level = " + LEVEL_SECTION + ")" +
   " OR NOT EXISTS (SELECT 1 FROM retrieval_chunks c WHERE c.page_id = r.id AND c.level = " + LEVEL_BLOCK + ")" +
   " OR (SELECT COUNT(*) FROM retrieval_chunks c WHERE c.page_id = r.id AND c.level = " + LEVEL_BLOCK + ")" +
-  "   < (SELECT p.blocks FROM retrieval_page_chunks p WHERE p.page_id = r.id))";
+  "   < (SELECT p.blocks FROM retrieval_page_chunks p WHERE p.page_id = r.id)" +
+  " OR EXISTS (SELECT 1 FROM retrieval_chunks c WHERE c.page_id = r.id AND c.level = " + LEVEL_BLOCK +
+  "   AND NOT EXISTS (SELECT 1 FROM retrieval_chunks_fts f WHERE f.rowid = c.id)))";
 
 export interface ChunkVectorBacklog {
   /** Blocks that carry a usable vector for `model` (any model when it is omitted). */
@@ -286,12 +307,12 @@ export function insertChunkVector(db: Database.Database, chunkId: number, embedd
 export function sectionsForPages(db: Database.Database, pageIds: number[]): Map<number, MemorySection[]> {
   const out = new Map<number, MemorySection[]>();
   if (pageIds.length === 0) return out;
-  const rows = db.prepare(
+  const rows = inIdBatches(pageIds, (batch) => db.prepare(
     "SELECT id AS sectionId, page_id AS pageId, heading_path AS headingPath, " +
       "start_offset AS startOffset, end_offset AS endOffset FROM retrieval_chunks " +
-      "WHERE level = " + LEVEL_SECTION + " AND page_id IN (" + pageIds.map(() => "?").join(", ") + ") " +
+      "WHERE level = " + LEVEL_SECTION + " AND page_id IN (" + batch.map(() => "?").join(", ") + ") " +
       "ORDER BY page_id, ord",
-  ).all(...pageIds) as Array<{ sectionId: number; pageId: number; headingPath: string; startOffset: number; endOffset: number }>;
+  ).all(...batch) as Array<{ sectionId: number; pageId: number; headingPath: string; startOffset: number; endOffset: number }>);
   for (const row of rows) {
     const list = out.get(row.pageId) ?? [];
     list.push({
@@ -314,8 +335,8 @@ export interface ChunkPageHit {
   matchText: string | null;
   /** Which lane selected this page: keyword, block vector, or both. */
   via: "keyword" | "vector" | "both";
-  /** The row's snippet column: usually the body's first 4000 characters, but a
-   *  snippet row filled with a body later keeps its original search snippet. */
+  /** The row's snippet column: usually the body opening, but a snippet row
+   *  filled with a body later keeps its original search snippet. */
   snippet: string | null;
 }
 
@@ -379,18 +400,20 @@ function keywordSections(
   const hanChars = terms.singleHan;
   if (hanChars.length > 0) {
     // One table scan for all the single characters, not one scan per char.
-    const select = hanChars.map((_, i) => "instr(r.content, ?) - 1 AS at" + i).join(", ");
+    const select = hanChars.map(() => "instr(r.content, ?) - 1").join(", ");
     const any = hanChars.map(() => "instr(r.content, ?) > 0").join(" OR ");
+    // Positional columns: the page id first, then one hit position per
+    // character, so no key is assembled from a string at read time.
     const pages = db.prepare(
       "SELECT r.id, " + select + " FROM retrieval_results r WHERE " + HAS_PAGE_BODY_EXPR +
         " AND (" + any + ") AND" + LIVE_PAGE_SQL + " ORDER BY r.id DESC LIMIT ?",
-    ).all(...hanChars, ...hanChars, fetchLimit) as Array<Record<string, number>>;
-    const sectionMap = sectionsForPages(db, pages.map((p) => p.id!));
-    for (const page of pages) {
-      const sections = sectionMap.get(page.id!);
+    ).raw(true).all(...hanChars, ...hanChars, fetchLimit) as Array<[number, ...number[]]>;
+    const sectionMap = sectionsForPages(db, pages.map(([pageId]) => pageId));
+    for (const [pageId, ...hitAts] of pages) {
+      const sections = sectionMap.get(pageId);
       if (!sections || sections.length === 0) continue;
       for (let i = 0; i < hanChars.length; i++) {
-        const at = page["at" + i] ?? -1;
+        const at = hitAts[i] ?? -1;
         if (at < 0) continue;
         // The hit can land on a heading line or in trimmed whitespace between
         // sections. Point at the section that follows, or the last one when the
@@ -467,9 +490,9 @@ export function searchChunkPages(
 
   const sections = sectionOrder.length === 0
     ? []
-    : db.prepare(
-        "SELECT id, page_id FROM retrieval_chunks WHERE id IN (" + sectionOrder.map(() => "?").join(", ") + ")",
-      ).all(...sectionOrder) as Array<{ id: number; page_id: number }>;
+    : inIdBatches(sectionOrder, (batch) => db.prepare(
+        "SELECT id, page_id FROM retrieval_chunks WHERE id IN (" + batch.map(() => "?").join(", ") + ")",
+      ).all(...batch) as Array<{ id: number; page_id: number }>);
   const sectionToPage = new Map(sections.map((s) => [s.id, s.page_id]));
   // Which lane selected the PAGE, not merely its best-ranked section.
   const keywordPages = new Set(keyword.ids.map((id) => sectionToPage.get(id)));
@@ -490,10 +513,10 @@ export function searchChunkPages(
   }
   if (pageIds.length === 0) return [];
 
-  const pages = db.prepare(
+  const pages = inIdBatches(pageIds, (batch) => db.prepare(
     "SELECT id, session_id AS sessionId, title, snippet FROM retrieval_results WHERE id IN (" +
-      pageIds.map(() => "?").join(", ") + ")",
-  ).all(...pageIds) as Array<{ id: number; sessionId: string; title: string | null; snippet: string | null }>;
+      batch.map(() => "?").join(", ") + ")",
+  ).all(...batch) as Array<{ id: number; sessionId: string; title: string | null; snippet: string | null }>);
   const byPage = new Map(pages.map((p) => [p.id, p]));
   // The matched section's own text, not the page opening: a hit deep in the
   // body must carry the passage that matched. Offsets are code points, which
@@ -501,14 +524,14 @@ export function searchChunkPages(
   const sectionIdsForText = [...bestSection.values()];
   const texts = sectionIdsForText.length === 0
     ? []
-    : db.prepare(
+    : inIdBatches(sectionIdsForText, (batch) => db.prepare(
         "SELECT s.id, substr(r.content, s.start_offset + 1, " +
         "CASE WHEN s.end_offset - s.start_offset > " + MATCH_PREVIEW_MAX_CHARS + " THEN " + MATCH_PREVIEW_MAX_CHARS +
         " ELSE s.end_offset - s.start_offset END) AS text, " +
         "(s.end_offset - s.start_offset > " + MATCH_PREVIEW_MAX_CHARS + ") AS truncated " +
           "FROM retrieval_chunks s JOIN retrieval_results r ON r.id = s.page_id " +
-          "WHERE s.id IN (" + sectionIdsForText.map(() => "?").join(", ") + ")",
-      ).all(...sectionIdsForText) as Array<{ id: number; text: string; truncated: number }>;
+          "WHERE s.id IN (" + batch.map(() => "?").join(", ") + ")",
+      ).all(...batch) as Array<{ id: number; text: string; truncated: number }>);
   const textBySection = new Map(texts.map((t) => [t.id, t.truncated ? t.text + "…" : t.text]));
   // A heading-line or gap hit has no section body covering it; cut the preview
   // from that position so the searched character is actually in the text.

@@ -162,6 +162,15 @@ WHEN old.level = 1 BEGIN
   DELETE FROM retrieval_chunks_fts WHERE rowid = old.id;
 END;
 
+-- A block's indexed text is "heading path + body", and the row stores neither
+-- the body nor the tokenized text, so an in-place edit cannot refresh its FTS
+-- row. Rows are insert/delete only: a changed body or heading path rebuilds the
+-- whole page, which is what the WRITE path already does.
+CREATE TRIGGER IF NOT EXISTS retrieval_chunks_no_update BEFORE UPDATE ON retrieval_chunks
+BEGIN
+  SELECT RAISE(ABORT, 'retrieval_chunks rows are insert/delete only; rebuild the page');
+END;
+
 -- One vector per block. `model` records which embedding model produced it; when
 -- the model changes, the row is replaced and the block owes the new vector.
 CREATE TABLE IF NOT EXISTS retrieval_chunk_vectors (

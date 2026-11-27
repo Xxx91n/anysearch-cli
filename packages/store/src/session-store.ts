@@ -275,10 +275,11 @@ export interface MemoryHit {
    * match) and the vector arms hand back `-cosine`. Values are comparable only
    * within one arm, not across arms.
    *
-   * `0` is a placeholder, not a score: the entity arm, the relation arm and the
-   * knowledge keyword lanes have no score to give, and their rows are ordered by
-   * fusion position. A content-arm hit carries no `rank` at all, and
-   * `recall_memory` serializes that as `null`.
+   * A hit carries `rank` only when its arm produced a score. The entity and
+   * relation arms have none, and neither do the substring rungs of the
+   * knowledge lanes, so those rows come back without the key and are ordered by
+   * fusion position. A content-arm hit carries none either. `recall_memory`
+   * serializes the absence as `null`.
    */
   rank?: number;
   // arm provenance ("fts" | "content" | "entity" | "vector" | "relation" | "semantic"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
@@ -2452,15 +2453,17 @@ export class SqliteSessionStore implements SessionStore {
     const objectParams = objectActive ? objectForms!.map((f) => "%" + f + "%") : [];
     const matchesObject = (content: string): boolean =>
       !objectActive || objectForms!.some((f) => formAppearsInText(content, f));
-    const latin: Array<{ id: number; content: string; rank: number }> = [];
-    const cjk: Array<{ id: number; content: string; rank: number }> = [];
-    const otherScript: Array<{ id: number; content: string; rank: number }> = [];
+    // `rank` is present only on rows that came with a real score; the LIKE and
+    // prefix rungs below have none and leave the key out rather than pass 0.
+    const latin: Array<{ id: number; content: string; rank?: number }> = [];
+    const cjk: Array<{ id: number; content: string; rank?: number }> = [];
+    const otherScript: Array<{ id: number; content: string; rank?: number }> = [];
     // Independent indexed lane for rows matching both query scripts.
     // Each lane deduplicates independently so shared hits retain both signals.
-    const crossScript: Array<{ id: number; content: string; rank: number }> = [];
-    const mark = (list: Array<{ id: number; content: string; rank: number }>) => {
+    const crossScript: Array<{ id: number; content: string; rank?: number }> = [];
+    const mark = (list: Array<{ id: number; content: string; rank?: number }>) => {
       const seen = new Set<number>();
-      return (r: { id: number; content: string; rank: number }): void => {
+      return (r: { id: number; content: string; rank?: number }): void => {
         if (seen.has(r.id)) return;
         seen.add(r.id);
         list.push(r);
@@ -2612,7 +2615,7 @@ export class SqliteSessionStore implements SessionStore {
             .iterate(...list.map((t) => "%" + t + "%"), ...objectParams, ...pairedParams) as Iterable<{ id: number; content: string }>;
           for (const r of rows) {
             if (cjk.length >= limit) break;
-            if (matchesObject(r.content)) pushCjk({ id: r.id, content: r.content, rank: 0 });
+            if (matchesObject(r.content)) pushCjk({ id: r.id, content: r.content });
           }
         };
         const factGrams = grams.filter((t) => t.length >= 4);
@@ -2678,15 +2681,17 @@ export class SqliteSessionStore implements SessionStore {
         ).iterate(...otherWords.map((w) => "%" + w + "%"), ...objectParams) as Iterable<{ id: number; content: string }>;
         for (const r of rows) {
           if (otherScript.length >= limit) break;
-          if (matchesObject(r.content)) pushOtherScript({ id: r.id, content: r.content, rank: 0 });
+          if (matchesObject(r.content)) pushOtherScript({ id: r.id, content: r.content });
         }
       }
     }
     // Keep each recall lane independent: a row found through both scripts has
     // more evidence than a row matching only one. Raw BM25 and LIKE scores are
     // not comparable across languages; fuse their ranks instead (#283).
-    const lanes = [cjk, crossScript, otherScript, latin].map((rows) => rows.map((r) =>
-      ({ rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content, rank: r.rank }) as MemoryHit));
+    const lanes = [cjk, crossScript, otherScript, latin].map((rows) => rows.map((r) => ({
+      rowid: -r.id, sessionId: "", role: "(semantic)", content: r.content,
+      ...(r.rank === undefined ? {} : { rank: r.rank }),
+    }) as MemoryHit));
     return rankKnowledge(query, lanes).slice(0, limit);
   }
 
@@ -3363,7 +3368,7 @@ export class SqliteSessionStore implements SessionStore {
     if (matched.length === 0) return [];
     this.entityTel.activations += 1;
     const ids = matched.map((e) => e.id);
-    const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank FROM retrieval_results r " + // rank required by MemoryHit
+    const sql = "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content FROM retrieval_results r " +
       "JOIN memory_entity me ON me.memory_id = r.id WHERE me.entity_id IN (" + ids.map(() => "?").join(", ") + ") " +
       "AND (r.valid_until IS NULL) AND (r.quarantine IS NULL) AND (r.archived = 0) AND (r.superseded_by IS NULL) ORDER BY r.created_at DESC LIMIT ?";
     const rows = this.db.prepare(sql).all(...ids, limit) as MemoryHit[];
@@ -3481,7 +3486,7 @@ export class SqliteSessionStore implements SessionStore {
     const ph2 = allIds.map(() => "?").join(", ");
     const rows = this.db
       .prepare(
-        "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content, 0.0 as rank" +
+        "SELECT DISTINCT r.id as rowid, r.session_id as sessionId, r.title as role, r.snippet as content" +
         " FROM retrieval_results r JOIN memory_entity me ON me.memory_id = r.id" +
         " WHERE me.entity_id IN (" + ph2 + ") AND r.valid_until IS NULL AND (r.quarantine IS NULL) AND r.archived = 0 AND r.superseded_by IS NULL" +
         " ORDER BY r.created_at DESC LIMIT ?"
