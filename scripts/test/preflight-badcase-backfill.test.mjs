@@ -47,6 +47,19 @@ function badcase() {
   };
 }
 
+function liveRow(id, question) {
+  return {
+    id,
+    domain: "docs",
+    question,
+    questionLang: "en",
+    intent: "howto",
+    expected: expected(),
+    dimensions: ["intent:howto", "lang:en"],
+    provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt: "2026-01-01" },
+  };
+}
+
 function golden(question = "How do I configure the widget?") {
   return {
     schema: "anysearch/docs-golden@1",
@@ -100,6 +113,7 @@ function run(dir, args) {
     cwd: REPO,
     env: { ...process.env, ANS_BACKFILL_ROOT: dir },
     encoding: "utf8",
+    timeout: 30_000,
   });
 }
 
@@ -152,16 +166,7 @@ test("--new skips a tombstoned row with the same question", (t) => {
   editJson(join(dir, "eval-golden.json"), (g) => {
     g.entries[0].tombstone = tombstone();
     g.entries[0].expected = { verdict: "answer" };
-    g.entries.push({
-      id: "docs-g0002",
-      domain: "docs",
-      question: "How do I uninstall the widget?",
-      questionLang: "en",
-      intent: "howto",
-      expected: expected(),
-      dimensions: ["intent:howto", "lang:en"],
-      provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt: "2026-01-01" },
-    });
+    g.entries.push(liveRow("docs-g0002", "How do I uninstall the widget?"));
     g.scopes["docs-g0002"] = "live";
     delete g.scopes["docs-g0001"];
   });
@@ -203,24 +208,16 @@ test("--new rejects mustHitPaths without negative pins", (t) => {
 });
 
 test("--into rejects a tombstone target", (t) => {
-  // A tombstoned row carries no scope, the way the real corpus looks (89 live
-  // rows in scopes, one demoted row outside it). The second row stays live only
-  // so the scopes map is not empty — the file-level check would fire first.
+  // A tombstoned row carries no scope, the way the real corpus looks (89 scope
+  // keys — 81 live, 7 stub, 1 both — and one demoted row outside the map). The
+  // second row stays live only so the scopes map is not empty — the file-level
+  // check would fire first.
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-golden.json"), (g) => {
       g.entries[0].expected = { verdict: "answer" };
       g.entries[0].tombstone = tombstone();
       delete g.scopes["docs-g0001"];
-      g.entries.push({
-        id: "docs-g0002",
-        domain: "docs",
-        question: "How do I uninstall the widget?",
-        questionLang: "en",
-        intent: "howto",
-        expected: expected(),
-        dimensions: ["intent:howto", "lang:en"],
-        provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt: "2026-01-01" },
-      });
+      g.entries.push(liveRow("docs-g0002", "How do I uninstall the widget?"));
       g.scopes["docs-g0002"] = "live";
     });
   }, /docs-g0001 is a tombstone/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
@@ -383,4 +380,97 @@ test("an out-of-range golden scope is rejected", (t) => {
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-golden.json"), (g) => { g.scopes["docs-g0001"] = "sometimes"; });
   }, /scope for docs-g0001 must be stub\|live\|both/);
+});
+
+test("--new rejects a row the auto-scope cannot build (not answer+mustHit*)", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { delete b.badcases[0].expected.mustHitHosts; });
+  }, /can only auto-scope an answer\+mustHit\*/);
+});
+
+test("a golden schema other than anysearch/docs-golden@1 is rejected", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-golden.json"), (g) => { g.schema = "anysearch/docs-golden@9"; });
+  }, /schema must be anysearch\/docs-golden@1/);
+});
+
+test("an empty golden entries list is rejected", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-golden.json"), (g) => { g.entries = []; });
+  }, /has no entries/);
+});
+
+test("an empty golden scopes map is rejected", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-golden.json"), (g) => { g.scopes = {}; });
+  }, /scopes must not be empty/);
+});
+
+test("coverage dimensions that are not an array are rejected", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-looks.coverage.json"), (c) => { c.dimensions = {}; });
+  }, /dimensions must be an array/);
+});
+
+test("--new rejects a badcase with no domain", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { delete b.badcases[0].domain; });
+  }, /has no domain/);
+});
+
+test("--new rejects a badcase with no expected block", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { delete b.badcases[0].expected; });
+  }, /has no expected block/);
+});
+
+test("--new rejects a badcase missing its classification fields", (t) => {
+  for (const field of ["intent", "questionLang", "dimensions"]) {
+    expectFail(t, (dir) => {
+      editJson(join(dir, "eval-badcases.json"), (b) => { delete b.badcases[0][field]; });
+    }, new RegExp("lacks '" + field + "'"));
+  }
+});
+
+test("--new rejects a mustHitPaths pattern that is not absolute", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => {
+      b.badcases[0].expected.mustHitPaths = [{ path: "install", tolerate: [] }];
+    });
+  }, /must start with \//);
+});
+
+test("--new rejects a tolerate class outside locale|version|dated", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => {
+      b.badcases[0].expected.mustHitPaths = [{ path: "/install", tolerate: ["locale", "draft"] }];
+    });
+  }, /tolerate outside locale\|version\|dated/);
+});
+
+test("--new rejects an unparseable mustHitUrl", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].expected.mustHitUrls = ["https://"]; });
+  }, /mustHitUrl unparseable/);
+});
+
+test("--new rejects a mustHitUrl on an external-controllability row", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => {
+      b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"];
+      b.badcases[0].stability_class = "external";
+    });
+  }, /only accepts controlled\|frozen-spec/);
+});
+
+test("an unreadable domains/docs.toml is reported, not thrown", (t) => {
+  expectFail(t, (dir) => {
+    rmSync(join(dir, "domains", "docs.toml"));
+  }, /cannot read domains\/docs\.toml/);
+});
+
+test("a null eval-badcases.json root is reported, not a TypeError", (t) => {
+  expectFail(t, (dir) => {
+    writeJson(join(dir, "eval-badcases.json"), null);
+  }, /eval-badcases\.json root must be an object/);
 });
