@@ -7,11 +7,17 @@ import type { CompositionResult } from "@anysearch-cli/kernel";
 import { KernelJsonSchemas, KernelToolDescriptions } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
 import { withMcpTask } from "../mcp-task.js";
-import { toolError } from "./failure.js";
+import { toolError, toolJsonError } from "./failure.js";
 import { recallProjectIndex } from "../project-index.js";
 import type { MemoryExpandErrorCode, MemoryExpandRequest } from "@anysearch-cli/store";
 
 const MAX_SECTIONS_PER_HIT = 20;
+
+/** Observation-friendly form of the requested section ids. */
+function sectionIdsFor(sectionId: MemoryExpandRequest["sectionId"]): string {
+  if (sectionId === undefined) return "";
+  return Array.isArray(sectionId) ? sectionId.join(",") : String(sectionId);
+}
 
 /** What the model should do about an expansion it cannot complete. */
 const EXPAND_ERROR_HINT: Record<MemoryExpandErrorCode, string> = {
@@ -46,9 +52,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
           const result = read.call(eng.store, expand);
           span.addEvent("memory.expand", {
             "memory.rowid": expand.rowid,
-            "memory.sectionIds": Array.isArray(expand.sectionId)
-              ? expand.sectionId.join(",")
-              : expand.sectionId === undefined ? "" : String(expand.sectionId),
+            "memory.sectionIds": sectionIdsFor(expand.sectionId),
             "memory.role": result.ok ? result.role : "",
             "memory.offset": expand.offset ?? 0,
             "memory.returnedChars": result.ok ? result.returnedChars : 0,
@@ -57,19 +61,13 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
           });
           if (!result.ok) {
             // A correction the model can act on, not a protocol fault (#204).
-            return {
-              isError: true as const,
-              content: [{
-                type: "text" as const,
-                text: JSON.stringify({
-                  rowid: result.rowid,
-                  error: result.error,
-                  ...(result.totalChars === undefined ? {} : { totalChars: result.totalChars }),
-                  ...(result.sectionIds === undefined ? {} : { sectionIds: result.sectionIds }),
-                  message: EXPAND_ERROR_HINT[result.error] ?? "the section could not be read",
-                }, null, 2),
-              }],
-            };
+            return toolJsonError({
+              rowid: result.rowid,
+              error: result.error,
+              ...(result.totalChars === undefined ? {} : { totalChars: result.totalChars }),
+              ...(result.sectionIds === undefined ? {} : { sectionIds: result.sectionIds }),
+              message: EXPAND_ERROR_HINT[result.error],
+            });
           }
           return {
             content: [{

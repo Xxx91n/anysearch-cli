@@ -413,7 +413,7 @@ export interface SessionStore {
   searchMemory(query: string, limit?: number): Promise<MemoryHit[]>;
   // (Q2=B): multi-query + RRF k=60 fusion. queries[0] must be the raw user query.
   searchMemoryMulti(queries: string[], limit?: number): Promise<MemoryHit[]>;
-  // #611: read one material row's body by section (or page offset), for
+  // Read one material row's body by section (or page offset), for
   // recall_memory's expand. Optional like the other read seams so hand-built
   // stores stay source-compatible; the tool reports the gap instead of guessing.
   expandMemory?(req: MemoryExpandRequest): MemoryExpandResult;
@@ -1543,8 +1543,8 @@ export class SqliteSessionStore implements SessionStore {
     return fusedHits;
   }
 
-  // #611: read one page body back by rowid + section, for recall_memory's
-  // expand. Pure local read: no provider call, no budget row.
+  // Read one page body back by rowid + section, for recall_memory's expand.
+  // Pure local read: no provider call, no budget row.
   expandMemory(req: MemoryExpandRequest): MemoryExpandResult {
     return expandMemoryRow(this.db, req);
   }

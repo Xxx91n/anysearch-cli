@@ -7,6 +7,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { SqliteSessionStore } from "../src/session-store";
 import { __setEmbeddingModuleForTest } from "../src/embedding-arm";
 
@@ -112,6 +113,9 @@ async function main() {
     const missingSection = store.expandMemory({ rowid, sectionId: 999_999 });
     assert(!missingSection.ok && missingSection.error === "section_not_found", "an unknown section is named");
 
+    const emptySections = store.expandMemory({ rowid, sectionId: [] });
+    assert(!emptySections.ok && emptySections.error === "section_not_found", "an empty section list is refused, not read as the first section");
+
     const missingRow = store.expandMemory({ rowid: 999_999 });
     assert(!missingRow.ok && missingRow.error === "not_found", "a missing material row is named");
 
@@ -123,6 +127,54 @@ async function main() {
       assert(small.truncatedBy === "limit_chars", "an explicit cap names itself");
       assert(small.returnedChars <= 4, "the requested cap holds (got " + small.returnedChars + ")");
     }
+
+    // ---- a one-character cap still advances one code point -----------------
+    const one = store.expandMemory({ rowid, limitChars: 1 });
+    assert(one.ok, "a one-character cap still reads");
+    if (one.ok) {
+      assert(one.returnedChars === 1, "a one-character cap returns one character (got " + one.returnedChars + ")");
+      assert(!one.text.endsWith("…"), "the one character is body text, not only an ellipsis");
+      assert(one.nextOffset === one.offset + 1, "the next offset advances one code point instead of repeating");
+      assert(one.truncatedBy === "limit_chars", "the caller's cap still names itself");
+    }
+
+    // ---- a section boundary is not a cut ----------------------------------
+    const boundary = await store.savePage(session.id, {
+      url: "https://example.com/boundary",
+      title: "边界",
+      content: "## A\n\n11111\n\n## B\n\n22222",
+      source: "exa",
+    });
+    const boundarySections = await store.dbQuery<{ sectionId: number; headingPath: string; chars: number; startOffset: number }>(
+      "SELECT id AS sectionId, heading_path AS headingPath, start_offset AS startOffset, " +
+      "end_offset - start_offset AS chars FROM retrieval_chunks WHERE page_id = ? AND level = 0 ORDER BY ord",
+      boundary.id!,
+    );
+    if (boundarySections.length === 2) {
+      const exact = store.expandMemory({
+        rowid: boundary.id!,
+        sectionId: [boundarySections[0]!.sectionId, boundarySections[1]!.sectionId],
+        limitChars: [...(boundarySections[0]!.headingPath + "\n\n")].length + boundarySections[0]!.chars,
+      });
+      assert(exact.ok, "a read that ends exactly on a section boundary succeeds");
+      if (exact.ok) {
+        assert(exact.hasMore === true, "the next section is reported as waiting");
+        assert(exact.nextOffset === boundarySections[1]!.startOffset, "nextOffset names the next section");
+        assert(exact.truncatedBy === null, "a boundary reports no truncation marker");
+      }
+    } else {
+      assert(false, "the boundary page has two sections");
+    }
+
+    // ---- archived rows are not readable -----------------------------------
+    const raw = new Database(join(dir, "t.db"));
+    try {
+      raw.prepare("UPDATE retrieval_results SET archived = 1 WHERE id = ?").run(rowid);
+    } finally {
+      raw.close();
+    }
+    const archived = store.expandMemory({ rowid });
+    assert(!archived.ok && archived.error === "not_found", "an archived page is not expandable");
   } finally {
     store.close();
     try { rmSync(dir, { recursive: true, force: true }); } catch {}

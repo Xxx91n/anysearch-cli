@@ -11,6 +11,11 @@ import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
 import { suspendSummariesForCorrection, liveHeadOf } from "./summary-sources.js";
 import { applyStatedPairAsAlias, crossScriptPairsInText, loadLiveEntities, queueProposedAlias, resolveQueryObject, type AliasJudgeFn, type AliasJudgeVerdict } from "./entity-alias.js";
+import { parseSqliteUtc } from "./sqlite-time.js";
+
+// Kept on this module's surface for callers that already import it here; the
+// parser itself lives with the ISO formatter so the read path stays leaf-only.
+export { parseSqliteUtc };
 
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >
 // NOOP boundary for the jaccard-only degraded path (embedding absent).
@@ -539,12 +544,6 @@ export interface ArchiveApplyReport {
 }
 
 const DAY_MS = 86400000;
-
-// SQLite datetime('now') is UTC "YYYY-MM-DD HH:MM:SS"; Date.parse of the raw string is
-// local-time dependent, so normalize to ISO Z before parsing (matches julianday in time-decay).
-export function parseSqliteUtc(ts: string): number {
-  return Date.parse(ts.replace(" ", "T") + "Z");
-}
 
 function tokenize(text: string): Set<string> {
   const m = text.toLowerCase().match(/[a-z0-9]+|[\u4E00-\u9FFF]/g);

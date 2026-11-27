@@ -1,8 +1,11 @@
 // SQLite `datetime('now')` is stored as "YYYY-MM-DD HH:MM:SS" (UTC); the
-// recall JSON speaks ISO-8601. Kept beside the parser both callers use, so the
-// two read surfaces cannot format the same column differently.
+// recall/expand JSON speaks ISO-8601. One parser and one formatter, so the read
+// surfaces cannot format the same column differently.
 
-import { parseSqliteUtc } from "./consolidate.js";
+/** Parse SQLite's UTC "YYYY-MM-DD HH:MM:SS" into epoch milliseconds. */
+export function parseSqliteUtc(ts: string): number {
+  return Date.parse(ts.replace(" ", "T") + "Z");
+}
 
 /** ISO-8601 UTC for a stored SQLite timestamp; an unparseable value is handed back as-is. */
 export function sqliteTimestampToIso(value: string | null | undefined): string | null {

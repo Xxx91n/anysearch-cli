@@ -1,20 +1,14 @@
-// #611: `recall_memory`'s expand — read a stored page back by rowid and one or
-// more level-0 sections.
-//
-// Offsets count code points, the unit SQLite's substr/length use. Text is cut
-// in SQL, never with JS slice, so an emoji cannot shift the next offset.
-// A section that is longer than the ceiling is cut on a whitespace when one is
-// near the cut, and the answer says so with an ellipsis, hasMore/nextOffset and
-// truncatedBy. Expansion reads the local store only: it bills no provider call.
+// Read a stored page back by rowid + section(s). Offsets are code points, the
+// unit SQLite's substr/length use, so an emoji cannot shift the next offset.
 
 import type Database from "better-sqlite3";
 import { sanitizeText } from "@anysearch-cli/retriever";
 import { HAS_PAGE_BODY_EXPR } from "./retrieval-content.js";
-import { sectionsForPages, type MemorySection } from "./retrieval-chunks.js";
+import { LIVE_PAGE_SQL, sectionsForPages, type MemorySection } from "./retrieval-chunks.js";
 import { sqliteTimestampToIso } from "./sqlite-time.js";
 
 /** Hard ceiling for one expansion, in code points. */
-export const EXPAND_MAX_CHARS = 8000;
+const EXPAND_MAX_CHARS = 8000;
 /** How far back a cut may move to land on whitespace. */
 const WHITESPACE_LOOKBACK = 200;
 const ELLIPSIS = "…";
@@ -82,17 +76,19 @@ interface ReadPart {
   heading: string;
 }
 
-function sectionKey(input: MemoryExpandRequest["sectionId"]): number[] {
-  if (input === undefined) return [];
-  const ids = Array.isArray(input) ? input : [input];
+function sectionKey(input: MemoryExpandRequest["sectionId"]): { ids: number[]; bad: number[] } {
+  if (input === undefined) return { ids: [], bad: [] };
+  const raw = Array.isArray(input) ? input : [input];
   const seen = new Set<number>();
-  const out: number[] = [];
-  for (const id of ids) {
-    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) continue;
+  const ids: number[] = [];
+  const bad: number[] = [];
+  for (const id of raw) {
+    if (!Number.isInteger(id) || id <= 0) { bad.push(id); continue; }
+    if (seen.has(id)) continue;
     seen.add(id);
-    out.push(id);
+    ids.push(id);
   }
-  return out;
+  return { ids, bad };
 }
 
 /** How many characters fit, moving the cut to whitespace when one is close. */
@@ -125,7 +121,7 @@ export function expandMemoryRow(db: Database.Database, req: MemoryExpandRequest)
   const row = db.prepare(
     "SELECT r.id AS id, r.url AS url, r.title AS title, r.created_at AS createdAt, " +
     "CASE WHEN " + HAS_PAGE_BODY_EXPR + " THEN 1 ELSE 0 END AS hasBody, " +
-    "length(r.content) AS totalChars FROM retrieval_results r WHERE r.id = ?",
+    "length(r.content) AS totalChars FROM retrieval_results r WHERE r.id = ? AND" + LIVE_PAGE_SQL,
   ).get(req.rowid) as PageRow | undefined;
   if (!row) return { ok: false, rowid: req.rowid, error: "not_found" };
   if (row.hasBody !== 1) return { ok: false, rowid: req.rowid, error: "no_content" };
@@ -142,12 +138,17 @@ export function expandMemoryRow(db: Database.Database, req: MemoryExpandRequest)
     role = containingSection(sections, offset)?.headingPath ?? row.title ?? "";
     parts = [{ pageStart: offset, pageEnd: totalChars, heading: "" }];
   } else {
-    const ids = sectionKey(req.sectionId);
+    const parsed = sectionKey(req.sectionId);
     if (req.sectionId !== undefined) {
       const raw = Array.isArray(req.sectionId) ? req.sectionId : [req.sectionId];
-      const bad = raw.filter((id) => !Number.isInteger(id) || id <= 0);
-      if (bad.length > 0) return { ok: false, rowid: row.id, error: "section_not_found", totalChars, sectionIds: bad };
+      if (parsed.bad.length > 0) {
+        return { ok: false, rowid: row.id, error: "section_not_found", totalChars, sectionIds: parsed.bad };
+      }
+      // The wire schema requires at least one id; a direct store caller gets
+      // the same answer instead of silently falling back to the first section.
+      if (raw.length === 0) return { ok: false, rowid: row.id, error: "section_not_found", totalChars, sectionIds: [] };
     }
+    const ids = parsed.ids;
     if (ids.length > 0) {
       const byId = new Map(sections.map((s) => [s.sectionId, s]));
       const missing = ids.filter((id) => !byId.has(id));
@@ -177,11 +178,14 @@ export function expandMemoryRow(db: Database.Database, req: MemoryExpandRequest)
   const cappedByCaller = Number.isFinite(requested) && requested < EXPAND_MAX_CHARS;
   const truncatedBy = cappedByCaller ? "limit_chars" as const : "oversized_section" as const;
 
-  const readText = db.prepare("SELECT substr(content, ?, ?) AS text FROM retrieval_results WHERE id = ?");
+  const readText = db.prepare(
+    "SELECT substr(content, ?, ?) AS text FROM retrieval_results r WHERE r.id = ? AND" + LIVE_PAGE_SQL,
+  );
   let out = "";
   let used = 0;
   let nextOffset: number | null = null;
   let hasMore = false;
+  let cutHappened = false;
   for (let p = 0; p < parts.length; p++) {
     const part = parts[p]!;
     if (part.pageEnd <= part.pageStart) continue;
@@ -190,6 +194,7 @@ export function expandMemoryRow(db: Database.Database, req: MemoryExpandRequest)
     if (heading.length > headingRoom) {
       const room = Math.max(0, headingRoom);
       out += heading.slice(0, Math.max(0, room - 1)).join("") + (room > 0 ? ELLIPSIS : "");
+      if (room > 0) cutHappened = true;
       hasMore = true;
       nextOffset = part.pageStart;
       break;
@@ -200,7 +205,8 @@ export function expandMemoryRow(db: Database.Database, req: MemoryExpandRequest)
     const chars = [...body];
     const room = budget - used;
     if (room <= 0) {
-      // The heading line used the last character; the body waits for the next read.
+      // The heading line used the last character; the next read starts at the
+      // body (offset mode has no heading), so nothing is lost or repeated.
       hasMore = true;
       nextOffset = part.pageStart;
       break;
@@ -209,15 +215,24 @@ export function expandMemoryRow(db: Database.Database, req: MemoryExpandRequest)
       out += body;
       used += chars.length;
       if (used >= budget && p < parts.length - 1) {
+        // A section boundary, not a cut: more sections wait, but no character
+        // of this answer was dropped, so truncatedBy stays null.
         hasMore = true;
         nextOffset = parts[p + 1]!.pageStart;
         break;
       }
       continue;
     }
-    // Reserve one character for the ellipsis so the answer never exceeds the cap.
-    const cut = fitAtWhitespace(chars, Math.max(0, room - 1));
-    out += chars.slice(0, cut).join("") + ELLIPSIS;
+    // At a one-character cap the ellipsis would leave no body character and the
+    // next offset would repeat this read; return one code point instead.
+    const cut = room === 1 ? 1 : fitAtWhitespace(chars, room - 1);
+    out += chars.slice(0, cut).join("");
+    used += cut;
+    if (room >= 2) {
+      out += ELLIPSIS;
+      used += 1;
+    }
+    cutHappened = true;
     nextOffset = part.pageStart + cut;
     hasMore = true;
     break;
@@ -235,7 +250,7 @@ export function expandMemoryRow(db: Database.Database, req: MemoryExpandRequest)
     returnedChars: [...text].length,
     hasMore,
     nextOffset,
-    truncatedBy: hasMore ? truncatedBy : null,
+    truncatedBy: cutHappened ? truncatedBy : null,
     text,
   };
 }
