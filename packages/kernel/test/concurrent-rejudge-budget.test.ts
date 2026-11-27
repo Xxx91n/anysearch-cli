@@ -116,7 +116,7 @@ function replyFor(prompt: string, rejudge: "same" | "accept", betaMarker: string
 }
 
 function scriptedSession(
-  gate: RaceGate, rejudge: "same" | "accept", betaMarker: string,
+  gate: RaceGate, rejudge: "same" | "accept", betaMarker: string, holdFirstJudgment = false,
 ): { model: unknown; streamFn: unknown; apiKey: string } {
   const model = {
     id: "fake-model", name: "fake-model", api: "openai-completions", provider: "fake",
@@ -133,8 +133,11 @@ function scriptedSession(
       { type: "done", message: { role: "assistant", content: [], usage: { input: 100, output: 30, totalTokens: 130 } } },
     ];
     return (async function* () {
-      const isBetaPlanJudgment = prompt.includes("You are checking a correction")
-        && prompt.includes(betaMarker)
+      // #613: the judge prompt now carries only quotes, so the old URL marker
+      // is not there. Hold the first judgment of the explicit beta seam only;
+      // alpha uses a separate seam and must not block on beta's gate.
+      const isBetaPlanJudgment = holdFirstJudgment
+        && prompt.includes("You are checking a correction")
         && !prompt.includes(LANDED_OLD_MARKER);
       if (isBetaPlanJudgment) {
         gate.announce();
@@ -242,7 +245,7 @@ async function runRace(
   const betaMarker = normalizeUrlIdentity(seedArgs.betaUrl);
   const alphaSeams = createConsolidationSeams(scriptedSession(gate, rejudge, betaMarker) as never);
   const betaLedger = recordingLedger();
-  const betaSeams = createConsolidationSeams(scriptedSession(gate, rejudge, betaMarker) as never, {
+  const betaSeams = createConsolidationSeams(scriptedSession(gate, rejudge, betaMarker, true) as never, {
     budget: { ledger: betaLedger, sessionId: "race-" + label },
   });
 
