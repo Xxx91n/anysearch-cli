@@ -135,6 +135,7 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
     [["domains/research.toml", "domains/default.toml"], ["domains"]],
     [["eval-looks.json"], ["eval-looks.json"]],
     [["eval-badcases.json"], ["eval-badcases.json"]],
+    [["eval-golden.json"], ["eval-golden.json"]],
     [["eval-looks.json", "eval-looks.coverage.json"], ["eval-looks.json", "eval-looks.coverage.json"]],
     // Store's docs-golden test asserts this one resolves on disk; nothing reads
     // the prose, so store is the whole run.
