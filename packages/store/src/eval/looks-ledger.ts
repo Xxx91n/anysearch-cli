@@ -11,6 +11,7 @@
 // rows are dropped and the SHA-256 of the pre-compaction row set is preserved in `compaction`.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { GOLDEN_FILE } from "./golden-file";
 
 export const LOOKS_LEDGER_SCHEMA = "anysearch/eval-looks@2";
 export const LOOKS_LEDGER_LEGACY_SCHEMA = "anysearch/eval-looks@1";
@@ -64,7 +65,7 @@ export function readLooksLedger(file: string): LooksLedger {
   // A stale `golden` copy from an old checkout or merge conflict must not be
   // resurrected by the spread below.
   if (Object.hasOwn(j, "golden")) {
-    console.error("[eval] ignoring stale golden block in " + file + " (corpus lives in eval-golden.json)");
+    console.error("[eval] ignoring stale golden block in " + file + " (corpus lives in " + GOLDEN_FILE + ")");
     delete j.golden;
   }
   const looks: LooksLedgerEntry[] = [];
