@@ -97,6 +97,11 @@ if (into) {
   if (target.domain !== bc.domain) fail("domain mismatch — badcase " + id + " is " + bc.domain + ", target " + into + " is " + target.domain);
   if (typeof target.question !== "string") fail("golden target " + into + " has no string question — fix eval-golden.json first");
   if (target.question.trim() !== bc.question.trim()) fail("question mismatch — attach requires the same verbatim question");
+  // An abstain observation attached to an answer row (or the reverse) would hang
+  // the regression evidence on the opposite assertion, so refuse the mismatch.
+  if (target.expected?.verdict !== bc.expected.verdict) {
+    fail("verdict mismatch — badcase " + id + " expects " + bc.expected.verdict + ", target " + into + " expects " + String(target.expected?.verdict));
+  }
   target.notes = (target.notes ? target.notes + " | " : "") + "badcase " + id + " observed " + bc.observed.results + " results (expected " + bc.expected.verdict + ")";
   bc.status = "promoted";
   bc.promotedTo = into;
@@ -140,9 +145,10 @@ if (into) {
     .map((e) => Number(String(e.id).replace(/\D/g, "")))
     .filter((n) => Number.isFinite(n));
   const next = "docs-g" + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, "0");
-  const harvestedAt = bc.evidence.runAt ?? new Date().toISOString().slice(0, 10);
+  // 禁合成护栏：harvestedAt 是真实观测的日期，缺了不许拿今天顶上。
+  const harvestedAt = bc.evidence.runAt;
   if (typeof harvestedAt !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(harvestedAt)) {
-    fail(id + " evidence.runAt must be an ISO date (YYYY-MM-DD), got: " + harvestedAt);
+    fail(id + " evidence.runAt must be the real ISO date (YYYY-MM-DD) of the observation, got: " + String(harvestedAt));
   }
   const entry = {
     id: next,
@@ -169,8 +175,15 @@ if (into) {
   const mustHitUrls = expected.mustHitUrls ?? [];
   const mustHitHosts = expected.mustHitHosts ?? [];
   if (!Array.isArray(mustHitUrls) || !Array.isArray(mustHitHosts)) fail(id + " mustHitUrls/mustHitHosts must be arrays");
-  if (mustHitUrls.length > 0 && bc.stability_class !== "controlled" && bc.stability_class !== "frozen-spec") {
-    fail(next + " carries mustHitUrls but no controlled|frozen-spec stability_class — ship-gate would reject the row; anchor the URL or fix the badcase first");
+  // ship-gate only lets a byte-exact URL anchor sit on a controlled|frozen-spec
+  // target; "external" is a legal stability_class but not a controllable one.
+  if (mustHitUrls.length > 0) {
+    if (bc.stability_class === undefined) {
+      fail(next + " carries mustHitUrls but no stability_class — set it explicitly to controlled or frozen-spec (ship-gate rejects the row without it)");
+    }
+    if (bc.stability_class !== "controlled" && bc.stability_class !== "frozen-spec") {
+      fail(next + " carries mustHitUrls with stability_class '" + bc.stability_class + "' — ship-gate only accepts controlled|frozen-spec for a byte-exact URL anchor");
+    }
   }
   let docsText;
   try {
@@ -192,6 +205,9 @@ if (into) {
   for (const host of mustHitHosts) {
     if (!allow.has(host)) fail(id + " mustHitHost " + host + " outside domains/docs.toml urlAllowlist");
   }
+  // Hostname only, the same comparison crossCheckDocsGolden makes. new URL()
+  // lowercases the host but keeps "www.", so a "www." URL needs a "www." entry
+  // in the allowlist — the bare domain will not match it.
   for (const url of mustHitUrls) {
     if (typeof url !== "string" || !/^https?:\/\//.test(url)) fail(id + " mustHitUrl must be http(s): " + url);
     let host;

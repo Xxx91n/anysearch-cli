@@ -203,18 +203,15 @@ test("--new rejects mustHitPaths without negative pins", (t) => {
 });
 
 test("--into rejects a tombstone target", (t) => {
+  // One row, tombstoned and scopeless. The tombstone check runs before the
+  // domain and question checks, so a second row would only add noise.
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-golden.json"), (g) => {
-      const second = structuredClone(g.entries[0]);
-      second.id = "docs-g0002";
-      second.question = QUESTION + " (second)";
-      g.entries.push(second);
-      g.scopes["docs-g0002"] = "live";
       g.entries[0].expected = { verdict: "answer" };
       g.entries[0].tombstone = tombstone();
       delete g.scopes["docs-g0001"];
     });
-  }, /tombstone/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
+  }, /docs-g0001 is a tombstone/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
 });
 
 test("--new rejects a non-http mustHitUrl", (t) => {
@@ -300,11 +297,48 @@ test("--into rejects a domain mismatch", (t) => {
 });
 
 test("--into rejects a question mismatch", (t) => {
-  expectFail(t, () => {}, /question mismatch/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-golden.json"), (g) => { g.entries[0].question = "A different question?"; });
+  }, /question mismatch/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
 });
 
 test("--into rejects a target with no question", (t) => {
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-golden.json"), (g) => { delete g.entries[0].question; });
   }, /has no string question/, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
+});
+
+test("--into rejects a verdict mismatch", (t) => {
+  // Same verbatim question, so the question check passes and the verdict check
+  // is what fires: the badcase observed an abstain, the target row answers.
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].expected.verdict = "abstain"; });
+  }, /verdict mismatch/, ["--id", "docs-bc0001", "--into", "docs-g0001"], { goldenQuestion: QUESTION });
+});
+
+test("--new rejects a provenance type other than internal-dogfood", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].provenance.type = "external"; });
+  }, /only writes internal-dogfood provenance/);
+});
+
+test("--new rejects a stability_class outside the vocabulary", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].stability_class = "whatever"; });
+  }, /stability_class must be controlled\|frozen-spec\|external/);
+});
+
+test("--new rejects mustHitUrls without a stability_class", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => {
+      b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"];
+      delete b.badcases[0].stability_class;
+    });
+  }, /no stability_class/);
+});
+
+test("--new rejects a missing evidence.runAt", (t) => {
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { delete b.badcases[0].evidence.runAt; });
+  }, /evidence\.runAt must be the real ISO date/);
 });
