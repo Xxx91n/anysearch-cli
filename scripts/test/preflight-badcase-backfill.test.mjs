@@ -474,3 +474,9 @@ test("a null eval-badcases.json root is reported, not a TypeError", (t) => {
     writeJson(join(dir, "eval-badcases.json"), null);
   }, /eval-badcases\.json root must be an object/);
 });
+
+test("a null eval-looks.coverage.json root is reported, not a TypeError", (t) => {
+  expectFail(t, (dir) => {
+    writeJson(join(dir, "eval-looks.coverage.json"), null);
+  }, /eval-looks\.coverage\.json root must be an object/);
+});
