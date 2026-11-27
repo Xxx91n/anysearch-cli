@@ -160,6 +160,7 @@ test(
       await withPnpmShim(writePipeHoldingPnpm, async (bin) => {
         // The budget and the cleanup's clock both come from this one number.
         const budgetMs = 2000;
+        const timeoutLine = `timed out after ${budgetMs / 1000}s`;
         // spawnSync would block until the holder closes the pipe, so this test
         // measures the gate's own exit instead of waiting for the streams.
         const env = gateEnv(bin, { ...overrides, ANS_PUSH_GATE_TIMEOUT: String(budgetMs / 1000) });
@@ -194,11 +195,11 @@ test(
           waited = Date.now() - started;
           // The exit and the pipe's last bytes are separate events: wait for the
           // line the assertions read, bounded, before judging the answer.
-          await waitForText(() => new RegExp(`timed out after ${budgetMs / 1000}s`).test(err), 5000);
-          // 2s budget + 10s cap + flush; the holder's own minute is not the gate's.
+          await waitForText(() => err.includes(timeoutLine), 5000);
+          // Budget + 10s cap + flush; the holder's own minute is not the gate's.
           assert.ok(waited < 20000, `the gate waited ${waited}ms on a pipe holder`);
           assert.equal(code, 1, err);
-          assert.match(err, new RegExp(`timed out after ${budgetMs / 1000}s`));
+          assert.ok(err.includes(timeoutLine), err);
         } finally {
           // The holder never exits on its own and holds this test's pipe open, so
           // it always goes. pnpm's group is taken only when the gate ended before
