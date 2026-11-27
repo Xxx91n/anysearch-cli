@@ -270,9 +270,8 @@ export async function runSearch(args: string[]): Promise<number> {
       (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), ...(providersSel?.length ? { providers: providersSel } : {}), ...(taskBudget ? { taskBudget } : {}), span }),
     );
 
-    // One read for the flag and the JSON field; a hand-built envelope may omit
-    // metadata entirely.
-    const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
+    // Read once: the --json document and the human lines below all use it.
+    const cancelledProviders = envelope.metadata.providersCancelled;
     // A cut arm means the pool is shorter than the fanout that was asked.
     const partial = isPartialPool(cancelledProviders);
 
@@ -390,7 +389,7 @@ export async function runSearch(args: string[]): Promise<number> {
 
     console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
     printFailedArms(envelope.metadata, credentialSources);
-    const cancelledLine = formatProvidersCancelledLine(envelope.metadata.providersCancelled);
+    const cancelledLine = formatProvidersCancelledLine(cancelledProviders);
     if (cancelledLine) console.log(cancelledLine);
     if (providerAbsentLine) console.log(providerAbsentLine);
     console.log(formatResultsLine(envelope.results.length, partial));
