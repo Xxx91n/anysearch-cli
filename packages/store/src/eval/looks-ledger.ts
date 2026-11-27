@@ -64,9 +64,9 @@ export function readLooksLedger(file: string): LooksLedger {
   // A stale `golden` copy from an old checkout or merge conflict must not be
   // resurrected by the spread below.
   if (Object.hasOwn(j, "golden")) {
-    console.error("[eval] dropped stale golden block from eval-looks.json (corpus lives in eval-golden.json)");
+    console.error("[eval] dropped stale golden block from " + file + " (corpus lives in eval-golden.json)");
+    delete j.golden;
   }
-  delete j.golden;
   const looks: LooksLedgerEntry[] = [];
   for (const raw of j.looks as Array<Record<string, unknown>>) {
     if (!raw || typeof raw.key !== "string" || typeof raw.at !== "string") continue;
