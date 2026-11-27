@@ -6,7 +6,7 @@
 // fused-level numbers are a secondary observational column only — never a
 // prefer-capable promotion argument.
 //
-// Emits .scratch/grill-round-84/evidence/vertical-delta.json (env
+// Emits .scratch/vertical-eval/delta.json (env
 // ANS_VERTICAL_DELTA_OUT overrides) with dataset fingerprint, arm identity,
 // explicit n, per-stratum rates, and honest nulls for unmeasurable cells.
 // Control entries (role:"control") record existence facts — their failures
@@ -26,7 +26,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..", "..", "..", "..");
 const dist = join(root, "apps", "cli", "dist", "index.js");
 // Round-neutral default path (the artifact is a durable evidence channel, not
-// an scratch file); CI/devs override via env for dated snapshots.
+// a scratch file); CI/devs override via env for dated snapshots.
 const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
   ?? join(root, ".scratch", "vertical-eval", "delta.json");
 const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT;
