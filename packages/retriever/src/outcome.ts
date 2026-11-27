@@ -59,7 +59,7 @@ function allQueriedArmsFailed(e: SearchOutcomeEvidence): boolean {
  */
 export function shouldAbstain(e: SearchOutcomeEvidence): boolean {
   if (!e.domainActive || e.resultCount > 0 || e.answerCount > 0) return false;
-  if (e.providersCancelled.length > 0) return false;
+  if (isPartialPool(e.providersCancelled)) return false;
   // Same order as the classifier, so both give one answer: an outage is never
   // a refusal, even if the gate counters said arrivals were dropped.
   if (allQueriedArmsFailed(e)) return false;
@@ -71,7 +71,7 @@ export function shouldAbstain(e: SearchOutcomeEvidence): boolean {
 export function classifySearchOutcome(e: SearchOutcomeEvidence): SearchOutcome {
   if (e.resultCount > 0 || e.answerCount > 0) return "answer";
   if (allQueriedArmsFailed(e)) return "failed";
-  if (e.providersCancelled.length > 0) return "cancelled";
+  if (isPartialPool(e.providersCancelled)) return "cancelled";
   if (shouldAbstain(e)) return "abstain";
   return "empty";
 }
