@@ -29,10 +29,11 @@ const dist = join(root, "apps", "cli", "dist", "index.js");
 // somewhere else when the artifact needs to outlive the workspace.
 const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
   ?? join(root, ".scratch", "vertical-eval", "delta.json");
-const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT;
-const limitNum = rawLimit === undefined ? 0 : Number(rawLimit);
-if (rawLimit !== undefined && (!Number.isInteger(limitNum) || limitNum <= 0)) {
-  console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (got " + rawLimit + "; unset means full run)");
+const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT?.trim();
+const limitSet = rawLimit !== undefined && rawLimit !== "";
+const limitNum = limitSet ? Number(rawLimit) : 0;
+if (limitSet && (!Number.isInteger(limitNum) || limitNum <= 0)) {
+  console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (got " + rawLimit + "; unset or empty means full run)");
   process.exit(1);
 }
 const CONCURRENCY = 4;
