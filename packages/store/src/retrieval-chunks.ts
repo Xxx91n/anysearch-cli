@@ -324,7 +324,7 @@ function sectionIds(rows: Array<{ id: number; parent_id: number | null }>): numb
   return out;
 }
 
-/** Keyword lane: block MATCH results plus the page-level LIKE fallback for lone Han characters. */
+/** Keyword lane: block MATCH results plus a page-level instr scan for lone Han characters. */
 function keywordSections(
   db: Database.Database,
   query: string,
@@ -345,14 +345,15 @@ function keywordSections(
     // window; KEYWORD_BLOCK_SCAN_MAX bounds it and the section dedupe below
     // keeps repeated blocks from consuming the output budget.
     const pageSize = Math.max(64, Math.min(256, fetchLimit));
+    const blockPage = db.prepare(
+      "SELECT c.id, c.parent_id FROM retrieval_chunks_fts " +
+        "JOIN retrieval_chunks c ON c.id = retrieval_chunks_fts.rowid " +
+        "JOIN retrieval_results r ON r.id = c.page_id " +
+        "WHERE retrieval_chunks_fts MATCH ? AND" + LIVE_PAGE_SQL +
+        " ORDER BY bm25(retrieval_chunks_fts) LIMIT ? OFFSET ?",
+    );
     for (let offset = 0; offset < KEYWORD_BLOCK_SCAN_MAX && out.length < fetchLimit; offset += pageSize) {
-      const rows = db.prepare(
-        "SELECT c.id, c.parent_id FROM retrieval_chunks_fts " +
-          "JOIN retrieval_chunks c ON c.id = retrieval_chunks_fts.rowid " +
-          "JOIN retrieval_results r ON r.id = c.page_id " +
-          "WHERE retrieval_chunks_fts MATCH ? AND" + LIVE_PAGE_SQL +
-          " ORDER BY bm25(retrieval_chunks_fts) LIMIT ? OFFSET ?",
-      ).all(terms.fts, pageSize, offset) as Array<{ id: number; parent_id: number | null }>;
+      const rows = blockPage.all(terms.fts, pageSize, offset) as Array<{ id: number; parent_id: number | null }>;
       if (rows.length === 0) break;
       for (const sectionId of sectionIds(rows)) if (out.length < fetchLimit) push(sectionId);
       if (rows.length < pageSize) break;
@@ -416,6 +417,25 @@ function vectorSections(db: Database.Database, queryVector: Float32Array, limit:
   }
   scored.sort((a, b) => b.s - a.s);
   return sectionIds(scored.slice(0, limit * CANDIDATE_SLACK).map(({ row }) => ({ id: row.id, parent_id: row.parent_id as number | null })));
+}
+
+/** Code-point slice without materializing the whole page as an array. */
+function sliceCodePoints(text: string, start: number, length: number): string {
+  let out = "";
+  let at = 0;
+  for (const ch of text) {
+    if (at >= start) out += ch;
+    at += 1;
+    if (out.length >= length) break;
+  }
+  return out;
+}
+
+function pageLane(keywordPages: ReadonlySet<number | undefined>, vectorPages: ReadonlySet<number | undefined>, pageId: number): "both" | "keyword" | "vector" {
+  const inKeyword = keywordPages.has(pageId);
+  const inVector = vectorPages.has(pageId);
+  if (inKeyword && inVector) return "both";
+  return inKeyword ? "keyword" : "vector";
 }
 
 /**
@@ -508,7 +528,7 @@ export function searchChunkPages(
       const at = keyword.outsideAt.get(sectionId)!;
       const pageId = sectionToPage.get(sectionId);
       if (pageId === undefined) continue;
-      const text = [...(bodyById.get(pageId) ?? "")].slice(at, at + MATCH_PREVIEW_MAX_CHARS).join("");
+      const text = sliceCodePoints(bodyById.get(pageId) ?? "", at, MATCH_PREVIEW_MAX_CHARS);
       if (text) outsideText.set(sectionId, text);
     }
   }
@@ -523,9 +543,7 @@ export function searchChunkPages(
       title: page.title,
       matchText: outsideText.get(bestSectionId) ?? textBySection.get(bestSectionId) ?? null,
       snippet: page.snippet,
-      via: keywordPages.has(pageId) && vectorPages.has(pageId)
-        ? "both"
-        : keywordPages.has(pageId) ? "keyword" : "vector",
+      via: pageLane(keywordPages, vectorPages, pageId),
     });
   }
   return hits;

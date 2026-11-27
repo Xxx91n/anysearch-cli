@@ -95,7 +95,7 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             url: h.url ?? null,
             fetchedAt: h.fetchedAt ?? null,
             hasContent: h.hasContent === true,
-            sections: h.sections ?? [],
+            sections: (h.sections ?? []).slice(0, 20),
           })),
           projectIndex: projectHits.map((h) => ({
             title: h.title,

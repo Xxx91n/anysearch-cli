@@ -5,7 +5,7 @@
 // Han runs become overlapping bigrams, a lone Han character keeps its own
 // token, every other letter/digit run stays one word, and the rest separates.
 // FTS positions are kept because a Han query is a phrase; a one-character Han
-// query cannot be a bigram and goes through a page-level LIKE instead.
+// query cannot be a bigram and goes through a page-level instr scan instead.
 // Kana and Thai write without spaces and stay one word token here, so a query
 // matches them only from the start of the run. Combining marks stay inside the
 // run, so an accented word is not split at its accents.
@@ -33,8 +33,10 @@ export interface MarkdownSection {
 export const BLOCK_TARGET_CHARS = 400;
 /** Blocks shorter than this merge into a predecessor when the total stays under the 1200 hard cap. */
 export const BLOCK_MIN_CHARS = 200;
-/** A block is closed before it grows past this. */
-/** Packing target, not a hard cap: whole units may push a block past it (prose hard cap 1200). */
+/**
+ * Packing target, not a hard cap: whole units push a block past it, and a
+ * runt-tail merge may reach the 1200 prose hard cap.
+ */
 export const BLOCK_MAX_CHARS = 800;
 /**
  * Ceiling for a prose block. A code fence or table is exempt from it and is
@@ -109,7 +111,7 @@ export function chunkIndexText(text: string): string {
 export interface ChunkQueryTerms {
   /** FTS expression, or null when the query has no indexable token at all. */
   fts: string | null;
-  /** One-character Han runs; they can only be found with a page-level LIKE. */
+  /** One-character Han runs; they can only be found with a page-level instr scan. */
   singleHan: string[];
 }
 
@@ -119,10 +121,8 @@ export interface ChunkQueryTerms {
  * quotes); a separated word run becomes a prefix (`vector` finds `vectors`),
  * while a word inside one unbroken stretch is matched whole. A one-character
  * Han run cannot be matched by a bigram index. It is returned in
- * `singleHan`; callers scan page bodies for it with `instr`. In a mixed query
- * a lone Han character is dropped: as an AND term it misses pages where the
- * character sits inside a longer run, and as an OR branch it widens recall
- * without evidence, so precision wins.
+ * `singleHan` for a whole-page `instr` scan; a lone Han character in a mixed
+ * query is dropped.
  */
 export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
   maxTerms = Math.max(1, Math.floor(maxTerms));
@@ -237,7 +237,7 @@ interface Heading {
 
 /** ATX heading at the very start of a line: `#`, `##`, … with a space or EOL. */
 function parseHeading(line: SourceLine): { level: number; text: string } | null {
-  const m = /^(#{1,6})(?:[ \t]+|$)(.*)$/.exec(line.text);
+  const m = /^ {0,3}(#{1,6})(?:[ \t]+|$)(.*)$/.exec(line.text);
   if (!m) return null;
   // An optional closing sequence (`## 部署 ##`) is not part of the heading text;
   // a heading made only of hashes (`## ###`) is empty.
@@ -618,12 +618,7 @@ function packAtoms(atomsList: Atom[]): PackedBlock[] {
 function sectionBlocks(chars: string[], section: Range): MarkdownBlock[] {
   const pieces: Atom[] = [];
   for (const atom of atoms(chars, section)) pieces.push(...splitAtom(chars, atom));
-  const blocks = packAtoms(pieces);
-  // No overlap: a later block never starts before the previous one ends.
-  for (let i = 1; i < blocks.length; i++) {
-    if (blocks[i]!.start < blocks[i - 1]!.end) blocks[i]!.start = blocks[i - 1]!.end;
-  }
-  return blocks.sort((a, b) => a.start - b.start);
+  return packAtoms(pieces);
 }
 
 /**

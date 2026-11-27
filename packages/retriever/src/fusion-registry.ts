@@ -22,9 +22,10 @@ export const FUSION_REGISTRY = Object.freeze({
   rank_window: 60,
   // Consumed by: packages/store src/eval/runner.ts ROR_WINDOW (RoR ablation window).
   ror_window: 60,
-  // weights.memory consumed by session-store.ts + fts5.ts (single MemoryFusion decision point);
-  // weights.web consumed by engine.ts (D4 equal weight = null model; sources.weights overlay is
-  // user preference, not evidence).
+  // weights.memory is read by session-store.ts (page fusion), fts5.ts (multi-query),
+  // retrieval-chunks.ts (block fusion, only k + fts/vector) and knowledge-ranking.ts;
+  // weights.web by engine.ts (equal weight = null model; sources.weights is a user
+  // preference overlay, not evidence).
   weights: Object.freeze({
     // Design: a page-body hit carries full-text weight, same as fts. A page hit
     // by both the title/snippet lane and the body lane adds both weights, so a

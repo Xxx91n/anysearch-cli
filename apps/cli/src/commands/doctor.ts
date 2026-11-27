@@ -1177,7 +1177,7 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
             layer: "data",
             name: "正文块向量",
             // 缺块或缺 embedding 包都是待补能力，不是坏掉。
-            state: backlog.pagesWithoutChunks > 0 || chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? "unconfigured" : "ready",
+            state: backlog.pagesWithoutChunks > 0 || backlog.pending > 0 || chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? "unconfigured" : "ready",
             mode: "offline",
             detail: chunkBacklogDetail(backlog, chunkModel),
           });

@@ -59,7 +59,7 @@ export async function runMemory(args: string[]): Promise<number> {
       (chunks.failed > 0 ? " (" + chunks.failed + " failed)" : "") +
       (chunks.rebuildFailed > 0 ? " (" + chunks.rebuildFailed + " page(s) not rebuilt)" : "") + "\n");
     if (chunks.rebuildFailed > 0) {
-      process.stderr.write("hint: " + chunks.rebuildFailed + " page(s) could not be rebuilt; retry ans memory backfill-vectors.\n");
+      process.stderr.write("hint: " + chunks.rebuildFailed + " page(s) could not be rebuilt; their bodies may need re-fetching before retrying ans memory backfill-vectors.\n");
     }
     if (r.failed > 0 || chunks.failed > 0) {
       const telemetry = await store.vectorTelemetry();

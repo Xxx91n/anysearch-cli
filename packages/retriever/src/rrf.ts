@@ -29,10 +29,14 @@ export function rrfScores(
   return scores;
 }
 
+// RRF scores here are ~1e-2 and real gaps are ≥1e-4; 1e-12 only absorbs
+// floating-point noise. Revisit if arm weights grow into the thousands.
+const SCORE_QUANTUM = 1e12;
+
 function rankedIds(scores: Map<string, number>, preferred?: ReadonlySet<string>): string[] {
   // Quantize before comparing: equal keys tie, `preferred` breaks the tie, and
   // ids that are still equal keep their input order.
-  const key = (score: number) => Math.round(score * 1e12);
+  const key = (score: number) => Math.round(score * SCORE_QUANTUM);
   return [...scores.entries()]
     .sort((a, b) => {
       const byScore = key(b[1]) - key(a[1]);

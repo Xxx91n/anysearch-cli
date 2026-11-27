@@ -19,7 +19,6 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { ansSessionPath } from "./ans-paths.js";
-import { writeStderr } from "./stderr.js";
 
 export const ENV_SESSION_ID = "ANS_SESSION_ID";
 
@@ -54,7 +53,7 @@ const tempIdByAnchor = new Map<string, string>();
 // 3. otherwise generate + atomically persist a new id.
 // Atomic-write mirrors url-policy.ts atomicWriteFile instead of importing it:
 // url-policy imports this module's readSessionId, so sharing it would create a
-// cycle. (The plugin hook bundle also forbids importing @anysearch-cli/store.)
+// cycle.
 export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
   const envId = env[ENV_SESSION_ID];
   if (typeof envId === "string" && envId.trim().length > 0) return envId.trim();

@@ -96,7 +96,7 @@ import {
 import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_PATTERN_ROWS, RELATION_RULES_VERSION } from "./relation.js";
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate, CrossScriptPair } from "./entity.js";
-import { rrfRank, rrfRankWithPreferred, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
+import { rrfRankWithPreferred, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
 import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive, parseSqliteUtc } from "./consolidate.js";
 import type {
   ConsolidateSummarizeFn,
@@ -1904,7 +1904,8 @@ export class SqliteSessionStore implements SessionStore {
     }
     return { scanned, embedded, failed, rebuiltPages, rebuildFailed };
   }
-// One session's fetch handles: search row ids, user URL identities, and an
+
+  // One session's fetch handles: search row ids, user URL identities, and an
   // `http:` marker for a user URL that was pasted with http. The store checks
   // the shape and drops values that could never match a lookup.
   async saveFetchTickets(sessionId: string, kind: FetchTicketKind, values: readonly string[]): Promise<void> {

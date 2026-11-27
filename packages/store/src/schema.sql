@@ -128,13 +128,16 @@ CREATE INDEX IF NOT EXISTS idx_retrieval_results_url ON retrieval_results(url);
 CREATE TABLE IF NOT EXISTS retrieval_chunks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   page_id INTEGER NOT NULL REFERENCES retrieval_results(id) ON DELETE CASCADE,
-  parent_id INTEGER REFERENCES retrieval_chunks(id) ON DELETE CASCADE,
+  parent_id INTEGER,
   level INTEGER NOT NULL CHECK (level IN (0, 1)),
   ord INTEGER NOT NULL,
   start_offset INTEGER NOT NULL, -- code points, not bytes or UTF-16 units
   end_offset INTEGER NOT NULL,
   heading_path TEXT NOT NULL,
-  CHECK ((level = 0 AND parent_id IS NULL) OR (level = 1 AND parent_id IS NOT NULL))
+  CHECK (start_offset >= 0 AND end_offset >= start_offset),
+  CHECK ((level = 0 AND parent_id IS NULL) OR (level = 1 AND parent_id IS NOT NULL)),
+  UNIQUE (id, page_id),
+  FOREIGN KEY (parent_id, page_id) REFERENCES retrieval_chunks(id, page_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_page ON retrieval_chunks(page_id, level, ord);
 CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_parent ON retrieval_chunks(parent_id, ord);
