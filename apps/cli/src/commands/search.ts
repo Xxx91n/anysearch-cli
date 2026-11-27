@@ -287,6 +287,9 @@ export async function runSearch(args: string[]): Promise<number> {
         // never joins the fanout.
         providersQueried: envelope.metadata?.providersQueried ?? [],
         providersCancelled: envelope.metadata?.providersCancelled ?? [],
+        // 每条答完的臂自己报的耗时（毫秒），键是服务商 id。被掐、失败的臂
+        // 没有键——它们没有真实耗时，那是 cancelled / failed 两张表的事。
+        providerElapsedMs: envelope.metadata?.providerElapsedMs ?? {},
         // error-class channel next to the flag (additive).
         providerErrorClasses: envelope.metadata?.providerErrorClasses ?? {},
         // construction-time provider absences (id -> safe category), paired

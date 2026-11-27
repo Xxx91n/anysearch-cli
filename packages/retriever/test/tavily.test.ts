@@ -26,7 +26,7 @@ async function main() {
       { title: "Result 1", url: "https://example.com/1", content: "Content of result 1", score: 0.95, publishedDate: "2026-01-01" },
       { title: "Result 2", url: "https://example.com/2", content: "Content of result 2", score: 0.80 },
     ],
-    responseTime: 500,
+    responseTime: 0.4,
     images: [],
     requestId: "test-req-1",
   };
@@ -42,6 +42,13 @@ async function main() {
   assert(envelope.provider === "tavily", "envelope provider = tavily");
   assert(envelope.results.length === 2, "envelope has 2 results");
   assert(typeof envelope.elapsedMs === "number", "envelope has elapsedMs");
+  assert(envelope.elapsedMs === 400, "elapsedMs converts Tavily's seconds to milliseconds");
+
+  // 3b. An upstream value that is not a finite number falls back to the local wall clock
+  // (null * 1000 would be 0, which reads as an instant arm).
+  (provider as any).client.search = async () => ({ ...mockResponse, responseTime: null });
+  const noReport = await provider.search({ query: "no report", mode: "deep", maxResults: 5 }, new AbortController().signal);
+  assert(typeof noReport.elapsedMs === "number" && Number.isFinite(noReport.elapsedMs) && noReport.elapsedMs >= 0, "null responseTime falls back to a finite local measurement");
 
   // 4. Verify NormalizedResult mapping
   const r0 = envelope.results[0];

@@ -517,6 +517,9 @@ export class RetroaererdEngine {
     // seconds the failing arm asked us to wait; recorded whenever it gave one.
     const providerErrorRetryAfterSeconds: Record<string, number> = {};
     const providersCancelled: string[] = [];
+    // What each answered arm said it took (ms). A cut or failed arm has no
+    // number; its state is in providersCancelled / providersFailed.
+    const providerElapsedMs: Record<string, number> = {};
     const answers: string[] = [];
     // per-provider attribution in metadata, not in answers[].
     const providerAnswers: ProviderAnswer[] = [];
@@ -532,6 +535,7 @@ export class RetroaererdEngine {
         // Inner outcome: provider resolved (fulfilled) or threw (rejected).
         const inner = s;
         if (inner.status === "fulfilled" && inner.envelope) {
+          providerElapsedMs[providerIds[i]] = inner.envelope.elapsedMs;
           // #214: upstream correlation ids are observation-only. They land on the
           // span (and therefore the trace store) and never on the fused envelope,
           // so normal results and user-facing output stay free of transport metadata.
@@ -733,6 +737,7 @@ export class RetroaererdEngine {
         providersQueried,
         providersFailed,
         providersCancelled,
+        providerElapsedMs,
         ...(providersFailed.length > 0 ? { providerErrorClasses } : {}),
         ...(Object.keys(providerErrorRetryAfterSeconds).length > 0 ? { providerErrorRetryAfterSeconds } : {}),
         elapsedMs: Date.now() - start,
