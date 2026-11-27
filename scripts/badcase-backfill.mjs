@@ -125,6 +125,11 @@ if (into) {
     notes: "backfilled from badcase " + id + "; observed " + bc.observed.results + " results via '" + bc.evidence.command + "'",
   };
   const expected = entry.expected ?? {};
+  if (expected.vertical !== undefined) fail(id + " carries expected.vertical — vertical rows need a kernel fixture and entry-level vertical spec; --new only builds docs rows");
+  const mustNotHitPaths = expected.mustNotHitPaths;
+  if (mustNotHitPaths !== undefined && (!Array.isArray(mustNotHitPaths) || mustNotHitPaths.length === 0 || mustNotHitPaths.some((u) => typeof u !== "string" || u.length === 0))) {
+    fail(id + " mustNotHitPaths must be a non-empty string[]");
+  }
   const mustHit = (expected.mustHitHosts?.length ?? 0) > 0 || (expected.mustHitUrls?.length ?? 0) > 0;
   if (!(expected.verdict === "answer" && mustHit)) {
     fail("--new can only auto-scope an answer+mustHit* row (live); " + next + " needs the stub lane, which needs a kernel scenario fixture this script cannot invent — add the row and fixture by hand");
@@ -156,7 +161,7 @@ if (into) {
       fail(id + " mustHitPaths tolerate outside locale|version|dated: " + pm.path);
     }
   }
-  if (mustHitPaths.length > 0 && (expected.mustNotHitPaths?.length ?? 0) === 0) {
+  if (mustHitPaths.length > 0 && (mustNotHitPaths?.length ?? 0) === 0) {
     fail(id + " mustHitPaths requires mustNotHitPaths negative pins");
   }
   golden.entries.push(entry);
