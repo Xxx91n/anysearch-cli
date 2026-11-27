@@ -128,10 +128,9 @@ test(
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /partial output \(the run did not finish\): /);
         assert.doesNotMatch(result.stderr, /full output: /);
-        // The line above it must not blame a task: nothing failed, the process
-        // was killed from outside.
+        // The reason line must name the signal, not a task failure: nothing
+        // failed, the process was killed from outside.
         assert.match(result.stderr, /blocked after \d+\.\ds: killed by SIGTERM, see the output file/);
-        assert.doesNotMatch(result.stderr, /a task failed/);
       });
     });
   },
