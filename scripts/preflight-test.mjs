@@ -23,9 +23,8 @@
 // stuck, so at the budget it stops the whole process tree and answers "not
 // finished" — never "passed". While the suite runs, a heartbeat says how long it
 // has been going; without one, a silent nine-minute wait reads as a hang. The
-// whole output lands in a timestamped file in the temp directory: a failure
-// shows the last 100 lines and the file's absolute path; a timeout or an
-// interrupt keeps the file and names it too; a green run deletes it.
+// whole output lands in a timestamped file in the temp directory, which a red,
+// timed-out or interrupted run keeps and a green run deletes.
 //
 // The tests run on the working tree, not on the exact commit being pushed: an
 // uncommitted edit can turn the gate green for code that is not in the push.
@@ -54,6 +53,7 @@ import { flushStreams } from "./preflight-flush.mjs";
 import { localFiles, pushedFiles, PUSH_UNKNOWN } from "./preflight-change.mjs";
 import { commandArgs } from "./preflight-command.mjs";
 import { gitEnv } from "./preflight-git.mjs";
+import { reportRunOutput } from "./preflight-output.mjs";
 import { broken, planPreflight } from "./preflight-plan.mjs";
 import { writeStderr } from "./preflight-stderr.mjs";
 
@@ -280,8 +280,9 @@ child = spawn("pnpm", runArgs, {
 
 const readTail = forwardKeepingTail(child, 64 * 1024, dump);
 
-// Design: a silent suite reads as a hang. The interval follows the budget: fifteen
-// seconds on the default ten-minute budget.
+// Design: a silent suite reads as a hang. The interval is a quarter of the budget,
+// clamped to 1–15 seconds: a short budget still gets several beats before it ends,
+// and the default ten-minute budget does not print one every second.
 const heartbeat = setInterval(() => {
   console.log(`[preflight] still running: ${Math.round((Date.now() - suiteStarted) / 1000)}s elapsed`);
 }, heartbeatSeconds * 1000);
@@ -295,9 +296,10 @@ let timedOut = false;
 let settleClose = null;
 let closeCap = null;
 const deadline = setTimeout(() => {
-  // A suite that already exited is the answer, not a timeout: keep its exit code
-  // and just cap the wait, because a pipe holder can outlive the child.
-  if (child.exitCode === null) {
+  // A suite that already exited or was killed is the answer, not a timeout: keep
+  // its exit code and just cap the wait, because a pipe holder can outlive it. A
+  // signal leaves exitCode null too, so both are checked.
+  if (child.exitCode === null && child.signalCode === null) {
     timedOut = true;
     stopChild(child, "SIGTERM");
   }
@@ -503,18 +505,6 @@ function reportKeptTestHome({ home }, write = writeStderr) {
   write(`[preflight] test home kept for inspection: ${home}`);
 }
 
-// Where the run's output went. The default is the sync writer, because the gate
-// may exit right after the line; a caller that lets the event loop drain passes
-// console.error, the same rule as the kept-home line. A file the stream failed to
-// finish is named as incomplete, a run cut short as partial: neither is the whole run.
-function reportRunOutput(handle, { write = writeStderr, finished = true } = {}) {
-  if (!handle?.file) return;
-  let label = "full output";
-  if (handle.failed) label = "incomplete output file";
-  else if (!finished) label = "partial output (the run did not finish)";
-  write(`[preflight] ${label}: ${handle.file}`);
-}
-
 // Design: pin the reporter to spec — the total is read from the summary line it
 // ends with, so a terminal and a pipe must print the same shape.
 async function runGateTests() {
@@ -662,7 +652,8 @@ function totalTests(output) {
   return seen ? total : null;
 }
 
-// Design: reads ANS_PUSH_GATE_TIMEOUT; the default and the exit-2 rule are stated above.
+// Design: setTimeout takes a 32-bit delay, so a budget past MAX_SUITE_TIMEOUT_SECONDS
+// would overflow and fire at once — such a value exits 2 instead.
 function readSuiteTimeout() {
   const raw = process.env.ANS_PUSH_GATE_TIMEOUT;
   if (raw === undefined || raw.trim() === "") return DEFAULT_SUITE_TIMEOUT_SECONDS;

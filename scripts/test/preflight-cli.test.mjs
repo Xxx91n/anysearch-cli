@@ -17,6 +17,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { flushStreams } from "../preflight-flush.mjs";
 import { gitIn } from "../preflight-git.mjs";
+import { outputLabel, reportRunOutput } from "../preflight-output.mjs";
 import { RETRY_LIMIT, writeStderr } from "../preflight-stderr.mjs";
 import { assertOwnRepo } from "./preflight-git-fixture.mjs";
 import { EXPECTED_ROOT_READERS } from "./preflight-root-readers.mjs";
@@ -94,6 +95,9 @@ test("a suite that runs past its budget stops the tree and keeps the output", as
       // It says the run did not finish, and never calls it a failure.
       assert.match(result.stderr, /timed out after 4s: the suite did not finish/);
       assert.doesNotMatch(result.stderr, /blocked after/);
+      // The file holds a prefix of a cut run, and its label says so: calling it
+      // full output here would pass a partial record off as the whole run.
+      assert.match(result.stderr, /partial output \(the run did not finish\): /);
       // The run is told how to finish the job, and the heartbeat proves it was
       // alive: one line is a coincidence, two are a sign of life.
       assert.match(result.stderr, /run the rest yourself: pnpm test/);
@@ -152,10 +156,12 @@ test(
         });
         const started = Date.now();
         const code = await new Promise((resolve) => gate.on("exit", resolve));
+        // Measure the gate's own exit first: the wait below adds up to five
+        // seconds of polling that are not the gate's time.
+        const waited = Date.now() - started;
         // The exit and the pipe's last bytes are separate events: wait for the
         // line the assertions read, bounded, before judging the answer.
         await waitForText(() => /timed out after 2s/.test(err), 5000);
-        const waited = Date.now() - started;
         const holder = Number(/HOLDER=(\d+)/.exec(out)?.[1]);
         try {
           // 2s budget + 10s cap + flush; the holder's own minute is not the gate's.
@@ -199,6 +205,8 @@ test("a red run shows the last 100 lines and names the output file", async () =>
       assert.match(result.stderr, /line 150/);
       assert.doesNotMatch(result.stderr, /line 001/);
       assert.match(result.stderr, /blocked after \d+\.\ds: @anysearch-cli\/kernel#test/);
+      // The run ended and its file is whole, so the label promises the whole run.
+      assert.match(result.stderr, /full output: /);
       const file = runOutputFile(result.stderr);
       assert.ok(file, `no output file named in: ${result.stderr}`);
       const whole = readFileSync(file, "utf8");
@@ -206,6 +214,22 @@ test("a red run shows the last 100 lines and names the output file", async () =>
       assert.match(whole, /Failed: @anysearch-cli\/kernel#test/);
     });
   });
+});
+
+// A write that fails mid-run leaves a truncated file: that is not the run, and the
+// label has to say so. The three labels are asked for directly because a real
+// failed write is a disk-full event, not something a test can stage.
+test("the output file's label names which of the three states it is in", () => {
+  assert.equal(outputLabel({ failed: false, finished: true }), "full output");
+  assert.equal(outputLabel({ failed: false, finished: false }), "partial output (the run did not finish)");
+  assert.equal(outputLabel({ failed: true, finished: true }), "incomplete output file");
+  assert.equal(outputLabel({ failed: true, finished: false }), "incomplete output file");
+  // A run that never opened a file gets no line at all, and the line carries the
+  // label the state asked for.
+  const lines = [];
+  reportRunOutput(null, { write: (line) => lines.push(line) });
+  reportRunOutput({ file: "/tmp/run.log", failed: true }, { write: (line) => lines.push(line) });
+  assert.deepEqual(lines, ["[preflight] incomplete output file: /tmp/run.log"]);
 });
 
 test("a budget the gate cannot read stops the push", () => {
@@ -357,6 +381,8 @@ test("an interrupted run keeps the test home and stops the whole tree", { skip: 
       gate.kill("SIGTERM");
       const code = await new Promise((resolve) => gate.on("close", resolve));
       assert.equal(code, 143, err);
+      // Ctrl-C cut the run, so the file is a prefix and named as one.
+      assert.match(err, /partial output \(the run did not finish\): /);
       const home = keptHome(err);
       assert.ok(home, `no kept test home in: ${err}`);
       assert.equal(existsSync(join(home, ".ans", "leak")), true, "the leak is not in the kept home");
@@ -937,6 +963,7 @@ function makeWorkspace({ changed, pushed, echoArgs = false, pnpm, files, extraPa
     "preflight-git.mjs",
     "preflight-plan.mjs",
     "preflight-command.mjs",
+    "preflight-output.mjs",
     "preflight-stderr.mjs",
   ]) {
     copyFileSync(join(scripts, name), join(root, "scripts", name));
