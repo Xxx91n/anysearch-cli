@@ -581,8 +581,10 @@ test("a hook source status cannot follow is reported against the source, not the
     const status = box.run(clone, ["status"], local);
     assert.equal(status.status, 2, status.stderr);
     assert.match(status.stderr, /cannot follow the hook's exec line/);
-    // The path separator is the platform's, so match the tail the advice names.
-    assert.equal(status.stderr.includes("pre-push-user, then pnpm hooks:install"), true, status.stderr);
+    // Two keywords, not the whole sentence: the advice may be reworded, and the
+    // file's other assertions read this way.
+    assert.match(status.stderr, /pre-push-user/);
+    assert.match(status.stderr, /hooks:install/);
   });
 });
 

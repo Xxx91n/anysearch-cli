@@ -96,12 +96,12 @@ function commandLines(text) {
 /**
  * What a hook's exec line runs: the gate script, repo-relative with forward
  * slashes, and the arguments it gets. Null when the line is not a gate command
- * status can follow, which is the only way the three readers below disagree.
+ * status can follow.
  *
  * Design: this parse feeds the `runs:` line, the mode's `--full` test and the
- * script status reports on. `isOurs` stays looser on purpose (see below), so the
- * two are not the same question: an exec line we cannot parse still belongs to a
- * hook we wrote.
+ * script status reports on. `isOurs` matches more loosely on purpose — a hook we
+ * wrote badly is still ours, and install has to be able to repair it instead of
+ * refusing it as someone else's.
  */
 function gateCommandOf(command) {
   const match = (command ?? "").match(GATE_COMMAND);
