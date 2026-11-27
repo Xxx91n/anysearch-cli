@@ -33,7 +33,9 @@ export const THETA_JAC = 0.80;
 export const SAME_TOPIC_JACCARD = 0.4;
 export const LOW_CONFIDENCE = 0.2;       // fidelity-gate absent or uncertain claims
 export const CLUSTER_MIN = 3;            // D2: minimum episodes per entity cluster
-// #613: one cluster's material block is planned to this many estimated tokens.
+// Design: cap one cluster's material block at 24,000 estimated tokens — a
+// whole page is cheap to feed, but an unbounded cluster is not; the cap is a
+// planning budget, not a model context limit.
 // 24k leaves room for the instructions and the reply inside a 32k window; the
 // estimate is language-aware (CJK code points count as one token, Latin text
 // as roughly four characters per token).
@@ -145,14 +147,8 @@ export interface ConsolidateSummaryResult {
   cacheHit?: boolean;
 }
 
-export interface ConsolidateSummarizeOptions {
-  /** Token cap for one cluster's material block. Defaults to 24,000. */
-  tokenBudget?: number;
-}
-
 export type ConsolidateSummarizeFn = (
   episodes: ConsolidateEvidence[],
-  options?: ConsolidateSummarizeOptions,
 ) => Promise<string | ConsolidateSummaryResult | null>;
 
 /** #613: one cluster's <quotes> block, kept for the run report and the judges. */
@@ -172,8 +168,8 @@ export interface ConsolidateSummaryText {
 /**
  * Split a shaped summarizer reply into <quotes> and <conclusion>.
  *
- * The tags are the contract, not a suggestion: a reply in any other shape is
- * kept WHOLE as the conclusion and flagged `quotesMissing`, so an older or
+ * Design: the tags are the contract, not a suggestion. A reply in any other
+ * shape is kept WHOLE as the conclusion and flagged `quotesMissing`, so an older or
  * malformed model answer can never silently lose the facts it stated. Only the
  * conclusion is persisted; the quotes travel to the judges and the report.
  */
@@ -905,7 +901,7 @@ export function canonicalEntityKeys(
   return out;
 }
 
-// #613: a live material is current on BOTH axes — not replaced by a
+// Design: a live material is current on BOTH axes — not replaced by a
 // correction, and not closed by a re-fetch of the same entity. The scan still
 // reads the closed rows (the update chain and the all-superseded counter need
 // the history), but only live rows may feed a summary or satisfy CLUSTER_MIN.
@@ -924,7 +920,7 @@ function preferMaterialVersion(a: EpisodeRow, b: EpisodeRow): EpisodeRow {
   return b.id > a.id ? b : a;
 }
 
-/** Deduplicate live materials by exact URL, preserving the caller's row order. */
+/** Deduplicate live materials by exact URL, ordered by row id for a stable prompt and report. */
 function dedupeLiveMaterials(rows: readonly EpisodeRow[]): EpisodeRow[] {
   const byUrl = new Map<string, EpisodeRow>();
   for (const row of rows) {

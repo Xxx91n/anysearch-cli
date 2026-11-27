@@ -523,7 +523,7 @@ export function buildAnsChatConsolidateResult(
       : "") +
     ((report.quotesMissing ?? 0) > 0
       ? "\nquotes missing: " + report.quotesMissing +
-        " cluster(s) replied without <quotes>/<conclusion>; the whole reply was kept as the conclusion"
+        " cluster(s) replied without usable <quotes> (or in the wrong shape); a malformed reply was kept whole as the conclusion"
       : "");
   // #261 (D6): one readable line per refused correction, so a content-only
   // proxy still sees the old knowledge, the candidate, the sources, the

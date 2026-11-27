@@ -177,6 +177,15 @@
 - **整理**:把选定的调研材料归纳成长期知识，加进去、合并重复、或更新旧结论；只读你选的范围里的材料；这次整理自己的模型调用记在它自己的任务预算上，材料来自几段聊天都一样（代码里叫 consolidate，MCP 入口是 `operation=consolidate`）。
   _Avoid_: Consolidation、知识固化
 
+- **活材料**:同时满足没有被纠正替代、也没有被重新抓取作废的材料（`superseded_by IS NULL AND valid_until IS NULL`）。整理只用活材料；整簇材料都作废时报告计数后跳过，不静默当成没发生（代码里叫 isLiveMaterial / supersededClusterSkipped）。
+  _Avoid_: current material、有效材料
+
+- **引文**:摘要模型从材料里挑出的原句，先写进 `<quotes>` 再写 `<conclusion>`；落库只存结论，引文只给校正判官和整理报告。格式没遵守时整段回复当结论，报告标 `quotesMissing`（代码里叫 quotes）。
+  _Avoid_: 摘录、原文片段、citation
+
+- **整理材料预算**:一簇材料进摘要前最多 2.4 万估算 token；没超就整页全喂，超了才按节挑，并报告每条材料喂了多少、为什么（代码里叫 CONSOLIDATION_CLUSTER_TOKEN_BUDGET / clusterTokenBudget）。
+  _Avoid_: 上下文预算、token 上限
+
 - **跨范围更新**:整理时可能撞上别的会话留下的旧结论并把它替换掉。这是允许的——新材料够可靠就该纠正共享知识——但报告里会列出被替换的知识和范围外的材料，不偷偷改。
   _Avoid_: Cross-scope Update、越界更新
 

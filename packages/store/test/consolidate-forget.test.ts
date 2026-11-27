@@ -366,6 +366,87 @@ assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at
   }
 }
 
+
+// --- #613: valid_until is dead, and one URL is one material --------------
+//
+// Four live rows would pass CLUSTER_MIN on their own. One is closed by a
+// re-fetch (valid_until) and two are the same URL: the summarizer must see
+// three, with the duplicate keeping the body version, never the closed row.
+{
+  const dir3 = mkdtempSync(join(tmpdir(), "ans-cons-live-"));
+  const dbPath3 = join(dir3, "live.db");
+  try {
+    let seen: import("../src/consolidate").ConsolidateEvidence[] = [];
+    const st = new SqliteSessionStore(dbPath3, {
+      consolidateSummarize: async (eps) => { seen = eps; return "Live filter result."; },
+      consolidateClassify: () => ({ label: "supported" as const, confidence: 0.95 }),
+    });
+    const ids: number[] = [];
+    const seed = async (url: string, title: string, snippet: string, entity: string) => {
+      const sess = await st.createSession("eval");
+      const ra = await st.adjudicateMemory(sess.id, [{
+        url, title, snippet, source: "exa", evidence: 0.9, entity,
+      }]);
+      const id = ra[0]?.insertedId;
+      if (typeof id !== "number") throw new Error("seed failed for " + title);
+      ids.push(id);
+      return id;
+    };
+    const deadId = await seed("https://ex.com/live-dead", "dead", "closed by a re-fetch", "LiveFilter");
+    const bodyId = await seed("https://ex.com/live-same", "dup-body", "short", "LiveFilter");
+    await seed("https://ex.com/live-same", "dup-newer", "newer snippet", "LiveFilter");
+    await seed("https://ex.com/live-a", "other-a", "other fact a", "LiveFilter");
+    await seed("https://ex.com/live-b", "other-b", "other fact b", "LiveFilter");
+    {
+      const d = new Database(dbPath3);
+      d.prepare("UPDATE retrieval_results SET content = ? WHERE id = ?").run("FULL BODY", bodyId);
+      d.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(deadId);
+      d.close();
+    }
+    const rep = await st.consolidateMemory(
+      { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
+    );
+    assert(seen.length === 3, "live filter: three live unique materials reach the summarizer (got " + seen.length + ")");
+    assert(!seen.some((e) => e.title === "dead"), "live filter: a valid_until row is not evidence");
+    assert(seen.some((e) => e.title === "dup-body" && e.content === "FULL BODY"),
+      "URL dedupe: the body version survives");
+    assert(!seen.some((e) => e.title === "dup-newer"), "URL dedupe: the same URL is not fed twice");
+    assert(rep.add === 1, "live filter: the three live materials still add one row (add=" + rep.add + ")");
+
+    // The other half of the truth: three versions of one page (same entity,
+    // same session) leave ONE live material. Once the cluster is all replaced,
+    // the run counts it instead of silently treating the page as new evidence.
+    const pageSess = await st.createSession("eval");
+    const pageIds: number[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const ra = await st.adjudicateMemory(pageSess.id, [{
+        url: "https://ex.com/one-page?v=" + i, title: "one page v" + i,
+        snippet: "same page revision " + i, source: "exa", evidence: 0.9, entity: "OnePage",
+      }]);
+      const id = ra[0]?.insertedId;
+      if (typeof id !== "number") throw new Error("same-page seed failed");
+      pageIds.push(id);
+    }
+    {
+      const d = new Database(dbPath3, { readonly: true });
+      const live = d.prepare("SELECT COUNT(*) c FROM retrieval_results WHERE entity = 'OnePage' AND superseded_by IS NULL AND valid_until IS NULL").get() as { c: number };
+      const closed = d.prepare("SELECT COUNT(*) c FROM retrieval_results WHERE entity = 'OnePage' AND valid_until IS NOT NULL").get() as { c: number };
+      d.close();
+      assert(live.c === 1 && closed.c === 2,
+        "same page: three versions leave one live and two closed (live=" + live.c + ", closed=" + closed.c + ")");
+    }
+    seen = [];
+    const skipRep = await st.consolidateMemory(
+      { scope: { by: "memory", sessionIds: [], memoryIds: pageIds, sessionIdNotApplied: false } },
+    );
+    assert(skipRep.supersededClusterSkipped === 1 && skipRep.add === 0,
+      "same page: an all-replaced cluster is counted, not silently skipped (skipped=" + skipRep.supersededClusterSkipped + ", add=" + skipRep.add + ")");
+    assert(seen.length === 0, "same page: no live material reaches the summarizer");
+    st.close();
+  } finally {
+    rmSync(dir3, { recursive: true, force: true });
+  }
+}
 for (const st of [store, store2]) st.close();
 rmSync(dir, { recursive: true, force: true });
 console.log("consolidate-forget: all assertions passed");

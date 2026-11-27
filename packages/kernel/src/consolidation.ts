@@ -189,7 +189,7 @@ export const CONSOLIDATION_SUMMARY_PROMPT = [
   // that ignores this instruction cannot silently lose the facts it stated.
   "Reply in exactly this shape, with no text outside the two blocks:",
   "<quotes>",
-  "[n] <heading path> \"<verbatim sentence from that material>\"",
+  "[n] <heading path> [@<section offset>] \"<verbatim sentence from that material>\"",
   "</quotes>",
   "<conclusion>",
   "<the factual paragraph>",
@@ -351,7 +351,7 @@ const SUMMARY_OUTPUT_RESERVE_TOKENS = 1024;
 
 // Prompt characters to tokens. Deliberately coarse and conservative: this is
 // only the pre-call reservation, and the actual provider figure settles it.
-function estimatePromptTokens(prompt: string): number {
+function estimateReservationTokens(prompt: string): number {
   return Math.max(1, Math.ceil(prompt.length / 2));
 }
 
@@ -421,7 +421,7 @@ async function completeText(
           "consolidation stopped: the call budget is exhausted (reserveCalls rejected)",
         );
       }
-      reservedTokens = estimatePromptTokens(prompt) + SUMMARY_OUTPUT_RESERVE_TOKENS;
+      reservedTokens = estimateReservationTokens(prompt) + SUMMARY_OUTPUT_RESERVE_TOKENS;
       if (!budget.ledger.reserveTokens(budget.sessionId, reservedTokens)) {
         // The call reservation succeeded, so it must be given back before this
         // call aborts: otherwise reserved_calls stays +1 for the rest of the
@@ -518,14 +518,14 @@ async function completeText(
  * number as an estimate, never as a billed count.
  */
 export function estimatePromptTokens(text: string): number {
-  let cjk = 0;
-  let other = 0;
-  for (const ch of text) {
-    const cp = ch.codePointAt(0) ?? 0;
-    if (isCjkCodePoint(cp)) cjk++;
-    else other++;
-  }
-  return cjk + Math.ceil(other / 4);
+  let cost = 0;
+  for (const ch of text) cost += charTokenCost(ch.codePointAt(0) ?? 0);
+  return Math.ceil(cost);
+}
+
+/** Per-code-point cost shared by the estimate and the truncation. */
+function charTokenCost(cp: number): number {
+  return isCjkCodePoint(cp) ? 1 : 0.25;
 }
 
 function isCjkCodePoint(cp: number): boolean {
@@ -574,8 +574,7 @@ function truncateToTokenBudget(text: string, budget: number): string {
   let used = 0;
   const out: string[] = [];
   for (const ch of text) {
-    const cp = ch.codePointAt(0) ?? 0;
-    const cost = isCjkCodePoint(cp) ? 1 : 0.25;
+    const cost = charTokenCost(ch.codePointAt(0) ?? 0);
     if (used + cost > budget + 1e-9) break;
     used += cost;
     out.push(ch);
@@ -621,27 +620,41 @@ interface PlannedEvidenceCandidate {
   material: ConsolidateEvidence;
   section: ConsolidateEvidenceSection | null;
   heading: string;
+  /** Empty for an unread section; filled from sourceText only after selection. */
   text: string;
+  /** The body a section is sliced from; never read while ranking. */
+  sourceText?: string;
   score: number;
   truncated: boolean;
 }
 
-function renderCandidate(c: PlannedEvidenceCandidate, ordinal: number): { block: string; header: string; textChars: number; tokens: number } {
+function renderHeader(c: PlannedEvidenceCandidate, ordinal: number): string {
   const heading = c.heading.trim() || "(untitled)";
-  const header = "[" + ordinal + "] " + heading + " (" + c.material.url + ")\n";
-  const block = header + c.text;
-  return { block, header, textChars: codePointLength(c.text), tokens: estimatePromptTokens(block) };
+  const offset = c.section ? " @" + c.section.startOffset : "";
+  return "[" + ordinal + "] " + heading + offset + " (" + c.material.url + ")\n";
+}
+
+function candidateText(c: PlannedEvidenceCandidate): string {
+  if (c.text.length > 0 || !c.section || c.sourceText === undefined) return c.text;
+  return codePointSlice(c.sourceText, c.section.startOffset, c.section.chars);
+}
+
+function renderCandidate(c: PlannedEvidenceCandidate, ordinal: number): { block: string; header: string; textChars: number; tokens: number } {
+  const text = candidateText(c);
+  const header = renderHeader(c, ordinal);
+  const block = header + text;
+  return { block, header, textChars: codePointLength(text), tokens: estimatePromptTokens(block) };
 }
 
 /**
  * Lay materials out for one summary call under the 24k-token budget.
  *
- * Under the cap the whole body (or snippet) goes in, in the caller's order.
- * Over the cap the planner reads only section metadata (heading path, offset,
- * length) to rank sections against the cluster's titles; the selected sections
- * are then sliced out of the body. Blocks are placed most-relevant LAST and
- * least-relevant in the middle, because the model attends to both ends of a
- * long prompt more than the middle.
+ * Design: under the cap the whole body (or snippet) goes in, in the caller's
+ * order. Over the cap the planner reads only section metadata (heading path,
+ * offset, length) to rank sections against the cluster's titles; the selected
+ * sections are then sliced out of the body. Blocks are placed most-relevant
+ * LAST and least-relevant in the middle, because the model attends to both ends
+ * of a long prompt more than the middle.
  */
 export function planClusterEvidence(
   episodes: ConsolidateEvidence[],
@@ -700,14 +713,14 @@ export function planClusterEvidence(
     const src = sources[i]!;
     if (src.source === "content" && e.sections && e.sections.length > 0) {
       for (const s of e.sections) {
-        const text = codePointSlice(src.text, s.startOffset, s.chars);
-        if (!text.trim()) continue;
+        if (s.chars <= 0) continue;
         candidates.push({
           materialIndex: i,
           material: e,
           section: s,
           heading: s.headingPath,
-          text,
+          text: "",
+          sourceText: src.text,
           score: sectionRelevance(s.headingPath, focus),
           truncated: false,
         });
@@ -724,7 +737,12 @@ export function planClusterEvidence(
   const chosen: PlannedEvidenceCandidate[] = [];
   let used = 0;
   for (const c of ranked) {
-    const tokens = renderCandidate(c, ranked.length).tokens;
+    // A section is costed by its metadata ceiling: one token per code point,
+    // plus the header. This keeps the ranking read-only; Latin sections may be
+    // under-filled, which is the safe direction for a hard cap.
+    const tokens = c.section
+      ? estimatePromptTokens(renderHeader(c, c.materialIndex + 1)) + c.section.chars
+      : renderCandidate(c, c.materialIndex + 1).tokens;
     if (used + tokens <= budget) {
       chosen.push(c);
       used += tokens;
@@ -734,11 +752,12 @@ export function planClusterEvidence(
     // Not even the best single block fits: keep its head so the prompt still
     // carries evidence instead of degrading to an empty materials section.
     const best = ranked[0]!;
-    const header = renderCandidate({ ...best, text: "" }, 1).header;
+    const bestText = candidateText(best);
+    const header = renderHeader(best, best.materialIndex + 1);
     const room = Math.max(0, budget - estimatePromptTokens(header));
-    const text = truncateToTokenBudget(best.text, room);
+    const text = truncateToTokenBudget(bestText, room);
     if (text.length > 0) {
-      chosen.push({ ...best, text, truncated: text.length < best.text.length });
+      chosen.push({ ...best, text, truncated: text.length < bestText.length });
     }
   } else {
     // A snippet-only material has no sections to select, so a too-large whole
@@ -747,7 +766,7 @@ export function planClusterEvidence(
     // truncate" applies per material, not only when the prompt is empty.
     const droppedWhole = ranked.find((c) => c.section === null && !chosen.includes(c));
     if (droppedWhole) {
-      const header = renderCandidate({ ...droppedWhole, text: "" }, 1).header;
+      const header = renderHeader(droppedWhole, droppedWhole.materialIndex + 1);
       const room = Math.max(0, budget - used - estimatePromptTokens(header));
       const text = truncateToTokenBudget(droppedWhole.text, room);
       if (text.length > 0) {
@@ -756,8 +775,10 @@ export function planClusterEvidence(
     }
   }
 
-  // Most relevant last, least relevant in the middle.
-  const ordered = arrangeByRelevance(chosen);
+  // Most relevant last, least relevant in the middle. Section text is sliced
+  // here, after the ranking, so the planner never reads unselected blocks.
+  const selected = chosen.map((c) => (c.section ? { ...c, text: candidateText(c) } : c));
+  const ordered = arrangeByRelevance(selected);
   const materials: ConsolidateMaterialFeed[] = episodes.map((e, i) => ({
     cluster: 0,
     materialId: e.materialId ?? null,
@@ -778,7 +799,7 @@ export function planClusterEvidence(
   const blocks: string[] = [];
   for (let i = 0; i < ordered.length; i++) {
     const c = ordered[i]!;
-    const r = renderCandidate(c, i + 1);
+    const r = renderCandidate(c, c.materialIndex + 1);
     blocks.push(r.block);
     const feed = materials[c.materialIndex]!;
     feed.fedChars += r.textChars;
@@ -907,11 +928,8 @@ export function createConsolidationSeams(
   const evidenceLines = (evidence: ConsolidateEvidence[]): string =>
     evidence.map((e, i) => "[" + (i + 1) + "] " + e.title + " - " + e.snippet + " (" + e.url + ")").join("\n");
 
-  const summarize: ConsolidateSummarizeFn = async (episodes, summarizeOpts) => {
-    const planned = planClusterEvidence(
-      episodes,
-      summarizeOpts?.tokenBudget ?? CONSOLIDATION_CLUSTER_TOKEN_BUDGET,
-    );
+  const summarize: ConsolidateSummarizeFn = async (episodes) => {
+    const planned = planClusterEvidence(episodes, CONSOLIDATION_CLUSTER_TOKEN_BUDGET);
     // Materials first, instructions last: the model reads the evidence before
     // it is told what to do, and the stable instruction block stays at the end
     // where a prefix cache can still match it across calls.
@@ -998,7 +1016,7 @@ export function createConsolidationSeams(
     // example a note that documents this very prompt) would have its own body
     // overwritten and the candidate section left empty (#273 review).
     //
-    // #613: the judge reads the summarizer's verbatim quotes, not the full
+    // Design: the judge reads the summarizer's verbatim quotes, not the full
     // evidence. `undefined` means an old caller that has no quotes yet; only
     // then fall back to the evidence lines. An empty string is a real answer
     // ("the model quoted nothing") and must not be replaced with the evidence.
