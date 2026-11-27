@@ -81,7 +81,7 @@ export async function askAllowUrl(url: string): Promise<boolean> {
 
 /**
  * The exact text a TOFU prompt shows: every URL the model wants to read, then
- * the domain the ticket would cover. Exported so the user-facing text has a
+ * the one host the ticket would cover. Exported so the user-facing text has a
  * test that does not need a TTY. Control characters are stripped so a crafted
  * URL cannot rewrite the terminal line.
  */
@@ -89,7 +89,7 @@ export function fetchTrustPrompt(request: FetchTrustRequest): string {
   const clean = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "");
   const lines = request.urls.map((url) => "  - " + clean(url)).join("\n");
   return "[anysearch] 模型想读这些网址，但本会话还没有读它们的凭据：\n" + lines + "\n\n" +
-    "[anysearch] 信任 " + clean(request.domain) + " 这个网站（含子域）吗？只在本会话有效，不写域名配置。[y/N] ";
+    "[anysearch] 信任 " + clean(request.domain) + " 这个主机吗？只对本会话的这个主机生效，不写域名配置。[y/N] ";
 }
 
 /**

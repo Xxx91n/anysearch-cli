@@ -148,7 +148,7 @@ export const STORE_LAYOUT_KEY = "store_layout";
 interface LayoutProbe {
   /** No tables at all — a brand-new or zero-byte file; assembly has nothing to lose. */
   fresh: boolean;
-  /** store_meta exists AND already carries the current layout marker. */
+  /** store_meta carries the current marker AND the fetch_tickets CHECK is current. */
   current: boolean;
   /** Any session-family table present (the structure the session assembly can rewrite). */
   hasSessionTables: boolean;
@@ -164,10 +164,18 @@ function probeLayout(db: Database.Database): LayoutProbe {
   ).all() as Array<{ name: string }>;
   const names = new Set(tables.map((t) => t.name));
   const storeMetaPresent = names.has(STORE_META_TABLE);
+  // #612 rebuilds fetch_tickets to widen its CHECK. A marker written by an
+  // older build still says "1", so the marker alone would skip the #310
+  // recovery point right before a structural rewrite. Treat the old CHECK as
+  // not-current too, and snapshot before the rebuild.
+  const fetchTicketsSql = names.has("fetch_tickets")
+    ? (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'fetch_tickets'").get() as { sql: string } | undefined)?.sql
+    : undefined;
+  const fetchTicketsCurrent = fetchTicketsSql === undefined || fetchTicketsSql.includes("'tofu'");
   let current = false;
   if (storeMetaPresent) {
     const row = db.prepare("SELECT value FROM store_meta WHERE key = ?").get(STORE_LAYOUT_KEY) as { value: string } | undefined;
-    current = row?.value === STORE_LAYOUT_VERSION;
+    current = row?.value === STORE_LAYOUT_VERSION && fetchTicketsCurrent;
   }
   const observationUserVersion = (db.pragma("user_version", { simple: true }) as number) | 0;
   return {

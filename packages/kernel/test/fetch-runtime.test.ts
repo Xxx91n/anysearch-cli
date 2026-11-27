@@ -108,7 +108,8 @@ async function main() {
       urls: ["https://docs.example.com/guide", "https://docs.example.com/\u001b[31mred"],
     });
     assert(prompt.includes("https://docs.example.com/guide"), "the prompt shows the full URL");
-    assert(prompt.includes("信任 docs.example.com 这个网站"), "the prompt names the domain");
+    assert(prompt.includes("信任 docs.example.com 这个主机"), "the prompt names the exact host");
+    assert(!prompt.includes("含子域"), "the prompt never claims a subdomain-wide grant");
     assert(!prompt.includes("\u001b"), "the prompt strips terminal control characters");
   }
 
@@ -263,7 +264,7 @@ async function main() {
             name: "fetch",
             arguments: {
               handles: ["https://docs.trust.example/guide"],
-              requestTrustFor: "trust.example",
+              requestTrustFor: "docs.trust.example",
             },
           }], "toolUse");
         }
@@ -278,7 +279,7 @@ async function main() {
       });
       await drain(runtime.run("read the docs"));
       assert(asked === 0, "a non-interactive runtime never reaches the trust prompt");
-      assert(!store.hasFetchTicket(session.id, "tofu", "trust.example"),
+      assert(!store.hasFetchTicket(session.id, "tofu", "docs.trust.example"),
         "a non-interactive trust request writes no ticket");
       assert(seen.includes("非交互模式"), "the model reads the non-interactive refusal");
       store.close();

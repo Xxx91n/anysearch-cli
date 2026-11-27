@@ -19,6 +19,8 @@ PRAGMA journal_mode = WAL;
 -- a legacy file mid-migration, or the registry having upgraded an old file
 -- ahead of the engine; either way the next full assembly still needs the
 -- recovery point (which the registry's pre-schema snapshot already put there).
+-- #612 adds a second probe: an old fetch_tickets CHECK also counts as
+-- not-current even with the marker, so that rebuild gets its recovery point.
 CREATE TABLE IF NOT EXISTS store_meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

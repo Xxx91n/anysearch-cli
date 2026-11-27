@@ -3,7 +3,7 @@
 // Style: assert-based self-check, matching the store suite.
 
 import Database from "better-sqlite3";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "../src/session-store";
@@ -106,8 +106,12 @@ async function main() {
       `);
       legacy.close();
     }
+    const backupPath = dbPath + ".pre-migration.db";
+    assert(!existsSync(backupPath), "the fresh store needed no snapshot before the legacy CHECK");
     const reopened = new SqliteSessionStore(dbPath);
     try {
+      assert(existsSync(backupPath),
+        "a current marker plus an old fetch_tickets CHECK still gets a pre-migration snapshot");
       assert(reopened.hasFetchTicket(b.id, "user", "example.com/survivor"),
         "the fetch-ticket rebuild keeps the rows it already had");
       await reopened.saveFetchTickets(b.id, "tofu", ["kept.example"]);

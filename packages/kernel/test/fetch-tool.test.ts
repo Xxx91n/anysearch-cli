@@ -627,13 +627,13 @@ async function main() {
         return true;
       });
       const url = "https://docs.tofu.example/guide";
-      const grant = await tool.execute("t25b", { handles: [url], requestTrustFor: "tofu.example" });
-      assert(rawText(grant).includes("已信任"), "the interactive prompt grants the domain");
-      assert(asked.length === 1 && asked[0]!.domain === "tofu.example",
-        "the user sees the normalized domain");
+      const grant = await tool.execute("t25b", { handles: [url], requestTrustFor: "docs.tofu.example" });
+      assert(rawText(grant).includes("已信任"), "the interactive prompt grants the exact host");
+      assert(asked.length === 1 && asked[0]!.domain === "docs.tofu.example",
+        "the user sees the normalized host");
       assert(asked[0]!.urls[0] === url, "the user sees the full URL before consenting");
       assert(provider.calls.length === 0, "the trust grant reads no page");
-      assert(store.hasFetchTicket(session.id, "tofu", "tofu.example"),
+      assert(store.hasFetchTicket(session.id, "tofu", "docs.tofu.example"),
         "the grant writes one session tofu ticket");
 
       const read = envelope(await tool.execute("t25c", { handles: [url] }));
@@ -641,17 +641,26 @@ async function main() {
         "the retry reads the same URL through the session ticket");
       assert(asked.length === 1, "the retry does not ask again");
 
-      const sibling = envelope(await tool.execute("t25d", {
+      const sibling = await tool.execute("t25d", {
+        handles: ["https://api.tofu.example/other"],
+      });
+      assert(rawText(sibling).includes("不在本会话的搜索结果或用户消息里") && asked.length === 1,
+        "a sibling subdomain is a different host and is not covered by the ticket");
+      const siblingGrant = await tool.execute("t25d2", {
+        handles: ["https://api.tofu.example/other"], requestTrustFor: "api.tofu.example",
+      });
+      assert(rawText(siblingGrant).includes("已信任") && asked.length === 2,
+        "the sibling host needs its own prompt");
+      const siblingRead = envelope(await tool.execute("t25d3", {
         handles: ["https://api.tofu.example/other"],
       }));
-      assert(sibling.pages.length === 1 && asked.length === 1,
-        "another subdomain of the trusted site is readable without a second prompt");
+      assert(siblingRead.pages.length === 1, "the sibling ticket reads the sibling host");
 
       const repeat = envelope(await tool.execute("t25e", {
-        handles: [url], requestTrustFor: "tofu.example",
+        handles: [url], requestTrustFor: "docs.tofu.example",
       }));
-      assert(repeat.pages.length === 1 && asked.length === 1,
-        "a trust parameter on an already-trusted domain falls through to reading");
+      assert(repeat.pages.length === 1 && asked.length === 2,
+        "a trust parameter on an already-trusted host falls through to reading");
     }
 
     {
@@ -661,12 +670,22 @@ async function main() {
       const outside = await tool.execute("t25f", {
         handles: ["https://other.example/page"], requestTrustFor: "tofu2.example",
       });
-      assert(rawText(outside).includes("只能配合同一个域名"),
-        "a handle outside the requested domain is refused");
+      assert(rawText(outside).includes("只能配合同一个主机"),
+        "a handle outside the requested host is refused");
+      const parent = await tool.execute("t25f2", {
+        handles: ["https://docs.tofu2.example/page"], requestTrustFor: "tofu2.example",
+      });
+      assert(rawText(parent).includes("只能配合同一个主机"),
+        "a parent domain does not cover a subdomain host");
+      const publicSuffix = await tool.execute("t25f3", {
+        handles: ["https://docs.example.co.uk/page"], requestTrustFor: "co.uk",
+      });
+      assert(rawText(publicSuffix).includes("只能配合同一个主机"),
+        "a shared public suffix cannot be trusted for a host under it");
       const bad = await tool.execute("t25g", {
         handles: ["https://docs.tofu2.example/page"], requestTrustFor: "https://tofu2.example",
       });
-      assert(rawText(bad).includes("只收一个域名"), "requestTrustFor rejects a URL");
+      assert(rawText(bad).includes("只收一个主机名"), "requestTrustFor rejects a URL");
       const mHandle = await tool.execute("t25h", {
         handles: ["m:1"], requestTrustFor: "tofu2.example",
       });
@@ -685,14 +704,14 @@ async function main() {
       assert(rawText(denied).includes("禁止列表"), "a deny-listed domain cannot be trusted");
       const allowTool = makeTool(provider, ["allowed.example"], [], undefined, confirm);
       const notAllowed = await allowTool.execute("t25j", {
-        handles: ["https://docs.gated.example/page"], requestTrustFor: "gated.example",
+        handles: ["https://docs.gated.example/page"], requestTrustFor: "docs.gated.example",
       });
       assert(rawText(notAllowed).includes("不在当前领域白名单"), "an allowlist is a hard cap for TOFU too");
       const privateTool = makeTool(provider, [], [], undefined, confirm);
       const privateUrl = await privateTool.execute("t25k", {
         handles: ["http://127.0.0.1/private"], requestTrustFor: "127.0.0.1",
       });
-      assert(rawText(privateUrl).includes("只收一个域名") || rawText(privateUrl).includes("这个地址不能抓"),
+      assert(rawText(privateUrl).includes("只收一个主机名") || rawText(privateUrl).includes("这个地址不能抓"),
         "a private host never becomes a trust question");
       assert(asked === 0 && provider.calls.length === 0, "policy refusals never prompt or read");
       assert(!store.hasFetchTicket(session.id, "tofu", "docs.deny.example"),
@@ -704,17 +723,17 @@ async function main() {
       let asked = 0;
       const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
       const first = await tool.execute("t25l", {
-        handles: ["https://docs.no.example/page"], requestTrustFor: "no.example",
+        handles: ["https://docs.no.example/page"], requestTrustFor: "docs.no.example",
       });
       assert(rawText(first).includes("没有同意"), "a declined prompt refuses in-band");
       const second = await tool.execute("t25m", {
-        handles: ["https://docs.no.example/other"], requestTrustFor: "no.example",
+        handles: ["https://docs.no.example/other"], requestTrustFor: "docs.no.example",
       });
       assert(rawText(second).includes("没有同意") && asked === 1,
-        "a declined domain is not asked twice in the same run");
+        "a declined host is not asked twice in the same run");
       assert(rawText(second).includes("连续 2 次整批网址都没被放行"),
         "a trust refusal counts toward the rejected-batch stop");
-      assert(!store.hasFetchTicket(session.id, "tofu", "no.example"), "a decline writes no ticket");
+      assert(!store.hasFetchTicket(session.id, "tofu", "docs.no.example"), "a decline writes no ticket");
     }
 
     store.close();

@@ -420,9 +420,10 @@
   identity, so it is read over https. Bodies go to the research archive in full; the model sees at
   most 4000 characters each. #612 adds one narrow way in for official docs: when
   a URL has no session ticket, an interactive CLI may ask the user to trust that
-  bare domain for the rest of the session (`requestTrustFor`). The
-  grant call reads no page; it writes one session ticket, and later pages on
-  that domain (and its subdomains) still pass the address, deny and allowlist
+  bare host for the rest of the session (`requestTrustFor`). The
+  grant covers one exact host; it never widens to a parent suffix or a shared
+  suffix such as `co.uk`; the grant call reads no page, writes one session ticket, and later
+  pages on that exact host still pass the address, deny and allowlist
   gates, so it cannot override a deny rule. Headless/MCP never prompts — it
   refuses and tells the model to ask the user to paste the link. No TOML is
   written and nothing crosses sessions. This does not open the external
