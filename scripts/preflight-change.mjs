@@ -1,9 +1,9 @@
 // Which files a change set has: the refs on stdin for a push, origin/HEAD plus
-// the working tree for a plain run. A push with no refs on stdin looks at the
-// working tree instead. PUSH_UNKNOWN marks a ref that cannot be read; null marks
-// a question git could not answer. Either way the caller must not read the
-// result as an empty change: the push gate stops (unless it was told to run
-// everything anyway), and CI runs every lane.
+// the working tree for a plain run. PUSH_UNKNOWN marks a ref that cannot be
+// read, and a null from localFiles marks one git cannot name; neither may be
+// taken as an empty change — the push gate stops unless it was told to run
+// everything anyway, and CI runs every lane. A push with no refs on stdin
+// returns null as well, and the caller looks at the working tree instead.
 
 import { gitIn } from "./preflight-git.mjs";
 
