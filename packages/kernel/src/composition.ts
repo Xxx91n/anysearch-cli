@@ -7,7 +7,7 @@
 
 import { TavilyProvider, AnySearchProvider, createExaProvider } from "@anysearch-cli/retriever/providers";
 import { redactSecrets, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
-import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
+import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine, isPositiveWholeMs } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   ansAttributionRoot,
@@ -348,7 +348,7 @@ const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 // being truncated into a 1ms budget nobody asked for, and a cap above the
 // engine's ceiling is clamped rather than thrown from the constructor.
 function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_MS): number {
-  if (raw === undefined || !Number.isInteger(raw) || raw <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
+  if (!isPositiveWholeMs(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
   // A cap at or above 1ms is rounded down. Anything smaller is invalid and
   // falls back to the eval ceiling; it must not become a 1ms budget that
   // cancels every arm.
@@ -358,12 +358,11 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
   return Math.min(raw, cap, MAX_REQUEST_TIMEOUT_MS);
 }
 
-/** The budget to report for one fanout: the engine's own, the result's copy, then 4s. */
+/** The budget to report for one fanout: the retriever's, then the result's copy, then 4s. */
 export function reportedDeadlineMs(eng: Pick<CompositionResult, "requestTimeoutMs" | "retriever">): number {
-  const positive = (ms: unknown): ms is number => typeof ms === "number" && Number.isFinite(ms) && ms > 0;
   const retrieverMs = eng.retriever?.requestTimeoutMs;
-  if (positive(retrieverMs)) return retrieverMs;
-  if (positive(eng.requestTimeoutMs)) return eng.requestTimeoutMs;
+  if (isPositiveWholeMs(retrieverMs)) return retrieverMs;
+  if (isPositiveWholeMs(eng.requestTimeoutMs)) return eng.requestTimeoutMs;
   return DEFAULT_REQUEST_TIMEOUT_MS;
 }
 

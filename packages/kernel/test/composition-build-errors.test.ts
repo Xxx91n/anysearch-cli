@@ -158,7 +158,7 @@ try {
 
   const retriever = { search: async () => { throw new Error("not run"); }, requestTimeoutMs: 9000 };
   assert.equal(reportedDeadlineMs({ requestTimeoutMs: 4000, retriever }), 9000, "结果的包装器报了预算就用它");
-  for (const bad of [0, Number.NaN, Number.POSITIVE_INFINITY]) {
+  for (const bad of [0, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
     assert.equal(reportedDeadlineMs({ requestTimeoutMs: 4000, retriever: { ...retriever, requestTimeoutMs: bad } }), 4000, "包装器报 0/NaN/Infinity 时回落结果自己的预算（传的是 " + String(bad) + "）");
   }
 

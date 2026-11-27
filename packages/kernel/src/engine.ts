@@ -38,6 +38,10 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 export { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS };
 
+export function isPositiveWholeMs(ms: unknown): ms is number {
+  return typeof ms === "number" && Number.isInteger(ms) && ms > 0;
+}
+
 // Extract domain from URL for sufficiency gate domain counting.
 function extractDomain(url: string): string {
   try {
@@ -246,7 +250,7 @@ export class RetroaererdEngine {
     const requestedTimeout = opts?.requestTimeoutMs;
     // setTimeout truncates fractions and clamps values above 2^31-1 ms to 1ms;
     // both would cut a search off at once, so reject them here.
-    if (requestedTimeout !== undefined && (!Number.isInteger(requestedTimeout) || requestedTimeout <= 0 || requestedTimeout > MAX_REQUEST_TIMEOUT_MS)) {
+    if (requestedTimeout !== undefined && (!isPositiveWholeMs(requestedTimeout) || requestedTimeout > MAX_REQUEST_TIMEOUT_MS)) {
       throw new RangeError("requestTimeoutMs must be a positive whole number of milliseconds no greater than " + MAX_REQUEST_TIMEOUT_MS);
     }
     this.requestTimeoutMs = requestedTimeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
