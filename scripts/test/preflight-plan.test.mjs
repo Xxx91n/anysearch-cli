@@ -146,6 +146,17 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
     assert.equal(plan.mode, "readers", files.join(","));
     assert.deepEqual(plan.packages, readers, files.join(","));
   }
+
+  // The two corpus rows are the ones this PR added kernel to. Pin them as
+  // literals so the table and the mirror in preflight-root-readers.mjs cannot
+  // both lose kernel without a red test.
+  for (const file of ["eval-golden.json", "eval-badcases.json"]) {
+    assert.deepEqual(
+      planPreflight(root, [file]).packages,
+      ["@anysearch-cli/kernel", "@anysearch-cli/store"],
+      file,
+    );
+  }
 });
 
 // Everything the table does not name belongs to no package: the lockfile, the
@@ -190,7 +201,9 @@ test("a root file change next to a package change runs both", () => {
 test("docs next to a root file run the readers, not the suite", () => {
   const plan = planPreflight(root, ["eval-golden.json", "README.md"]);
   assert.equal(plan.mode, "readers");
-  assert.deepEqual(plan.packages, EXPECTED_ROOT_READERS["eval-golden.json"]);
+  // Literal, not the mirror table: this is the assertion that pins "a corpus
+  // change runs kernel and store" on its own.
+  assert.deepEqual(plan.packages, ["@anysearch-cli/kernel", "@anysearch-cli/store"]);
 });
 
 test("a root file whose reader is gone stops the gate, never turns into a skip", () => {
@@ -389,6 +402,7 @@ test("the real workspace: every reader in the table exists, and domains runs onl
   // That row rests on a golden entry anchoring on the file: without the anchor,
   // store would have no reason to run and the row should go with it.
   const golden = JSON.parse(readFileSync(join(repo, "eval-golden.json"), "utf8"));
+  assert.ok(Array.isArray(golden.entries), "eval-golden.json entries is an array");
   assert.ok(
     golden.entries.some((entry) => entry.provenance?.ref === "AGENTS.md"),
     "no golden entry anchors on AGENTS.md any more; drop that row from ROOT_READERS",
