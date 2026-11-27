@@ -200,7 +200,7 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
 
           // 拒答标记放在 structuredContent.abstain，isError 仍为 false。成功
           // 结果一定带 structuredContent：outcome、credentialSources、
-          // providersQueried、providersCancelled 恒有值；其余字段有值时才加。
+          // providersQueried、providersCancelled、providerElapsedMs 恒有值；其余字段有值时才加。
           const structuredContent = {
             // interrupted follows only the call verdict (`callOutcome`): the
             // last completed round, or a caller abort. Earlier-round cut-off

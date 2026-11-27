@@ -88,7 +88,7 @@ pretty-printed JSON document in that text block; it carries `outcome` and, when
 set, the `abstain` marker, so a text-only reader gets the same verdict. For the search tools,
 `structuredContent` carries machine-readable metadata (the `sufficiency`
 verdict, attribution, abstain, outcome, which arms were asked and which were
-cut off, and the provider-failure fields). It never carries
+cut off, how long each answered arm took, and the provider-failure fields). It never carries
 the result list itself. The credential record (`credentialSources`) is
 deliberately written into both halves, because hosts split on
 which half reaches the model — a fact placed in only one of them is invisible to
@@ -294,12 +294,15 @@ Rules behind the table:
   never an outage.
 - **Per-arm timing is what the arm itself reported.** `providerElapsedMs`
   maps each provider id that answered to the milliseconds that arm said it
-  took. A cut or failed arm has no key — it has no real duration, and its state
-  already rides `providersCancelled` / `providersFailed`; absent is not the
-  same as `0`. The field is always present (an empty object when no arm
-  answered) in both the content JSON and `structuredContent`. `research_web`
-  reports its last completed round's table, never a union across rounds, the
-  same round its arm lists describe.
+  took. Within one search, a cut or failed arm has no key — it has no real
+  duration, and its state already rides `providersCancelled` /
+  `providersFailed`; absent is not the same as `0`. A successful result always
+  carries the field (an empty object when no arm answered) in both the content
+  JSON and `structuredContent`; an error result carries no `structuredContent`
+  at all, exactly as before. `research_web` reports its last completed round's
+  table, never a union across rounds — the same window its `providersQueried` /
+  `providersCancelled` describe, while `providersFailed` stays the separate
+  union across rounds.
 - **Partial failures come with the successful result.** `providersFailed`,
   `providerErrorClasses` (`transient` / `permanent-auth` /
   `quota-exhausted` / `free-quota-exhausted` / `permanent-protocol` /

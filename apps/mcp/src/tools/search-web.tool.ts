@@ -94,10 +94,11 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
               // stable output shape — answers / answersAvailable / providerAnswers /
-              // providersQueried / providersCancelled / credentialSources are
-              // unconditional here; structuredContent is a different shape (the two
-              // arm lists and the credential record always, sufficiency /
-              // attribution / abstain / interrupted / failures when present).
+              // providersQueried / providersCancelled / providerElapsedMs /
+              // credentialSources are unconditional here; structuredContent is a
+              // different shape (the two arm lists, the per-arm timing and the
+              // credential record always, sufficiency / attribution / abstain /
+              // interrupted / failures when present).
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,
@@ -149,7 +150,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           const abstain = envelope.metadata?.abstain;
           // 拒答标记放在 structuredContent.abstain，isError 仍为 false。成功
           // 结果一定带 structuredContent：outcome、credentialSources、
-          // providersQueried、providersCancelled 恒有值；sufficiency /
+          // providersQueried、providersCancelled、providerElapsedMs 恒有值；sufficiency /
           // attribution / provider failures 有值时才加。
           const structuredContent = {
             ...(isInterrupted(outcome, signal) ? { interrupted: true } : {}),
@@ -163,7 +164,7 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             // inferred from which other fields are missing.
             providersQueried: queriedProviders,
             providersCancelled: cancelledProviders,
-            // 答完的腿各自花了多久；被掐、失败的腿没有键。
+            // 答完的臂各自花了多久；被掐、失败的臂没有键。
             providerElapsedMs,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。
             credentialSources: eng.credentialSources ?? null,

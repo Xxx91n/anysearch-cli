@@ -575,6 +575,7 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
     const cutEng = new RetroaererdEngine([
       mockProvider("fast", ["https://a.com/1"]),
       slowProvider("slow", 400, ["https://slow.com/x"], { v: false }),
+      resolveOnAbortProvider("late", { v: false }),
       rejectedProvider("dead"),
     ], { requestTimeoutMs: 40 });
     const cut = await cutEng.search({ query: "g", mode: "fast" });
@@ -582,6 +583,8 @@ function hangingProvider(id: string, aborted: {v:boolean}): SearchProvider {
       "13: an answered arm keeps the provider-reported ms; got " + JSON.stringify(cut.metadata.providerElapsedMs));
     assert(!Object.hasOwn(cut.metadata.providerElapsedMs ?? {}, "slow"),
       "13: a cut arm has no key (not 0, not null)");
+    assert(!Object.hasOwn(cut.metadata.providerElapsedMs ?? {}, "late"),
+      "13: an arm that answers only after the abort has no key either");
     assert(!Object.hasOwn(cut.metadata.providerElapsedMs ?? {}, "dead"),
       "13: a failed arm has no key");
     assert(cut.metadata.providersCancelled.includes("slow") && cut.metadata.providersFailed.includes("dead"),

@@ -1,18 +1,18 @@
 ## Unreleased — #653: 记下每条腿花了多久
 
-一句话说清：**引擎在每次检索的 metadata 里多写一张 `providerElapsedMs` 表：答完的腿各有自己的毫秒数，键是服务商 id；被掐断、失败的腿没有键——它们没有真实耗时，那件事已经由 `providersCancelled` / `providersFailed` 说了。`ans search --json` 和 MCP 两个搜索工具的 `structuredContent` 原样透出，评测不用直调服务商也能画到达分布。**
+一句话说清：**引擎在每次检索的 metadata 里多写一张 `providerElapsedMs` 表：答完的臂各有自己的毫秒数，键是服务商 id；被掐断、失败的臂没有键——它们没有真实耗时，那件事已经由 `providersCancelled` / `providersFailed` 说了。`ans search --json` 和 MCP 两个搜索工具的 `structuredContent` 原样透出，评测不用直调服务商也能画到达分布。**
 
 ### Changed
 
-- **引擎记账**（`packages/kernel/src/engine.ts`、`packages/retriever/src/contract.ts`）：`ProviderEnvelope.elapsedMs` 之前被引擎丢掉，现在按服务商 id 收进 `metadata.providerElapsedMs`；没腿答完就是空表，键恒在。被掐的腿即便后来 resolve 也不进表（`abortedArms` 的判定没动）。
+- **引擎记账**（`packages/kernel/src/engine.ts`、`packages/retriever/src/contract.ts`）：`ProviderEnvelope.elapsedMs` 之前被引擎丢掉，现在按服务商 id 收进 `metadata.providerElapsedMs`；没有臂答完就是空表，键恒在。被掐的臂即便后来 resolve 也不进表（`abortedArms` 的判定没动）。
 - **两个出口**（`apps/cli/src/commands/search.ts`、`apps/mcp/src/tools/search-web.tool.ts`、`apps/mcp/src/tools/research-web.tool.ts`）：`ans search --json` 恒有 `providerElapsedMs`；MCP 的 `search_web` 和 `research_web` 在 `structuredContent` 和文本半边都带同一份。`research_web` 跟 `providersQueried` 一样只看最后一轮完成的检索，不跨轮合并。
-- **文档**（`docs/mcp-server.md`）：成功行的字段表补 `providerElapsedMs`，并说清「只有答完的腿有键，缺席不等于 0」。
+- **文档**（`docs/mcp-server.md`）：成功行的字段表补 `providerElapsedMs`，并说清「只有答完的臂有键，缺席不等于 0」。
 
 ### Tests
 
-- `packages/kernel/test/engine.test.ts`：答完的腿保留服务商自报的毫秒数；被掐、失败的腿没有键；两条腿先后到达的顺序换过来，表不变。
+- `packages/kernel/test/engine.test.ts`：答完的臂保留服务商自报的毫秒数；被掐、失败的臂没有键；两条臂先后到达的顺序换过来，表不变。
 - `apps/cli/test/provider-elapsed.test.ts`：假 anysearch 自报 2ms，`--json` 读到 `{ anysearch: 2 }`；慢源被 `--deadline 500` 掐掉后表是空的。
-- `apps/mcp/test/provider-elapsed.test.ts`：`search_web` 的 `structuredContent` 与文本半边都带同一张表；`research_web` 只报最后一轮，前一轮答完的腿不会留在表里。
+- `apps/mcp/test/provider-elapsed.test.ts`：`search_web` 的 `structuredContent` 与文本半边都带同一张表；`research_web` 只报最后一轮，前一轮答完的臂不会留在表里。
 
 ## Unreleased — #608: 内部 agent 能读一页，正文进库
 
