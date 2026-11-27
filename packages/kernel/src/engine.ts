@@ -230,8 +230,8 @@ export class RetroaererdEngine {
   private gate: SufficiencyGate;
   // The caller's per-fanout budget: tests shrink it, eval raises it, and
   // `ans search --deadline` passes the terminal's choice; absent is 4s.
-  // Readonly and public because a hand-built CompositionResult may omit its
-  // copy, and surfaces then report this one instead of the default.
+  // Readonly and public because composition assigns the engine to
+  // RetrieverPort, which declares this field public.
   readonly requestTimeoutMs: number;
 
   // decision 1C: constructor accepts providers array.
@@ -249,7 +249,7 @@ export class RetroaererdEngine {
     if (requestedTimeout !== undefined && (!Number.isInteger(requestedTimeout) || requestedTimeout <= 0 || requestedTimeout > MAX_REQUEST_TIMEOUT_MS)) {
       throw new RangeError("requestTimeoutMs must be a positive whole number of milliseconds no greater than " + MAX_REQUEST_TIMEOUT_MS);
     }
-    this.requestTimeoutMs = opts?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.requestTimeoutMs = requestedTimeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
     // immutable at the injection seam, even when the caller
     // bypasses the wiring.
     const cal = opts?.attributionCalibration;
