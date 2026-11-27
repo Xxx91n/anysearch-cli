@@ -86,6 +86,8 @@ if (Object.keys(golden.scopes).length === 0) fail("eval-golden.json scopes must 
 for (const [gid, scope] of Object.entries(golden.scopes)) {
   if (!["stub", "live", "both"].includes(scope)) fail("eval-golden.json scope for " + gid + " must be stub|live|both");
 }
+const cov = readJson(COVERAGE, "eval-looks.coverage.json");
+if (!Array.isArray(cov.dimensions)) fail("eval-looks.coverage.json: dimensions must be an array");
 
 if (into) {
   const target = golden.entries.find((e) => e.id === into);
@@ -115,8 +117,7 @@ if (into) {
   for (const tag of ["intent:" + bc.intent, "lang:" + bc.questionLang]) {
     if (!tags.includes(tag)) fail(id + " dimensions lack '" + tag + "' — --new would write a row the validator rejects");
   }
-  const coverageNow = JSON.parse(readFileSync(COVERAGE, "utf8"));
-  const coveredDims = new Set((coverageNow.dimensions ?? []).filter((d) => d && d.status === "covered").map((d) => d.dimension));
+  const coveredDims = new Set(cov.dimensions.filter((d) => d && d.status === "covered").map((d) => d.dimension));
   for (const tag of tags) {
     const sep = tag.indexOf(":");
     const dim = tag.slice(0, sep);
@@ -211,7 +212,6 @@ if (into) {
 
 // Recount covered dimension counts AND class histograms so the manifest stays
 // honest after backfill (count-only recount let classes drift).
-const cov = readJson(COVERAGE, "eval-looks.coverage.json");
 const counts = new Map();
 const classHist = new Map();
 for (const e of golden.entries) {
