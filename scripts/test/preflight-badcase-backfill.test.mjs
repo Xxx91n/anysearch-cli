@@ -64,16 +64,7 @@ function golden(question = "How do I configure the widget?") {
   return {
     schema: "anysearch/docs-golden@1",
     scopes: { "docs-g0001": "live" },
-    entries: [{
-      id: "docs-g0001",
-      domain: "docs",
-      question,
-      questionLang: "en",
-      intent: "howto",
-      expected: expected(),
-      dimensions: ["intent:howto", "lang:en"],
-      provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt: "2026-01-01" },
-    }],
+    entries: [liveRow("docs-g0001", question)],
   };
 }
 
@@ -109,12 +100,16 @@ function tree(t, options = {}) {
 }
 
 function run(dir, args) {
-  return spawnSync(process.execPath, [SCRIPT, ...args], {
+  const r = spawnSync(process.execPath, [SCRIPT, ...args], {
     cwd: REPO,
     env: { ...process.env, ANS_BACKFILL_ROOT: dir },
     encoding: "utf8",
     timeout: 30_000,
   });
+  // A timeout or a missing node leaves status null; name that instead of
+  // letting "expected null to equal 2" point at the script logic.
+  assert.equal(r.error, undefined, String(r.error));
+  return r;
 }
 
 function expectFail(t, mutate, pattern, args = ["--id", "docs-bc0001", "--new"], options = {}) {
@@ -509,4 +504,28 @@ test("a non-array badcases field is reported, not a TypeError", (t) => {
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases = {}; });
   }, /badcases must be an array/);
+});
+
+test("an --id naming no badcase reports it", (t) => {
+  expectFail(t, () => {}, /badcase not found: docs-bc9999/, ["--id", "docs-bc9999", "--new"]);
+});
+
+test("an --into naming no golden target reports it", (t) => {
+  expectFail(t, () => {}, /golden target not found: docs-g0099/, ["--id", "docs-bc0001", "--into", "docs-g0099"]);
+});
+
+test("neither --into nor --new is a usage error", (t) => {
+  expectFail(t, () => {}, /usage: --id/, ["--id", "docs-bc0001"]);
+});
+
+test("a missing eval-golden.json reports cannot read", (t) => {
+  expectFail(t, (dir) => {
+    rmSync(join(dir, "eval-golden.json"));
+  }, /cannot read eval-golden\.json/);
+});
+
+test("a null eval-golden.json root is reported as a root problem", (t) => {
+  expectFail(t, (dir) => {
+    writeJson(join(dir, "eval-golden.json"), null);
+  }, /eval-golden\.json root must be an object/);
 });
