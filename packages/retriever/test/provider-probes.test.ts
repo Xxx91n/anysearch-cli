@@ -14,6 +14,7 @@ import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import { isProbeProviderId, probeAnySearch, probeExa, probeTavily } from "../src/providers/probes";
+import { resolveAnySearchEndpoint } from "../src/providers/provider-facts";
 
 interface Recorded {
   method: string;
@@ -300,6 +301,16 @@ test("anysearch：老 env 值以 /v1/search 结尾，探针打的是 /mcp（跟�
       assert.ok(requests.every((request) => request.path === "/mcp"), "不该打 REST 那个尾巴：" + requests[0]?.path);
     },
   );
+});
+
+test("anysearch 端点归一：空白算没配、`/v1/search` 尾巴换掉，探针和适配器共用一份", () => {
+  const fallback = "https://api.anysearch.com/mcp";
+  assert.equal(resolveAnySearchEndpoint(undefined).endpoint, fallback);
+  assert.equal(resolveAnySearchEndpoint("").endpoint, fallback);
+  assert.equal(resolveAnySearchEndpoint("   ").endpoint, fallback);
+  const shimmed = resolveAnySearchEndpoint("https://proxy.example/v1/search/");
+  assert.equal(shimmed.endpoint, "https://proxy.example/mcp");
+  assert.equal(shimmed.rewritten, true);
 });
 
 test("三家一起跑：一次真搜索都不发（钉子）", async () => {

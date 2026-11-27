@@ -510,7 +510,45 @@ async function main() {
     } finally { f.restore(); }
   }
 
-  // 16e. (#440/#494) the embedded upstream text is display only: a used-up plan
+  // 16d2. The isError path joins text parts with a space, not a newline: the
+  // Chinese quota wording window does not cross a line break, so an upstream
+  // that splits 「额度」 and 「用完」 into two parts must still read as quota.
+  {
+    const body = (id: unknown) => JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      result: { isError: true, content: [{ type: "text", text: "今日额度已" }, { type: "text", text: "用完，请稍后重试" }] },
+    });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let err: unknown;
+      try { await p.search(REQ, SIG); } catch (e) { err = e; }
+      assert(providerErrorClassOf(err) === "quota-exhausted",
+        "a quota reply split across text parts still reads as quota-exhausted (got " + String(err).slice(0, 100) + ")");
+    } finally { f.restore(); }
+  }
+
+  // 16d3. The isError path does not filter parts by type: an upstream that leaves
+  // `type` off its error parts must still be read, not collapsed to an empty
+  // string and mistaken for protocol drift.
+  {
+    const body = (id: unknown) => JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      result: { isError: true, content: [{ text: "invalid api key" }] },
+    });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let err: unknown;
+      try { await p.search(REQ, SIG); } catch (e) { err = e; }
+      assert(providerErrorClassOf(err) === "permanent-auth",
+        "an error reply whose parts carry no type is still read (got " + String(err).slice(0, 100) + ")");
+    } finally { f.restore(); }
+  }
+
+  // 16e. the embedded upstream text is display only: a used-up plan
   // whose text also mentions an invalid key keeps its class because the adapter
   // declares it on the error object, not because a marker in the message wins.
   {
@@ -692,6 +730,103 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // 16f. a wall that arrives as HTTP 200 with no results header (the anonymous
+  // quota path) still classifies: the text parts are read without the type filter
+  // and joined into one line, so the Chinese quota wording is not split apart.
+  {
+    const body = (id: unknown) => JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      result: { content: [{ text: "今日额度已" }, { text: "用完，请稍后重试" }] },
+    });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let err: unknown;
+      try { await p.search(REQ, SIG); } catch (e) { err = e; }
+      assert(providerErrorClassOf(err) === "quota-exhausted",
+        "a 200 + quota wording wall reads as quota-exhausted, not protocol drift (got " + String(err).slice(0, 100) + ")");
+    } finally { f.restore(); }
+  }
+
+  // 16n. a result envelope whose parts carry no `type` still parses: the gate
+  // looks at both joins, and the parse uses the line-preserving one.
+  {
+    const envelope =
+      "## Search Results (1 results, 5ms)\n### 1. T\n- **URL**: https://a.example\n snippet";
+    const body = (id: unknown) => JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      result: { content: [{ text: envelope }] },
+    });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      const out = await p.search(REQ, SIG);
+      assert(out.results.length === 1 && out.results[0]!.url === "https://a.example",
+        "an untyped envelope is parsed, not called malformed (got " + out.results.length + ")");
+    } finally { f.restore(); }
+  }
+
+  // 16o. an error frame without an id is the answer to the request: report what
+  // the upstream said, not "id mismatch".
+  {
+    const f = installFetch((c) => {
+      if (c.body?.method === "tools/call") {
+        return {
+          body: JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request" } }),
+        };
+      }
+      return stdHandler(c);
+    });
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("invalid request"), "the upstream reason is reported (got " + msg.slice(0, 100) + ")");
+      assert(!msg.includes("id mismatch"), "it is not reported as an id mismatch");
+    } finally { f.restore(); }
+  }
+
+  // 16p. the SSE reader stops at the reply instead of waiting for EOF: a server
+  // that keeps the stream open must not park us until the tool's timeout.
+  {
+    const orig = globalThis.fetch;
+    let cancelled = false;
+    globalThis.fetch = (async (input: any, init?: any) => {
+      const body = init?.body ? JSON.parse(init.body) : undefined;
+      if (body?.method === "tools/call") {
+        const frame = new TextEncoder().encode(
+          "event: message
+data: " + JSON.stringify({
+            jsonrpc: "2.0",
+            id: body.id,
+            result: { content: [{ type: "text", text: MD }] },
+          }) + "
+
+",
+        );
+        const stream = new ReadableStream({
+          start(controller) { controller.enqueue(frame); /* 故意不 close：模拟服务端留着流 */ },
+          cancel() { cancelled = true; },
+        });
+        return new Response(stream, { headers: { "content-type": "text/event-stream" } });
+      }
+      return new Response(OK_INIT(body?.id), { headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      const out = await Promise.race([
+        p.search(REQ, SIG),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("search waited for the stream to close")), 1500)),
+      ]);
+      assert(out.results.length === 2, "a reply that arrives on a still-open stream is enough (got " + out.results.length + ")");
+      assert(cancelled, "the reader is cancelled once the reply is in hand");
+    } finally {
+      globalThis.fetch = orig;
+    }
+  }
+
   // 17. r19 T2 (STOP-20 regression): a rate-limit notice in the body —
   // no provisioning or quota words — is a transient rate limit.
   for (const text of [
@@ -708,6 +843,56 @@ async function main() {
       try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
       assert(msg.includes("rate limited"), "rate-limit notice -> rate limited error (" + text.slice(0, 24) + "; got " + msg.slice(0, 80) + ")");
       assert(classifyProviderError(msg) === "transient", "rate-limit notice classifies transient (" + text.slice(0, 24) + ")");
+    } finally { f.restore(); }
+  }
+
+  // 18. an HTTP fault keeps the upstream's own reason: a bare status code tells
+  // neither the model nor a bug report anything.
+  {
+    const f = installFetch((c) => c.body?.method === "tools/call"
+      ? { status: 402, body: "payment required: top up your plan" }
+      : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(msg.includes("402"), "the status code is named (got " + msg.slice(0, 80) + ")");
+      assert(msg.includes("top up your plan"), "the upstream body rides along (got " + msg.slice(0, 120) + ")");
+    } finally { f.restore(); }
+  }
+
+  // 19. a blank endpoint means unset, not "fetch the empty string".
+  {
+    const f = installFetch(stdHandler);
+    const saved = process.env.ANYSEARCH_ENDPOINT;
+    delete process.env.ANYSEARCH_ENDPOINT;
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "   ");
+      await p.search(REQ, SIG);
+      assert(f.calls.length > 0 && f.calls[0]!.url === "https://api.anysearch.com/mcp",
+        "a blank endpoint falls back to the table's default (got " + String(f.calls[0]?.url) + ")");
+    } finally {
+      if (saved === undefined) delete process.env.ANYSEARCH_ENDPOINT;
+      else process.env.ANYSEARCH_ENDPOINT = saved;
+      f.restore();
+    }
+  }
+
+  // 20. `content` is not always an array: an object must not take the whole arm
+  // down with `filter is not a function`.
+  {
+    const body = (id: unknown) => JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      result: { content: { text: "object shaped" } },
+    });
+    const f = installFetch((c) => c.body?.method === "tools/call" ? { body: body(c.body.id) } : stdHandler(c));
+    try {
+      const p = new AnySearchProvider("as_sk_valid", "https://api.anysearch.com/mcp");
+      let msg = "";
+      try { await p.search(REQ, SIG); } catch (e) { msg = String(e); }
+      assert(!/filter is not a function/i.test(msg), "an object-shaped content does not blow up the reader");
+      assert(/no text content/i.test(msg), "it reads as an empty reply instead (got " + msg.slice(0, 100) + ")");
     } finally { f.restore(); }
   }
 

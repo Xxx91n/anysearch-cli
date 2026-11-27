@@ -1,14 +1,15 @@
 # tavily 档案夹
 
-Tavily 的说明和手工探针。信息源 id 是 `tavily`，适配器在
-[`packages/retriever/src/providers/tavily.ts`](../../packages/retriever/src/providers/tavily.ts)。
+Tavily 的说明和手工探针。信息源 id 是 `tavily`，搜索适配器在
+[`packages/retriever/src/providers/tavily.ts`](../../packages/retriever/src/providers/tavily.ts)，
+读页臂是同一目录下的 `tavily-fetch.ts`，两家共用一份凭据和同一套 keyless 规则。
 
 ## 端点
 
 - `https://api.tavily.com`，写死在 `@tavily/core` 的 `BASE_URL` 里；适配器构造 `tavily({})` 不传
   baseURL，**没有**环境变量开关（#421 查实，三家只有 anysearch 有）。
-- 用到的路由：`POST /search`、`POST /research`、`GET /usage`。适配器只打 `/search`；探针打 `/search` 和
-  `/research`。`/usage` 是这一家的免费面：`ans doctor --live` 拿它验 key 和用量，`ans auth set tavily`
+- 用到的路由：`POST /search`、`POST /research`、`POST /extract`、`GET /usage`。搜索适配器只打
+  `/search`，读页适配器只打 `/extract`；探针打 `/search` 和 `/research`。`/usage` 是这一家的免费面：`ans doctor --live` 拿它验 key 和用量，`ans auth set tavily`
   在存之前也打它（401/403 拒存，其余只警告，#442）。默认的 `ans doctor` 仍然一个字都不联网。
 - 探针有一个 **probe-only** 的 endpoint 覆盖：`PROBE_TAVILY_ENDPOINT`，默认还是 `https://api.tavily.com`。
   用处是把探针指到本地桩——凭据接线只能这么验，不能让测试打真上游（anysearch 那边有 `ANYSEARCH_ENDPOINT`
@@ -48,6 +49,19 @@ REST/JSON，不是 MCP，没有协议版本协商这回事。适配器的 mode �
 - SDK 包装后的 `usage` **永远是 `undefined`**：`@tavily/core` 只在单次回包里给
   `response.usage.credits`，所以契约里的 `usage()` 没实现。上游那个 `GET /usage` 是另一回事：
   它是 `doctor --live` 和 `ans auth set` 的免费面，见上面「端点」一节。
+
+## 读页（extract）
+
+- 一次调用带一批 URL（上游上限 20 个，工具侧一批最多 5 个，所以一批永远只打一次）。SDK 选项固定成
+  `{extractDepth:"basic", format:"markdown", timeout:15}`：`timeout` 是我们自己的墙钟，比工具那层的
+  20 秒短一截；SDK 不吃 `AbortSignal`（跟 `/search` 一样），超时只能靠它。
+- 回复分两堆：`results[]`（`url` / `title` / `rawContent`）是读到的页，`failedResults[]`
+  （`url` / `error`）是逐网址失败。正文空或格式读不了 → 页级失败，可交给下一家；404/410/非法网址 →
+  定局，不换家；`error` 里写得像 403 或额度用光 → 也是整臂退场（这一家在本轮不再叫），那一页和
+  剩下没读的网址一起给下一家。接口级错误（key 无效、限额）是 SDK 抛错，不是 `failedResults`，
+  扔出去这一家就退场。
+- keyless 客户端同样能打 `/extract`，匿名额度用满抛 `TavilyKeylessLimitError`，共享分类器记成
+  `free-quota-exhausted`。
 
 ## 已知异常
 

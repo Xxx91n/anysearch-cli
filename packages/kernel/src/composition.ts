@@ -5,7 +5,7 @@
 // decision 1A: returns RetrieverPort, not concrete RetroaererdEngine.
 // decision 4A: loads domain from domains/<name>.toml convention directory.
 
-import { TavilyProvider, AnySearchProvider, createExaProvider, createExaFetchProvider } from "@anysearch-cli/retriever/providers";
+import { TavilyProvider, AnySearchProvider, createExaProvider, createExaFetchProvider, createTavilyFetchProvider, createAnySearchFetchProvider } from "@anysearch-cli/retriever/providers";
 import { redactSecrets, type FetchProvider, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
 import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
@@ -60,10 +60,29 @@ const PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => SearchP
   anysearch: (creds) => new AnySearchProvider(creds?.anysearch?.apiKey, creds?.anysearch?.endpoint),
 };
 
-/** Page-read arms: same ids as search, separate constructor table. */
-const FETCH_PROVIDER_CONSTRUCTORS: Record<string, (creds: CredentialSource) => FetchProvider> = {
-  exa: (creds) => createExaFetchProvider(creds?.exa?.apiKey),
-};
+/** 编不过的断言：条件为 false 时类型检查直接红。 */
+type AssertTrue<T extends true> = T;
+
+/**
+ * 读页臂的构造表：id 和搜索臂一样，但单独一张表。
+ */
+const FETCH_PROVIDER_CONSTRUCTORS = {
+  exa: (creds: CredentialSource) => createExaFetchProvider(creds?.exa?.apiKey),
+  tavily: (creds: CredentialSource) => createTavilyFetchProvider(creds?.tavily?.apiKey),
+  anysearch: (creds: CredentialSource) => createAnySearchFetchProvider(creds?.anysearch?.apiKey, creds?.anysearch?.endpoint),
+} satisfies Record<string, (creds: CredentialSource) => FetchProvider>;
+
+// 读页顺序固定：Exa → Tavily → AnySearch。域配置只能缩小名单，不能改顺序——
+// 几家的覆盖面和价钱不一样，统一排一次比每个域各排一份好管。
+const FETCH_PROVIDER_ORDER = ["exa", "tavily", "anysearch"] as const satisfies
+  readonly (keyof typeof FETCH_PROVIDER_CONSTRUCTORS)[];
+type FetchProviderId = (typeof FETCH_PROVIDER_ORDER)[number];
+
+// 两个方向都挡住：顺序表里写了却没实现的、实现了一家却没排位的，都编不过。
+// 没排位的那家更阴：配置里明明开了，跑起来却永远不建、不报错。
+type _FetchOrderCoversEveryArm = AssertTrue<
+  Exclude<keyof typeof FETCH_PROVIDER_CONSTRUCTORS, FetchProviderId> extends never ? true : false
+>;
 
 /**
  * Trim every resolved key once. `searchCredentials` is a public seam, so a test
@@ -157,7 +176,18 @@ function buildProviders(
 // search-facing providerBuildErrors: a page-read arm does not join the search
 // fanout. `buildArm` accepts no map here, so there is no dead error key.
 function buildFetchProviders(ids: string[], creds: CredentialSource): FetchProvider[] {
-  return ids
+  const enabled = new Set(ids);
+  for (const id of ids) {
+    // 域里写了读页这边没有的 id（打错，或者这家只有搜索）：说一句，别让配置看着开了
+    // 却读不了页。搜索侧能不能建是另一回事，那个侧有自己的表。
+    if (!Object.hasOwn(FETCH_PROVIDER_CONSTRUCTORS, id)) {
+      writeProviderDiagnostic(
+        "[anysearch] 读页没有信息源 id \"" + id + "\"：检查是不是打错了，或者这家只有搜索\n",
+      );
+    }
+  }
+  return FETCH_PROVIDER_ORDER
+    .filter((id) => enabled.has(id))
     .map((id) => buildArm(id, FETCH_PROVIDER_CONSTRUCTORS, "fetch provider", undefined, creds))
     .filter((p): p is FetchProvider => p !== undefined);
 }
@@ -435,8 +465,9 @@ export function createEngine(
   const env = opts?.env ?? process.env;
   let providers: SearchProvider[] = [];
   let fetchProviders: FetchProvider[] = [];
-  // Page-read arms follow the same enabled-else-all rule as search arms.
-  let providerIds: string[] = Object.keys(PROVIDER_CONSTRUCTORS);
+  // 读页臂跟搜索臂用同一条「域压一下，没域就全上」的规则，但默认名单取读页那张表：
+  // 以后加一家「只有读页、没有搜索」的源，这里才不会把它漏掉。
+  let fetchProviderIds: string[] | undefined;
   const providerBuildErrors: Record<string, string> = {};
 
   // #301: resolve every search key ONCE for this engine, so all arms see the
@@ -542,7 +573,7 @@ export function createEngine(
       config = schema as DomainConfigPort;
       const enabled = schema.sources.enabled;
       sourceWeights = schema.sources.weights;
-      providerIds = enabled;
+      fetchProviderIds = enabled;
       providers = buildProviders(enabled, providerBuildErrors, creds);
       // resolve the TOML path through the same chain the loader used
       // (env -> CWD -> caller-supplied dirs), then hand the engine a reloader that
@@ -593,7 +624,7 @@ export function createEngine(
   } else {
     providers = buildProviders(Object.keys(PROVIDER_CONSTRUCTORS), providerBuildErrors, creds);
   }
-  fetchProviders = buildFetchProviders(providerIds, creds);
+  fetchProviders = buildFetchProviders(fetchProviderIds ?? Object.keys(FETCH_PROVIDER_CONSTRUCTORS), creds);
 
   // explicit override wins; otherwise resolve the active head on disk.
   const attributionCalibration = opts?.attributionCalibration ?? resolveActiveAttributionCalibration();

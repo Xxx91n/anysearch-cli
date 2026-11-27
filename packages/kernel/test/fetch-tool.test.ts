@@ -53,8 +53,9 @@ interface OuterEnvelope {
 }
 
 interface EnvelopeBody {
-  pages: Array<{ text: string; truncated: boolean; trust: string; finalUrlKnown: boolean }>;
-  failures: Array<{ url: string; errorClass: string }>;
+  pages: Array<{ url: string; text: string; provider: string; truncated: boolean; trust: string; finalUrlKnown: boolean }>;
+  failures: Array<{ url: string; errorClass: string; retryable?: boolean }>;
+  providers: Array<{ id: string; calls: number; pages: number }>;
   skipped: Array<{ url: string; reason: string }>;
   rejected: Array<{ handle: string; reason: string }>;
   pagesRead: number;
@@ -586,13 +587,212 @@ async function main() {
       await tickets("user", ["allowed.example/down"]);
       const provider = new FakeProvider(() => { throw new Error("provider down"); }, "down", 5);
       const tool = makeTool(provider, ["allowed.example"]);
-      await tool.execute("t24k", { handles: ["https://allowed.example/down"] });
+      const first = await tool.execute("t24k", { handles: ["https://allowed.example/down"] });
+      assert(rawText(first).includes("没有回包"), "an upstream outage names the provider, not empty content");
       await tool.execute("t24l", { handles: ["https://allowed.example/down"] });
       const third = await tool.execute("t24m", { handles: ["https://allowed.example/down"] });
       const text = rawText(third);
-      assert(text.includes("没有回包"), "an upstream outage names the provider, not empty content");
+      assert(text.includes("都退场了"),
+        "once every arm is dead the notice stops telling the model another try would fetch");
+      assert(!text.includes("稍后再试"), "and it does not ask for a retry that would send nothing");
       assert(!text.includes("连续 2 次没拿到新内容"),
         "an upstream outage does not trip the empty-batch stop");
+    }
+
+    // ---- 7h. a dead arm stays dead for the rest of the run (#610) --------
+    {
+      await tickets("user", ["allowed.example/dead1", "allowed.example/dead2"]);
+      const dead = new FakeProvider(() => { throw new Error("quota exhausted"); }, "exa", 5);
+      const backup = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "backup body" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [dead, backup],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      await tool.execute("t25a", { handles: ["https://allowed.example/dead1"] });
+      const second = await tool.execute("t25b", { handles: ["https://allowed.example/dead2"] });
+      assert(dead.calls.length === 1, "a dead arm is not called again in the same run");
+      assert(backup.calls.length === 2 && envelope(second).pages.length === 1,
+        "the next arm carries the second read");
+    }
+
+    // ---- 7i. only the failed page moves to the next arm (#610) ------------
+    {
+      await tickets("user", ["allowed.example/p1", "allowed.example/p2"]);
+      const first = new FakeProvider(() => ({
+        provider: "exa",
+        pages: [{ url: "https://allowed.example/p1", text: "first body" }],
+        failures: [{ url: "https://allowed.example/p2", errorClass: "unknown", message: "empty body", retryable: true }],
+      }), "exa", 5);
+      const second = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "second body" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [first, second],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const result = await tool.execute("t25c", {
+        handles: ["https://allowed.example/p1", "https://allowed.example/p2"],
+      });
+      assert(first.calls.length === 1, "the first arm asks for the whole batch once");
+      assert(second.calls.length === 1 && second.calls[0]!.length === 1,
+        "only the failed page is re-requested from the next arm");
+      assert(second.calls[0]![0] === "https://allowed.example/p2", "the next arm gets the failed URL");
+      const body = envelope(result);
+      assert(body.pages.length === 2 && body.failures.length === 0, "both pages are read");
+      assert(body.pages.find((page) => page.url === "https://allowed.example/p1")?.provider === "exa",
+        "the page names the arm that read it");
+      assert(body.pages.find((page) => page.url === "https://allowed.example/p2")?.provider === "tavily",
+        "the retried page names its own arm");
+      const exaCount = body.providers.find((entry) => entry.id === "exa");
+      const tavilyCount = body.providers.find((entry) => entry.id === "tavily");
+      assert(exaCount?.calls === 1 && exaCount?.pages === 1, "the envelope counts exa");
+      assert(tavilyCount?.calls === 1 && tavilyCount?.pages === 1, "the envelope counts tavily");
+    }
+
+    // ---- 7j. a final page failure never switches arms (#610) --------------
+    {
+      await tickets("user", ["allowed.example/gone"]);
+      const first = new FakeProvider(() => ({
+        provider: "exa",
+        pages: [],
+        failures: [{ url: "https://allowed.example/gone", errorClass: "permanent-protocol", message: "HTTP 404", retryable: false }],
+      }), "exa", 5);
+      const second = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "should not run" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [first, second],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const result = await tool.execute("t25d", { handles: ["https://allowed.example/gone"] });
+      assert(second.calls.length === 0, "a 404 does not reach the next arm");
+      assert(envelope(result).failures.length === 1 && envelope(result).pages.length === 0,
+        "the 404 is reported without a page");
+    }
+
+    // ---- 7k. a per-URL arm-level fault retires the arm too (#610) --------
+    {
+      await tickets("user", ["allowed.example/q1", "allowed.example/q2", "allowed.example/q3"]);
+      const first = new FakeProvider(() => ({
+        provider: "exa",
+        pages: [{ url: "https://allowed.example/q1", text: "first body" }],
+        failures: [
+          { url: "https://allowed.example/q2", errorClass: "free-quota-exhausted", message: "free quota exhausted", retryable: true },
+          { url: "https://allowed.example/q3", errorClass: "free-quota-exhausted", message: "free quota exhausted", retryable: true },
+        ],
+      }), "exa", 5);
+      const second = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "second body" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [first, second],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const result = await tool.execute("t25e", {
+        handles: [
+          "https://allowed.example/q1",
+          "https://allowed.example/q2",
+          "https://allowed.example/q3",
+        ],
+      });
+      const body = envelope(result);
+      assert(first.calls.length === 1, "an arm retired by a per-URL fault is not called again");
+      assert(second.calls.length === 1 && second.calls[0]!.length === 2,
+        "the unread URLs go to the next arm in one call");
+      assert(body.pages.length === 3, "the page the first arm read is kept");
+      assert(body.pages.find((page) => page.url === "https://allowed.example/q1")?.provider === "exa",
+        "the kept page still names the arm that read it");
+      const exaCount = body.providers.find((entry) => entry.id === "exa");
+      assert(exaCount?.calls === 1 && exaCount?.pages === 1, "the envelope counts the retired arm once");
+    }
+
+    // ---- 7l. a mixed batch keeps the final page final (#610) --------------
+    {
+      await tickets("user", ["allowed.example/deny", "allowed.example/gone"]);
+      const first = new FakeProvider(() => ({
+        provider: "exa",
+        pages: [],
+        failures: [
+          { url: "https://allowed.example/deny", errorClass: "permanent-auth", message: "CRAWL_FORBIDDEN", retryable: true },
+          { url: "https://allowed.example/gone", errorClass: "permanent-protocol", message: "HTTP 404", retryable: false },
+        ],
+      }), "exa", 5);
+      const second = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "second body" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [first, second],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const result = await tool.execute("t25f", {
+        handles: ["https://allowed.example/deny", "https://allowed.example/gone"],
+      });
+      const body = envelope(result);
+      assert(second.calls.length === 1 && second.calls[0]!.length === 1,
+        "only the arm-level page goes to the next arm");
+      assert(second.calls[0]![0] === "https://allowed.example/deny", "the next arm gets the arm-level page");
+      const gone = body.failures.find((failure) => failure.url === "https://allowed.example/gone");
+      assert(gone?.errorClass === "permanent-protocol",
+        "a 404 listed after the arm fault is still this page's final failure");
+      assert(body.pages.length === 1, "the page the next arm read is in the envelope");
+    }
+
+    // ---- 7m. a marked arm fault retires the arm, not the batch (#610) ----
+    {
+      await tickets("user", ["allowed.example/t1", "allowed.example/t2", "allowed.example/t3"]);
+      const first = new FakeProvider(() => ({
+        provider: "anysearch",
+        pages: [{ url: "https://allowed.example/t1", text: "first body" }],
+        // transient class, but the adapter knows the request itself threw.
+        failures: [{ url: "https://allowed.example/t2", errorClass: "transient", message: "timed out", retryable: true, armFault: true }],
+      }), "anysearch", 1);
+      const second = new FakeProvider((urls) => ({
+        provider: "exa",
+        pages: urls.map((url) => ({ url, text: "second body" })),
+        failures: [],
+      }), "exa", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [first, second],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const result = await tool.execute("t25g", {
+        handles: [
+          "https://allowed.example/t1",
+          "https://allowed.example/t2",
+          "https://allowed.example/t3",
+        ],
+      });
+      const body = envelope(result);
+      assert(first.calls.length === 1, "an arm marked as faulted is not called for the next URL");
+      assert(second.calls.length === 1 && second.calls[0]!.length === 2,
+        "both unread URLs go to the next arm in one call");
+      assert(body.pages.length === 3 && body.failures.length === 0, "all three pages end up read");
+      assert(body.pages.find((page) => page.url === "https://allowed.example/t1")?.provider === "anysearch",
+        "the page read before the fault keeps naming its arm");
     }
 
     // ---- 8. parameter errors are ordinary tool errors ----------------------
