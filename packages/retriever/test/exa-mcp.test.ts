@@ -156,6 +156,26 @@ async function main() {
     } finally { f.restore(); }
   }
 
+  // 2a2. 非 JSON / 非 SSE 的 200 回包直接失败，不能当结果。
+  {
+    const f = installFetch(() => ({ ct: "text/html", body: "<html>gateway</html>" }));
+    try {
+      const error = await rejection(() => new ExaMcpProvider().search(REQ, SIG));
+      const message = error instanceof Error ? error.message : String(error);
+      assert(message.includes("Content-Type"), "an unexpected Content-Type is a protocol error");
+    } finally { f.restore(); }
+  }
+
+  // 2a3. SSE 里没有本请求 id 的回复：报 carried no reply，分类为协议错误。
+  {
+    const f = installFetch(() => ({ ct: "text/event-stream", body: SSE(999, RECORDS) }));
+    try {
+      const error = await rejection(() => new ExaMcpProvider().search(REQ, SIG));
+      const message = error instanceof Error ? error.message : String(error);
+      assert(message.includes("carried no reply"), "an SSE stream without our id is a protocol error");
+    } finally { f.restore(); }
+  }
+
   // 2b. 上游把结果拆成两个文本块：块和块之间要断开，不能粘成一行（粘起来会串记录）。
   {
     const first = "Title: First\nURL: https://example.com/first\nHighlights:\nalpha";
