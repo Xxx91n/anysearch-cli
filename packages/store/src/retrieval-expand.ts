@@ -199,6 +199,12 @@ export function expandMemoryRow(db: Database.Database, req: MemoryExpandRequest)
     const body = (readText.get(part.pageStart + 1, part.pageEnd - part.pageStart, row.id) as { text: string | null } | undefined)?.text ?? "";
     const chars = [...body];
     const room = budget - used;
+    if (room <= 0) {
+      // The heading line used the last character; the body waits for the next read.
+      hasMore = true;
+      nextOffset = part.pageStart;
+      break;
+    }
     if (chars.length <= room) {
       out += body;
       used += chars.length;

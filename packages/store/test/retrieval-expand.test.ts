@@ -83,7 +83,7 @@ async function main() {
       assert(cut.text.endsWith("…"), "a cut answer writes an ellipsis");
       assert(cut.returnedChars <= 8000, "the hard ceiling holds (got " + cut.returnedChars + ")");
       assert(cut.nextOffset !== null && cut.nextOffset > 0, "nextOffset names where to continue");
-      // Code-point slicing: the continuation must start on a whole emoji.
+      // Code-point slicing: 9005 - 7999 (the cut) leaves 1006, starting on a whole emoji.
       const next = store.expandMemory({ rowid: bigId, offset: cut.nextOffset! });
       assert(next.ok, "the continuation reads");
       if (next.ok) {
@@ -91,7 +91,7 @@ async function main() {
         assert(next.hasMore === false, "the rest fits in one read");
         assert(next.text.startsWith("😀") && next.text.endsWith(" tail"), "no emoji was split at the offset");
         assert(!next.text.includes("\uFFFD"), "the continuation has no broken surrogate");
-        assert([...next.text].length === 1001, "the continuation is the remaining 1001 code points (got " + [...next.text].length + ")");
+        assert([...next.text].length === 1006, "the continuation is the remaining 1006 code points (got " + [...next.text].length + ")");
       }
     }
 

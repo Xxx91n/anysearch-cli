@@ -98,7 +98,7 @@ import { extractRelations, parseLlmTriples, dedupeTriples, patternAllows, EDGE_P
 import type { ExtractedTriple, LinkedEntityRef } from "./relation.js";
 import type { EntityType, EntityCandidate, CrossScriptPair } from "./entity.js";
 import { rrfRankWithPreferred, FUSION_REGISTRY, SCORE_KIND, registryWeight, normalizeUrlIdentity, parseWebUrl } from "@anysearch-cli/retriever";
-import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive, parseSqliteUtc } from "./consolidate.js";
+import { consolidateMemoryRun, scanArchiveCandidates, applyArchive, undoArchive } from "./consolidate.js";
 import type {
   ConsolidateSummarizeFn,
   ConsolidateClassifyFn,
