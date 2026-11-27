@@ -281,18 +281,27 @@ const STATUS_PROBLEM = {
   foreign: "pre-push is another script, not ours",
 };
 
-// What a push of this checkout would run: one mode line and one wait-budget
-// line per answer `pushPreview` can give.
+// What a push of this checkout would run: a mode line and a wait-budget line per
+// answer `pushPreview` can give.
 //
 // Design: the keys are the plan's own mode names, plus `unknown` for a change set
-// git cannot name; `broken` never reaches this table, because the caller prints
-// the gate's own blocked/reason/fix for it — a mode that turns up in the plan and
-// not here reads as "cannot tell", never as a healthy line. The words stay the
-// ticket's: 提示 reads advisory, 增量 reads incremental, 整套 reads full, and the two
-// lines sit under one key so neither can be printed without the other.
-const PACKAGE_MODE = "mode: incremental — a change inside a package runs that package and every package that depends on it";
-const PACKAGE_WAIT =
-  "wait budget: up to 600s for the packages this push runs (store alone measures about 4m15s); set the calling tool's timeout to 0 or at least 600";
+// git cannot name — a key the plan answers with and this table lacks reads as
+// "cannot tell", never as a healthy line, and `broken` never reaches the table
+// because the caller prints the gate's own blocked/reason/fix for it. Each entry
+// holds both lines, so neither can be printed without the other.
+const INCREMENTAL_MODE = "mode: incremental — a change inside a package runs that package and every package that depends on it";
+const INCREMENTAL_WITH_READERS =
+  "mode: incremental — a package change runs that package and its dependents, plus the packages whose tests read a changed root file";
+
+// Design: the numbers are measured, not promised — store's tests alone take about
+// 4m15s and the whole suite takes 6 to 9 minutes on Windows, so a calling tool's
+// timeout short of them kills a run that would have passed and reads afterwards
+// like a red gate.
+const PACKAGE_SECONDS = 600;
+const FULL_SECONDS = 900;
+const STORE_RUN = "4m15s";
+const PACKAGE_WAIT = `wait budget: up to ${PACKAGE_SECONDS}s for the packages this push runs (store alone measures about ${STORE_RUN}); set the calling tool's timeout to 0 or at least ${PACKAGE_SECONDS}`;
+const FULL_WAIT = `wait budget: 6 to 9 minutes on Windows for the whole suite; set the calling tool's timeout to 0 or at least ${FULL_SECONDS}`;
 const NOTHING_RUNS = "wait budget: none — nothing runs";
 
 const MODE_REPORT = {
@@ -302,17 +311,12 @@ const MODE_REPORT = {
     mode: "mode: advisory — a change no package owns only warns and nothing runs; CI's check-build covers that change",
     wait: NOTHING_RUNS,
   },
-  // A root file runs the packages whose tests read it, and no dependents: an app
-  // that depends on the reader never opens the file through that package's tests.
   readers: {
     mode: "mode: incremental — a changed root file runs only the packages whose tests read it",
     wait: PACKAGE_WAIT,
   },
-  incremental: { mode: PACKAGE_MODE, wait: PACKAGE_WAIT },
-  full: {
-    mode: "mode: full — every push runs the whole suite (ANS_PUSH_GATE=strict, or --full in the hook)",
-    wait: "wait budget: 6 to 9 minutes on Windows for the whole suite; set the calling tool's timeout to 0 or at least 900",
-  },
+  incremental: { mode: INCREMENTAL_MODE, wait: PACKAGE_WAIT },
+  full: { mode: "mode: full — every push runs the whole suite (ANS_PUSH_GATE=strict)", wait: FULL_WAIT },
   unknown: {
     mode: "mode: unknown — git cannot name this change (no HEAD, or no origin/HEAD to compare against)",
     wait: "wait budget: unknown — a push still runs what its refs carry",
@@ -320,41 +324,51 @@ const MODE_REPORT = {
 };
 
 /**
+ * The two lines for a plan, or null when the table has no answer for its mode.
+ *
+ * Design: a change that carries package files and root files runs both sets, so
+ * its line names the readers too — a line promising only the package and its
+ * dependents would under-report the run the person is budgeting for.
+ */
+function modeReport(plan) {
+  const report = MODE_REPORT[plan.mode];
+  if (!report) return null;
+  if (plan.mode === "incremental" && plan.readers?.length) return { ...report, mode: INCREMENTAL_WITH_READERS };
+  return report;
+}
+
+/**
  * The plan a push of this checkout would run, or `unknown` when git cannot name
  * the change. `broken` carries the plan's reason and fix.
  *
- * Design: the two switches that run everything on every push decide the mode
- * before any change set matters — `ANS_PUSH_GATE=strict` in this shell, or
- * `--full` in the hook's exec line. The flag is matched in the shell line, which
- * is all status has; renaming it in the gate would leave this line stale.
+ * Design: `ANS_PUSH_GATE=strict` decides the mode before any change set matters. A
+ * `--full` in the installed hook's own exec line cannot: that edit makes the hook
+ * read as stale, so status never reports a mode for such a hook.
  *
- * Design: the change set is the one a plain gate run reads, everything not on
- * origin/HEAD plus the working tree — that is this checkout's change, which is
- * not every change a push can carry: `git push origin other-branch` sends commits
- * HEAD does not have, and no local read can see them.
+ * Design: the change set is what a plain gate run reads, everything not on
+ * origin/HEAD plus the working tree — this checkout's change, not every change a
+ * push can carry: `git push origin other-branch` sends commits HEAD does not have,
+ * and no local read can see them.
  */
-function pushPreview(root, command) {
-  if (strictPushGate() || /(^|\s)--full(\s|$)/.test(command)) return { mode: "full" };
+function pushPreview(root) {
+  if (strictPushGate()) return { mode: "full" };
   const files = localFiles(root);
   if (files === null) return { mode: "unknown" };
   return planPreflight(root, files);
 }
 
 /**
- * The gate script the hook's exec line names, and whether this checkout can load
- * it. A missing script, one that does not parse, or one importing a file that is
- * gone is a problem to name, never a normal state: git would abort the push
- * inside the hook, and "installed and current" would hide that.
+ * The gate script the hook names, and whether this checkout can load it: the file
+ * is there, it parses, and every module it imports relatively is there too.
  *
- * Design: loading is as far as status can go — running the gate would read a
- * change set and start tests, while what node does before the gate's first line
- * (parse it, then resolve every module it imports) is exactly what a broken tree
- * fails at. Only an "ok" hook reaches this, and `isOurs` already proved its exec
- * line names the gate script.
+ * Design: loading stops short of running — the gate would read a change set and
+ * start tests, while a tree that cannot load the module fails before its first
+ * line anyway.
  */
 function gateScriptCheck(root, command) {
-  const [, script] = command.match(GATE_COMMAND);
-  const file = path.join(root, script);
+  const match = command.match(GATE_COMMAND);
+  if (!match) return { problem: "the hook's exec line names no gate script status can follow", detail: command.trim() };
+  const file = path.join(root, match[1]);
   let stat;
   try {
     stat = fs.statSync(file);
@@ -451,7 +465,7 @@ function reportStatus(result) {
       return 2;
     }
 
-    const preview = pushPreview(result.root, result.command);
+    const preview = pushPreview(result.root);
     if (preview.mode === "broken") {
       // Design: the hook is fine and the repository is not, so the words and the
       // exit code are the gate's own — nothing was looked at, which is 2, never
@@ -461,7 +475,7 @@ function reportStatus(result) {
       console.error(`[hooks] fix: ${preview.fix}`);
       return 2;
     }
-    const report = MODE_REPORT[preview.mode];
+    const report = modeReport(preview);
     if (!report) {
       console.error(`[hooks] cannot tell: the gate answered a mode status has no line for ("${preview.mode}")`);
       return 2;

@@ -744,6 +744,10 @@ function runCliIn(root, bin, args, { gateTests, selfTest = false, input, overrid
   // and the real PATH would be dropped, hiding git from the child.
   env.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
   if (process.platform === "win32") env.Path = env.PATH;
+  // A developer who exported the strict switch for their own pushes would turn
+  // every incremental case here into a full run; the case that wants it passes
+  // it through overrides.
+  delete env.ANS_PUSH_GATE;
   if (overrides) Object.assign(env, overrides);
   delete env.PREFLIGHT_GATE_TESTS;
   if (gateTests || selfTest) {

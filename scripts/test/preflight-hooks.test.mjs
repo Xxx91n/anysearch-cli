@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -33,6 +33,9 @@ function withSandbox(fn) {
     GIT_CONFIG_SYSTEM: empty,
     GIT_CONFIG_NOSYSTEM: "1",
   });
+  // A developer who exported the strict switch for their own pushes would turn
+  // every case below into a full run; the case that wants it passes it in.
+  delete env.ANS_PUSH_GATE;
   const git = (cwd, args) => {
     const result = spawnSync("git", args, { cwd, env, encoding: "utf8" });
     assert.equal(result.status, 0, `git ${args.join(" ")} failed: ${result.stderr}`);
@@ -40,13 +43,18 @@ function withSandbox(fn) {
   };
   const run = (cwd, args, command = cli, extraEnv = {}) =>
     spawnSync(process.execPath, [command, ...args], { cwd, env: { ...env, ...extraEnv }, encoding: "utf8" });
+  const cloneInto = (origin, name) => {
+    const dir = join(base, name);
+    const result = spawnSync("git", ["clone", "-q", origin, dir], { cwd: base, env, encoding: "utf8" });
+    assert.equal(result.status, 0, `git clone failed: ${result.stderr}`);
+    return dir;
+  };
+
   const clone = () => {
     const origin = join(base, "origin");
     mkdirSync(origin);
     git(origin, ["init", "-q", "--initial-branch=main"]);
-    const dir = join(base, "clone");
-    const result = spawnSync("git", ["clone", "-q", origin, dir], { cwd: base, env, encoding: "utf8" });
-    assert.equal(result.status, 0, `git clone failed: ${result.stderr}`);
+    const dir = cloneInto(origin, "clone");
     placeGate(dir);
     return dir;
   };
@@ -64,10 +72,7 @@ function withSandbox(fn) {
     placeGate(origin);
     git(origin, ["add", "-A"]);
     git(origin, ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "-m", "seed"]);
-    const dir = join(base, "seeded");
-    const result = spawnSync("git", ["clone", "-q", origin, dir], { cwd: base, env, encoding: "utf8" });
-    assert.equal(result.status, 0, `git clone failed: ${result.stderr}`);
-    return dir;
+    return cloneInto(origin, "seeded");
   };
 
   try {
@@ -101,12 +106,12 @@ function placeGate(dir) {
 function withScriptsIn(clone) {
   mkdirSync(join(clone, "scripts", "hooks"), { recursive: true });
   copyFileSync(join(repoRoot, "package.json"), join(clone, "package.json"));
-  copyFileSync(cli, join(clone, "scripts", "preflight-hooks.mjs"));
-  copyFileSync(join(repoRoot, "scripts", "hooks", "pre-push-user"), join(clone, "scripts", "hooks", "pre-push-user"));
-  // The plan the status line asks for reads these, the way the copy would.
-  for (const module of ["preflight-plan.mjs", "preflight-change.mjs", "preflight-git.mjs"]) {
-    copyFileSync(join(scripts, module), join(clone, "scripts", module));
+  // Every module the copy imports, so a new relative import in the script cannot
+  // leave this fixture short of a file.
+  for (const name of readdirSync(scripts)) {
+    if (name.endsWith(".mjs")) copyFileSync(join(scripts, name), join(clone, "scripts", name));
   }
+  copyFileSync(join(repoRoot, "scripts", "hooks", "pre-push-user"), join(clone, "scripts", "hooks", "pre-push-user"));
   return join(clone, "scripts", "preflight-hooks.mjs");
 }
 
@@ -509,6 +514,19 @@ test("a root file runs its readers, and the line says so", () => {
   });
 });
 
+test("a package change next to a root file names the readers it adds", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    writeFileSync(join(clone, "packages", "store", "index.ts"), "export const a = 1;\n");
+    writeFileSync(join(clone, "AGENTS.md"), "# notes\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: incremental — a package change runs that package and its dependents, plus the packages whose tests read a changed root file/);
+  });
+});
+
 test("a docs-only change reads as nothing to run, not as a test run", () => {
   withSandbox((box) => {
     const clone = box.seeded();
@@ -555,9 +573,9 @@ test("a gate script that is not in the checkout is a problem, not a healthy stat
     rmSync(join(clone, "scripts", "preflight-test.mjs"));
 
     const status = box.run(clone, ["status"]);
-    // 2, not 1: nothing ran, so this is nobody having looked, the gate's own code
-    // for "the gate could not do its job".
-    assert.equal(status.status, 2, status.stdout);
+    // 2 is the gate's own code for "could not do its job", which is what a script
+    // that is gone means; 1 would say the code under test is bad.
+    assert.equal(status.status, 2, status.stderr);
     assert.match(status.stderr, /blocked: the gate script is not in this checkout: .*preflight-test\.mjs/);
     assert.doesNotMatch(status.stdout, /mode:/);
   });
@@ -570,7 +588,7 @@ test("a gate script that does not parse is a problem too", () => {
     writeFileSync(join(clone, "scripts", "preflight-test.mjs"), "export const = ;\n");
 
     const status = box.run(clone, ["status"]);
-    assert.equal(status.status, 2, status.stdout);
+    assert.equal(status.status, 2, status.stderr);
     assert.match(status.stderr, /blocked: the gate script does not parse: SyntaxError/);
   });
 });
@@ -584,7 +602,7 @@ test("a gate script whose import is gone is a problem too", () => {
     writeFileSync(join(clone, "scripts", "preflight-test.mjs"), 'import "./preflight-gone.mjs";\n');
 
     const status = box.run(clone, ["status"]);
-    assert.equal(status.status, 2, status.stdout);
+    assert.equal(status.status, 2, status.stderr);
     assert.match(status.stderr, /blocked: the gate script imports a file that is not there: .*preflight-gone\.mjs/);
   });
 });
@@ -596,7 +614,7 @@ test("a repository the gate cannot read is blocked, not reported as fine", () =>
     writeFileSync(join(clone, "packages", "store", "package.json"), "{ broken\n");
 
     const status = box.run(clone, ["status"]);
-    assert.equal(status.status, 2, status.stdout);
+    assert.equal(status.status, 2, status.stderr);
     assert.match(status.stderr, /blocked: the gate cannot read this repository/);
     assert.match(status.stderr, /reason: cannot read packages\/store\/package\.json/);
   });
