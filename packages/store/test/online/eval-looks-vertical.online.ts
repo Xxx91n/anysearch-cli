@@ -29,12 +29,12 @@ const dist = join(root, "apps", "cli", "dist", "index.js");
 const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
   ?? join(root, ".scratch", "vertical-eval", "delta.json");
 const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT;
-const limitNum = Number(rawLimit ?? "0");
-if (rawLimit !== undefined && rawLimit.trim() !== "" && !Number.isInteger(limitNum)) {
-  console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be an integer");
+const limitNum = rawLimit === undefined ? 0 : Number(rawLimit);
+if (rawLimit !== undefined && (!Number.isInteger(limitNum) || limitNum <= 0)) {
+  console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (unset means full run)");
   process.exit(1);
 }
-const LIMIT = Number.isInteger(limitNum) && limitNum > 0 ? limitNum : 0;
+const LIMIT = limitNum;
 const CONCURRENCY = 4;
 
 function hostOf(url: string): string {
