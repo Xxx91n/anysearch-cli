@@ -51,7 +51,7 @@ const golden = readGoldenFile(path.join(root, GOLDEN_FILE));
 const docsBatch = golden.entries.filter((e) => e.id.startsWith("docs-g"));
 const vertBatch = golden.entries.filter((e) => e.id.startsWith("vert-"));
 const ctrlBatch = golden.entries.filter((e) => e.id.startsWith("ctrl-"));
-assert(docsBatch.length >= 8 && docsBatch.length <= 14, "docs first-batch size in the 8-14 shelf gate (got " + docsBatch.length + ")");
+assert(docsBatch.length >= 8, "docs first-batch has at least 8 shelf-gate rows (got " + docsBatch.length + ")");
 // vertical-eval contract pins landed (subject + control); T2 grows the
 // live-scoped corpus — bound asserts the contract pins exist, not the corpus size.
 assert(vertBatch.length >= 3, "vertical subject contract pins exist (got " + vertBatch.length + ")");

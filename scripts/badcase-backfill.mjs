@@ -89,12 +89,15 @@ if (into) {
   for (const tag of ["intent:" + bc.intent, "lang:" + bc.questionLang]) {
     if (!tags.includes(tag)) fail(id + " dimensions lack '" + tag + "' — --new would write a row the validator rejects");
   }
+  const coverageNow = JSON.parse(readFileSync(COVERAGE, "utf8"));
+  const coveredDims = new Set((coverageNow.dimensions ?? []).filter((d) => d && d.status === "covered").map((d) => d.dimension));
   for (const tag of tags) {
     const sep = tag.indexOf(":");
     const dim = tag.slice(0, sep);
     const val = tag.slice(sep + 1);
     const allowed = DIMENSION_VALUES[dim];
     if (!allowed || !allowed.includes(val)) fail(id + " dimension tag outside the eight-dimension vocabulary: " + tag);
+    if (!coveredDims.has(dim)) fail(id + " dimension '" + dim + "' is deferred in eval-looks.coverage.json; backfill cannot carry it until coverage marks it covered");
   }
   const provType = bc.provenance?.type ?? "internal-dogfood";
   if (provType !== "internal-dogfood") fail("--new only writes internal-dogfood provenance; " + id + " is " + provType);
