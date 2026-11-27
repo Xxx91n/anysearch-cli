@@ -70,7 +70,7 @@ const badcases = readJson(BADCASES, "eval-badcases.json");
 // TypeError instead of this script's own diagnostic.
 if (!badcases || typeof badcases !== "object" || Array.isArray(badcases)) fail("eval-badcases.json root must be an object");
 if (!Array.isArray(badcases.badcases)) fail("eval-badcases.json: badcases must be an array");
-const bc = (badcases.badcases ?? []).find((b) => b.id === id);
+const bc = badcases.badcases.find((b) => b.id === id);
 if (!bc) fail("badcase not found: " + id);
 if (bc.status !== "open") fail("badcase " + id + " is not open (status=" + bc.status + ")");
 // 禁合成护栏：无真实观测不得回灌。
@@ -81,9 +81,12 @@ if (typeof bc.domain !== "string" || bc.domain.length === 0) fail(id + " has no 
 if (!bc.expected || typeof bc.expected !== "object" || Array.isArray(bc.expected)) fail(id + " has no expected block");
 
 const golden = readJson(GOLDEN, "eval-golden.json");
+// Root before schema: a null or array root is a broken file, not a wrong
+// schema value.
+if (!golden || typeof golden !== "object" || Array.isArray(golden)) fail("eval-golden.json root must be an object");
 // Keep this schema literal in sync with DOCS_GOLDEN_SCHEMA in
 // packages/store/src/eval/docs-golden.ts; this script runs as plain node.
-if (!golden || golden.schema !== "anysearch/docs-golden@1") fail("eval-golden.json schema must be anysearch/docs-golden@1");
+if (golden.schema !== "anysearch/docs-golden@1") fail("eval-golden.json schema must be anysearch/docs-golden@1");
 if (!Array.isArray(golden.entries) || golden.entries.length === 0) fail("eval-golden.json has no entries");
 if (!golden.entries.every((e) => e && typeof e === "object" && !Array.isArray(e))) fail("eval-golden.json entries must contain objects");
 if (!golden.scopes || typeof golden.scopes !== "object" || Array.isArray(golden.scopes)) fail("eval-golden.json has no scopes object");
@@ -167,7 +170,7 @@ if (into) {
     provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt },
     notes: "backfilled from badcase " + id + "; observed " + bc.observed.results + " results via '" + bc.evidence.command + "'",
   };
-  const expected = entry.expected ?? {};
+  const expected = entry.expected;
   if (expected.vertical !== undefined) fail(id + " carries expected.vertical — vertical rows need a kernel fixture and entry-level vertical spec; --new only builds docs rows");
   const mustNotHitPaths = expected.mustNotHitPaths;
   if (mustNotHitPaths !== undefined && (!Array.isArray(mustNotHitPaths) || mustNotHitPaths.length === 0 || mustNotHitPaths.some((u) => typeof u !== "string" || u.length === 0))) {
@@ -252,7 +255,7 @@ for (const e of golden.entries) {
     classHist.set(d, h);
   }
 }
-for (const d of cov.dimensions ?? []) {
+for (const d of cov.dimensions) {
   if (d?.status === "covered") {
     const n = counts.get(d.dimension) ?? 0;
     if (n > 0) {
