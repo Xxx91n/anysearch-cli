@@ -122,9 +122,10 @@ CREATE INDEX IF NOT EXISTS idx_retrieval_results_url ON retrieval_results(url);
 -- Sections and blocks of a page body. The body stays in
 -- retrieval_results.content; this table records where a section/block sits and
 -- its heading path. Offsets are code points. level 0 = section, 1 = block;
--- parent_id is set for level 1 only. The governance columns (valid_until,
--- quarantine, archived, superseded_by) stay on the page row and are joined at
--- read time. AUTOINCREMENT keeps deleted ids retired.
+-- parent_id is set for level 1 only. Governance stays on the page row and is
+-- joined at read time: valid_until / archived / superseded_by live here,
+-- quarantine is added by the session store's ALTER migration. AUTOINCREMENT
+-- keeps deleted ids retired.
 CREATE TABLE IF NOT EXISTS retrieval_chunks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   page_id INTEGER NOT NULL REFERENCES retrieval_results(id) ON DELETE CASCADE,

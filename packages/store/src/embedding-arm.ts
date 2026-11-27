@@ -144,7 +144,10 @@ export async function embedText(text: string, role: "query" | "passage"): Promis
 /** Returned when the optional embedding package is not installed. */
 export const EMBEDDING_MODEL_UNAVAILABLE = "unavailable";
 
-/** Model id for memory_embeddings.model; absent package yields the sentinel. */
+/**
+ * Model id written to memory_embeddings.model and retrieval_chunk_vectors.model;
+ * returns EMBEDDING_MODEL_UNAVAILABLE when the package cannot be loaded.
+ */
 export async function embeddingModelId(): Promise<string> {
   const m = await loadEmbedding();
   return m?.EMBEDDING_MODEL_ID ?? EMBEDDING_MODEL_UNAVAILABLE;

@@ -117,8 +117,10 @@ export interface ChunkQueryTerms {
  * or more characters become a bigram phrase (positions matter, hence the
  * quotes); a separated word run becomes a prefix (`vector` finds `vectors`),
  * while a word inside one unbroken stretch is matched whole. A one-character
- * Han run cannot be matched by a bigram index, so it is returned in
- * `singleHan` and callers run a page-level LIKE instead.
+ * Han run cannot be matched by a bigram index. It is returned in
+ * `singleHan`; callers scan page bodies for it with `instr`. In a mixed
+ * query this is an OR branch, so recall is deliberately wider (and the
+ * caller fuses it at a lower weight).
  */
 export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
   maxTerms = Math.max(1, Math.floor(maxTerms));

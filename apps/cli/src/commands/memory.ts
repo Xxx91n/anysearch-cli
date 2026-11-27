@@ -64,7 +64,7 @@ export async function runMemory(args: string[]): Promise<number> {
     if (r.failed > 0 || chunks.failed > 0) {
       const telemetry = await store.vectorTelemetry();
       process.stderr.write(
-        telemetry?.absent
+        telemetry.absent
           ? "hint: @anysearch-cli/embedding is not installed; install it (npm i -g @anysearch-cli/embedding) and rerun ans memory backfill-vectors.\n"
           : "hint: embedding failed — the model downloads on first use; check huggingface.co reachability " +
             "and any proxy/firewall, or pre-seed the cache dir (ANYSEARCH_MODEL_CACHE, default ~/.ans/models) " +

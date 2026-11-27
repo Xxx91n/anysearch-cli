@@ -433,8 +433,6 @@ export function searchChunkPages(
 ): ChunkPageHit[] {
   const keyword = keywordSections(db, query, limit);
   const vector = queryVector && model ? vectorSections(db, queryVector, limit, model) : [];
-  const keywordSet = new Set(keyword.ids);
-  const vectorSet = new Set(vector);
   const lists = [keyword.ids, vector].filter((l) => l.length > 0).map((l) => l.map(String));
   if (lists.length === 0) return [];
   // Same registry weights as the page-level arms: keyword fts 1.0, block
@@ -452,6 +450,9 @@ export function searchChunkPages(
         "SELECT id, page_id FROM retrieval_chunks WHERE id IN (" + sectionOrder.map(() => "?").join(", ") + ")",
       ).all(...sectionOrder) as Array<{ id: number; page_id: number }>;
   const sectionToPage = new Map(sections.map((s) => [s.id, s.page_id]));
+  // Which lane selected the PAGE, not merely its best-ranked section.
+  const keywordPages = new Set(keyword.ids.map((id) => sectionToPage.get(id)));
+  const vectorPages = new Set(vector.map((id) => sectionToPage.get(id)));
 
   // One page appears once, at the position of its best-ranked section.
   const pageIds: number[] = [];
@@ -489,14 +490,26 @@ export function searchChunkPages(
       ).all(...sectionIdsForText) as Array<{ id: number; text: string; truncated: number }>;
   const textBySection = new Map(texts.map((t) => [t.id, t.truncated ? t.text + "…" : t.text]));
   // A heading-line or gap hit has no section body covering it; cut the preview
-  // from that position so the searched character is actually in the text.
+  // from that position so the searched character is actually in the text. Read
+  // only the pages that end up in the answer, in one batch.
   const outsideText = new Map<number, string>();
-  for (const [sectionId, at] of keyword.outsideAt) {
-    const row = db.prepare(
-      "SELECT substr(r.content, ? + 1, " + MATCH_PREVIEW_MAX_CHARS + ") AS text " +
-        "FROM retrieval_chunks s JOIN retrieval_results r ON r.id = s.page_id WHERE s.id = ?",
-    ).get(at, sectionId) as { text: string } | undefined;
-    if (row?.text) outsideText.set(sectionId, row.text);
+  const outsideBest = [...bestSection.values()].filter((id) => keyword.outsideAt.has(id));
+  if (outsideBest.length > 0) {
+    const outsidePageIds = [...new Set(outsideBest.map((id) => sectionToPage.get(id)))].filter(
+      (id): id is number => id !== undefined,
+    );
+    const bodies = outsidePageIds.length === 0 ? [] : db.prepare(
+      "SELECT id, content FROM retrieval_results WHERE id IN (" +
+        outsidePageIds.map(() => "?").join(", ") + ")",
+    ).all(...outsidePageIds) as Array<{ id: number; content: string | null }>;
+    const bodyById = new Map(bodies.map((row) => [row.id, row.content ?? ""]));
+    for (const sectionId of outsideBest) {
+      const at = keyword.outsideAt.get(sectionId)!;
+      const pageId = sectionToPage.get(sectionId);
+      if (pageId === undefined) continue;
+      const text = [...(bodyById.get(pageId) ?? "")].slice(at, at + MATCH_PREVIEW_MAX_CHARS).join("");
+      if (text) outsideText.set(sectionId, text);
+    }
   }
   const hits: ChunkPageHit[] = [];
   for (const pageId of pageIds) {
@@ -509,9 +522,9 @@ export function searchChunkPages(
       title: page.title,
       matchText: outsideText.get(bestSectionId) ?? textBySection.get(bestSectionId) ?? null,
       snippet: page.snippet,
-      via: keywordSet.has(bestSectionId) && vectorSet.has(bestSectionId)
+      via: keywordPages.has(pageId) && vectorPages.has(pageId)
         ? "both"
-        : keywordSet.has(bestSectionId) ? "keyword" : "vector",
+        : keywordPages.has(pageId) ? "keyword" : "vector",
     });
   }
   return hits;

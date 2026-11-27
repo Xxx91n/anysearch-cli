@@ -1432,9 +1432,12 @@ export class SqliteSessionStore implements SessionStore {
    const lists = [rawHits.map((h) => String(h.rowid))];
    const weights: number[] = [registryWeight("memory", "fts")];
    if (contentLexical.length > 0) { lists.push(contentLexical.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "content")); }
-   if (contentVector.length > 0) { lists.push(contentVector.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
+   // One vector list: content-vector and page-vector hits share the label, so
+   // two lists would make the provenance drop-arm remove only the first.
+   const vectorOnly = [...new Set([...contentVector, ...vecHits].map((h) => h.rowid))];
+   if (vectorOnly.length > 0) { lists.push(vectorOnly.map(String)); weights.push(registryWeight("memory", "vector")); }
    if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "entity")); }
-   if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
+
    if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
    if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) { lists.push(semHitsGated.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "semantic")); }
    // Material candidates from the episode arms were read BEFORE the awaits that
@@ -1476,9 +1479,9 @@ export class SqliteSessionStore implements SessionStore {
    // only remove rows; golden fixtures carry no secrets, so on/off deltas are unaffected).
    { const armLabels: string[] = ["fts"];
      if (contentLexical.length > 0) armLabels.push("content");
-     if (contentVector.length > 0) armLabels.push("vector");
+     if (contentVector.length > 0 || vecHits.length > 0) armLabels.push("vector");
      if (armHits.length > 0) armLabels.push("entity");
-     if (vecHits.length > 0) armLabels.push("vector");
+
      if (relHits.length > 0) armLabels.push("relation");
      if (SEMANTIC_ARM_MODE === "serve" && semHitsGated.length > 0) armLabels.push("semantic");
      const provTexts = new Map<number, string>();
@@ -1509,11 +1512,12 @@ export class SqliteSessionStore implements SessionStore {
     if (contentHits.some((h) => h.contentVia !== "vector")) {
       arms.push({ label: "content", ids: contentHits.filter((h) => h.contentVia !== "vector").map((h) => String(h.rowid)) });
     }
-    if (contentHits.some((h) => h.contentVia === "vector")) {
-      arms.push({ label: "vector", ids: contentHits.filter((h) => h.contentVia === "vector").map((h) => String(h.rowid)) });
-    }
     if (armHits.length > 0) arms.push({ label: "entity", ids: armHits.map((h) => String(h.rowid)) });
-    if (vecHits.length > 0) arms.push({ label: "vector", ids: vecHits.map((h) => String(h.rowid)) });
+    const vectorOnlyIds = [...new Set([
+      ...contentHits.filter((h) => h.contentVia === "vector").map((h) => String(h.rowid)),
+      ...vecHits.map((h) => String(h.rowid)),
+    ])];
+    if (vectorOnlyIds.length > 0) arms.push({ label: "vector", ids: vectorOnlyIds });
     // relation arm on the raw query (weight 0.5 in fts5.ts like the other side arms).
     // the relation arm attaches to queries[0] only — the multi-query lane keeps the
     // conditional-activation contract on the primary query (documented to avoid

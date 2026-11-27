@@ -103,7 +103,7 @@ const BACKFILL_COMMAND = "ans memory backfill-vectors";
 function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): string {
   const facts = [`已补 ${backlog.embedded} 块 / 待补 ${backlog.pending} 块`];
   if (chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {
-    facts.push("没装 embedding 包，这两个数按任意模型统计");
+    facts.push("按任意模型统计（embedding 包用不了：没装或加载失败）");
   }
   if (backlog.pagesWithoutChunks > 0) {
     facts.push(`${backlog.pagesWithoutChunks} 页有正文但节或块缺失，关键词也搜不到`);
@@ -117,8 +117,8 @@ function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): st
   let repair: string;
   if (chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {
     repair = needsBlocks
-      ? "embedding 包没装：跑 " + BACKFILL_COMMAND + " 可重建缺块；块向量要装包后才能补"
-      : "embedding 包没装，块向量现在补不了";
+      ? "跑 " + BACKFILL_COMMAND + " 可重建缺块；块向量要等 embedding 包可用后才能补"
+      : "块向量现在补不了（embedding 包用不了）";
   } else if (needsBlocks || needsVectors) {
     const actions: string[] = [];
     if (needsBlocks) actions.push("重建缺块");

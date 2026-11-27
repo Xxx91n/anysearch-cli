@@ -61,17 +61,20 @@ export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "o
   relation: "critical",
   semantic: "critical",
 };
-/** Every non-anchor arm; content is measured now that it has a golden path. */
-export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts">[] = [
+/**
+ * The measured non-anchor arms. content is known to the type but has no golden
+ * case (nothing writes a page body), so it stays out: an n=0 arm would trip the
+ * weakest-link warning and change the beta correction for the other five.
+ */
+export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts" | "content">[] = [
   "entity",
-  "content",
   "vector",
   "relation",
   "semantic",
 ];
 
 export interface ArmDeltaRecord {
-  label: Exclude<MemoryArmLabel, "fts">;
+  label: Exclude<MemoryArmLabel, "fts" | "content">;
   role: "critical" | "observational";
   rankOn: number;
   rankOff: number;
