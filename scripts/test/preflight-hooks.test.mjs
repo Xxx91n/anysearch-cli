@@ -38,7 +38,8 @@ function withSandbox(fn) {
     assert.equal(result.status, 0, `git ${args.join(" ")} failed: ${result.stderr}`);
     return result.stdout.trim();
   };
-  const run = (cwd, args, command = cli) => spawnSync(process.execPath, [command, ...args], { cwd, env, encoding: "utf8" });
+  const run = (cwd, args, command = cli, extraEnv = {}) =>
+    spawnSync(process.execPath, [command, ...args], { cwd, env: { ...env, ...extraEnv }, encoding: "utf8" });
   const clone = () => {
     const origin = join(base, "origin");
     mkdirSync(origin);
@@ -46,11 +47,31 @@ function withSandbox(fn) {
     const dir = join(base, "clone");
     const result = spawnSync("git", ["clone", "-q", origin, dir], { cwd: base, env, encoding: "utf8" });
     assert.equal(result.status, 0, `git clone failed: ${result.stderr}`);
+    placeGate(dir);
+    return dir;
+  };
+
+  // A clone whose origin already holds one commit: origin/HEAD exists, so git
+  // can name a change set, and the gate reads a one-package workspace instead of
+  // nothing. The gate stub is committed, so a fresh clone has no changes at all.
+  const seeded = () => {
+    const origin = join(base, "seed-origin");
+    mkdirSync(join(origin, "packages", "foo"), { recursive: true });
+    git(origin, ["init", "-q", "--initial-branch=main"]);
+    writeFileSync(join(origin, "README.md"), "# seed\n");
+    writeFileSync(join(origin, "pnpm-workspace.yaml"), 'packages:\n  - "packages/*"\n');
+    writeFileSync(join(origin, "packages", "foo", "package.json"), '{\n  "name": "@anysearch-cli/foo"\n}\n');
+    placeGate(origin);
+    git(origin, ["add", "-A"]);
+    git(origin, ["-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-q", "-m", "seed"]);
+    const dir = join(base, "seeded");
+    const result = spawnSync("git", ["clone", "-q", origin, dir], { cwd: base, env, encoding: "utf8" });
+    assert.equal(result.status, 0, `git clone failed: ${result.stderr}`);
     return dir;
   };
 
   try {
-    return fn({ base, env, git, run, clone });
+    return fn({ base, env, git, run, clone, seeded });
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
@@ -62,12 +83,30 @@ function installOk(box, cwd, ...flags) {
   return result;
 }
 
+// A stand-in for scripts/preflight-test.mjs at the path the hook names: status
+// checks that the script is there and parses, and never runs it.
+const GATE_STUB = [
+  "#!/usr/bin/env node",
+  "// Stand-in for scripts/preflight-test.mjs: hooks:status only checks that this",
+  "// file is there and parses, so the fixture needs no gate of its own.",
+  "",
+].join("\n");
+
+function placeGate(dir) {
+  mkdirSync(join(dir, "scripts"), { recursive: true });
+  writeFileSync(join(dir, "scripts", "preflight-test.mjs"), GATE_STUB);
+}
+
 /** A clone that holds the script itself, the way a real checkout does. */
 function withScriptsIn(clone) {
   mkdirSync(join(clone, "scripts", "hooks"), { recursive: true });
   copyFileSync(join(repoRoot, "package.json"), join(clone, "package.json"));
   copyFileSync(cli, join(clone, "scripts", "preflight-hooks.mjs"));
   copyFileSync(join(repoRoot, "scripts", "hooks", "pre-push-user"), join(clone, "scripts", "hooks", "pre-push-user"));
+  // The plan the status line asks for reads these, the way the copy would.
+  for (const module of ["preflight-plan.mjs", "preflight-change.mjs", "preflight-git.mjs"]) {
+    copyFileSync(join(scripts, module), join(clone, "scripts", module));
+  }
   return join(clone, "scripts", "preflight-hooks.mjs");
 }
 
@@ -419,5 +458,128 @@ test("a hook without the execute bit is reported, and install fixes it", { skip:
     assert.notEqual(statSync(hookPath(clone)).mode & 0o111, 0, "install left the hook unexecutable");
     const fixed = box.run(clone, ["status"]);
     assert.equal(fixed.status, 0, fixed.stderr);
+  });
+});
+
+test("status names the mode a push lands in and what waiting for it costs", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+
+    const clean = box.run(clone, ["status"]);
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.match(clean.stdout, /mode: nothing to run — no changed files/);
+    assert.match(clean.stdout, /wait budget: none — nothing runs/);
+
+    writeFileSync(join(clone, "packages", "foo", "index.ts"), "export const a = 1;\n");
+    const incremental = box.run(clone, ["status"]);
+    assert.equal(incremental.status, 0, incremental.stderr);
+    assert.match(incremental.stdout, /mode: incremental/);
+    assert.match(incremental.stdout, /set the calling tool's timeout to 0 or at least 600/);
+  });
+});
+
+test("a change no package owns reads as the advisory mode and runs nothing", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    writeFileSync(join(clone, "tools.mjs"), "export const b = 2;\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: advisory/);
+    assert.match(status.stdout, /CI's check-build covers that change/);
+    assert.match(status.stdout, /wait budget: none — nothing runs/);
+  });
+});
+
+test("a docs-only change reads as nothing to run, not as a test run", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    mkdirSync(join(clone, "docs"));
+    writeFileSync(join(clone, "docs", "note.md"), "# note\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: nothing to run — every changed file is documentation/);
+  });
+});
+
+test("ANS_PUSH_GATE=strict reads as the full mode and a longer wait", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+
+    const status = box.run(clone, ["status"], cli, { ANS_PUSH_GATE: "strict" });
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: full — every push runs the whole suite/);
+    assert.match(status.stdout, /set the calling tool's timeout to 0 or at least 900/);
+  });
+});
+
+test("a change set git cannot name reads as unknown, not as a fault", () => {
+  withSandbox((box) => {
+    // An empty origin has no HEAD to compare against, which is a repository
+    // without commits, not a broken gate.
+    const clone = box.clone();
+    installOk(box, clone);
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 0, status.stderr);
+    assert.match(status.stdout, /mode: unknown/);
+    assert.match(status.stdout, /wait budget: unknown/);
+  });
+});
+
+test("a gate script that is not in the checkout is a problem, not a healthy status", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    rmSync(join(clone, "scripts", "preflight-test.mjs"));
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 1, status.stdout);
+    assert.match(status.stderr, /blocked: the gate script is not in this checkout: .*preflight-test\.mjs/);
+    assert.doesNotMatch(status.stdout, /mode:/);
+  });
+});
+
+test("a gate script that does not parse is a problem too", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    writeFileSync(join(clone, "scripts", "preflight-test.mjs"), "export const = ;\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 1, status.stdout);
+    assert.match(status.stderr, /blocked: the gate script does not parse: SyntaxError/);
+  });
+});
+
+test("a gate script whose import is gone is a problem too", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    // The script parses; what it loads does not exist, which is how a half-deleted
+    // scripts/ directory fails at the first line of the hook.
+    writeFileSync(join(clone, "scripts", "preflight-test.mjs"), 'import "./preflight-gone.mjs";\n');
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 1, status.stdout);
+    assert.match(status.stderr, /blocked: the gate script imports a file that is not there: .*preflight-gone\.mjs/);
+  });
+});
+
+test("a repository the gate cannot read is blocked, not reported as fine", () => {
+  withSandbox((box) => {
+    const clone = box.seeded();
+    installOk(box, clone);
+    writeFileSync(join(clone, "packages", "foo", "package.json"), "{ broken\n");
+
+    const status = box.run(clone, ["status"]);
+    assert.equal(status.status, 1, status.stdout);
+    assert.match(status.stderr, /mode: blocked/);
+    assert.match(status.stderr, /blocked: cannot read packages\/foo\/package\.json/);
   });
 });

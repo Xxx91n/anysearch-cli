@@ -2,6 +2,11 @@
 // The push gate's hook: `pnpm hooks:install` puts it in place, `pnpm hooks:status`
 // says whether it is there, executable, and current. AGENTS.md describes both.
 //
+// Design: status also answers what a push from this checkout would run and what
+// waiting for it costs, because a person who knows the mode before they push
+// does not discover it as a surprise. The mode comes from the same pure plan the
+// gate itself asks, never from a second copy of the rules.
+//
 // GitButler owns pre-commit and post-checkout, so nothing here writes either one.
 //
 // The hook content is repo-agnostic: it finds the repo root itself at run time,
@@ -11,6 +16,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { localFiles } from "./preflight-change.mjs";
+import { planPreflight, strictPushGate } from "./preflight-plan.mjs";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HOOK = "pre-push";
@@ -165,7 +172,7 @@ function locate() {
   if (source.error?.code === "ENOENT") return { dir: hooks.dir, reason: `${HOOK_SOURCE} is missing from ${sourceRoot}` };
   if (source.error) return { dir: hooks.dir, reason: `cannot read ${HOOK_SOURCE}: ${source.error.message}` };
   if (!hookCode(source.text)) return { dir: hooks.dir, reason: `${HOOK_SOURCE} runs nothing` };
-  return { dir: hooks.dir, source: source.text };
+  return { dir: hooks.dir, root: repo.root, source: source.text };
 }
 
 /**
@@ -173,6 +180,9 @@ function locate() {
  *
  * state: ok | missing | stale | not-executable | foreign | unknown.
  * unknown means the question cannot be answered (no repo, unreadable file).
+ *
+ * `root` is the checkout the hook is installed in, which is where a push reads
+ * its gate script and its change set from — not the copy of this file that ran.
  */
 function prePushStatus() {
   const place = locate();
@@ -185,7 +195,7 @@ function prePushStatus() {
     return { state: "unknown", dir: place.dir, hookPath, reason: `cannot read ${hookPath}: ${installed.error.message}` };
   }
 
-  const hook = { dir: place.dir, hookPath, target: hookTarget(installed.text) };
+  const hook = { dir: place.dir, root: place.root, hookPath, text: installed.text, target: hookTarget(installed.text) };
   if (isEmptyHook(installed.text)) return { state: "empty", ...hook };
   if (!isOurs(installed.text)) return { state: "foreign", ...hook };
   if (!runsCurrentScript(installed.text, place.source)) return { state: "stale", ...hook };
@@ -265,6 +275,131 @@ const STATUS_PROBLEM = {
   foreign: "pre-push is another script, not ours",
 };
 
+// What a push from this checkout would run, in the three modes a person asks
+// about before pushing. The answer comes from the gate's own plan, so these
+// lines cannot drift from what the hook does.
+//
+// Design: the change set is the one a plain gate run reads — everything not on
+// origin/HEAD plus the working tree. The refs git hands the hook on stdin are
+// the one thing status cannot see, so a change set git cannot name reads as
+// unknown, not as a fault: the hook is fine and a push still runs what its refs
+// carry.
+const MODE_LINE = {
+  advisory: "mode: advisory — a change no package owns only warns and nothing runs; CI's check-build covers that change",
+  incremental: "mode: incremental — a change inside a package runs that package and every package that depends on it",
+  full: "mode: full — every push runs the whole suite (ANS_PUSH_GATE=strict, or --full in the hook)",
+  docs: "mode: nothing to run — every changed file is documentation",
+  none: "mode: nothing to run — no changed files",
+  unknown: "mode: unknown — git cannot name this change (no HEAD, or no origin/HEAD to compare against)",
+};
+
+// Design: the budget is what the caller has to allow, not a promise the gate
+// keeps. An incremental run of the heaviest package measures about 4m15s, and a
+// full run on Windows takes 6 to 9 minutes; a tool timeout short of that kills a
+// run that would have passed, which then reads as a red gate.
+const WAIT_LINE = {
+  advisory: "wait budget: none — nothing runs",
+  docs: "wait budget: none — nothing runs",
+  none: "wait budget: none — nothing runs",
+  incremental:
+    "wait budget: 600s for the packages this push runs (store alone measures about 4m15s); set the calling tool's timeout to 0 or at least 600",
+  full: "wait budget: 6 to 9 minutes on Windows for the whole suite; set the calling tool's timeout to 0 or at least 900",
+  unknown: "wait budget: unknown — a push still runs what its refs carry",
+};
+
+/**
+ * Which mode a push would land in: advisory | incremental | full | docs | none |
+ * unknown | broken. `broken` carries the plan's reason and fix.
+ *
+ * Design: the two switches that run everything on every push decide the mode
+ * before any change set matters: `ANS_PUSH_GATE=strict` in this shell, or
+ * `--full` in the hook's exec line.
+ */
+function pushPreview(root, hookText) {
+  const exec = hookCommand(hookText) ?? "";
+  if (strictPushGate() || /(^|\s)--full(\s|$)/.test(exec)) return { kind: "full" };
+  const files = localFiles(root);
+  if (files === null) return { kind: "unknown" };
+  const plan = planPreflight(root, files);
+  if (plan.mode === "incremental" || plan.mode === "readers") return { kind: "incremental" };
+  if (plan.mode === "unowned") return { kind: "advisory" };
+  if (plan.mode === "docs") return { kind: "docs" };
+  if (plan.mode === "none") return { kind: "none" };
+  if (plan.mode === "full") return { kind: "full" };
+  return { kind: "broken", reason: plan.reason, fix: plan.fix };
+}
+
+/**
+ * The gate script the hook's exec line names, and whether this checkout can load
+ * it. A missing script, one that does not parse, or one importing a file that is
+ * gone is a problem to name, never a normal state: git would abort the push
+ * inside the hook, and "installed and current" would hide that.
+ *
+ * Design: loading is as far as status can go. Running the gate would read a
+ * change set and start tests, which status must not do; what node does before
+ * the gate's first line — parse it, and resolve every module it imports — is
+ * exactly what a broken tree fails at.
+ */
+function gateScriptCheck(root, hookText) {
+  const match = (hookCommand(hookText) ?? "").match(GATE_COMMAND);
+  if (!match) return { problem: "the hook's exec line names no gate script" };
+  const file = path.join(root, match[1]);
+  let stat;
+  try {
+    stat = fs.statSync(file);
+  } catch {
+    return { file, problem: "the gate script is not in this checkout" };
+  }
+  if (!stat.isFile()) return { file, problem: "the gate script is not a file" };
+  const problem = loadProblem(file);
+  return problem ? { file, problem: problem.problem, detail: problem.detail } : { file };
+}
+
+/** The first reason node could not load `file` — parse, or a relative import that is gone. */
+function loadProblem(file, seen = new Set()) {
+  const key = path.resolve(file);
+  if (seen.has(key)) return null;
+  seen.add(key);
+
+  const check = spawnSync(process.execPath, ["--check", key], { encoding: "utf8" });
+  if (check.error) return { problem: "cannot run node on the gate script", detail: check.error.message };
+  if (check.status !== 0) return { problem: "the gate script does not parse", detail: syntaxErrorLine(check.stderr) };
+
+  const source = readText(key);
+  if (source.error) return { problem: "cannot read the gate script", detail: source.error.message };
+  for (const specifier of relativeImports(source.text)) {
+    const target = path.resolve(path.dirname(key), specifier);
+    let stat;
+    try {
+      stat = fs.statSync(target);
+    } catch {
+      return { problem: "the gate script imports a file that is not there", detail: target };
+    }
+    if (!stat.isFile()) return { problem: "the gate script imports a directory", detail: target };
+    const deeper = loadProblem(target, seen);
+    if (deeper) return deeper;
+  }
+  return null;
+}
+
+// The relative specifiers a module imports or re-exports: `from "./x.mjs"`, a
+// bare `import "./x.mjs"`, and `import("./x.mjs")`. A bare or `node:` specifier
+// is the installed workspace's own and is not this checkout's to check.
+function relativeImports(text) {
+  const found = new Set();
+  for (const match of text.matchAll(/(?:\bfrom|\bimport)\s*\(?\s*["'](\.[^"'\n]+)["']/g)) found.add(match[1]);
+  return [...found];
+}
+
+/** The `SyntaxError: …` line node prints, not the file:line header or the source echo. */
+function syntaxErrorLine(stderr) {
+  const line = String(stderr)
+    .split(/\r?\n/)
+    .map((candidate) => candidate.trim())
+    .find((candidate) => /^\w*Error\b/.test(candidate));
+  return line ?? firstLine(String(stderr));
+}
+
 function reportInstall(result) {
   if (result.state === "unknown") {
     console.error(`[hooks] cannot install: ${result.reason}`);
@@ -297,6 +432,26 @@ function reportStatus(result) {
   if (result.state === "ok") {
     console.log(`[hooks] pre-push installed: ${result.hookPath}`);
     if (result.target) console.log(`[hooks] runs: ${result.target}`);
+
+    const gate = gateScriptCheck(result.root, result.text);
+    if (gate.problem) {
+      console.error(`[hooks] blocked: ${gate.problem}: ${gate.detail ?? gate.file ?? result.target}`);
+      console.error("[hooks] fix: restore it in this checkout — a push aborts inside the hook without it");
+      return 1;
+    }
+
+    const preview = pushPreview(result.root, result.text);
+    if (preview.kind === "broken") {
+      // Design: the hook is fine and the repository is not, so this is the
+      // gate's own answer — the same words the push would print, exit 1 here
+      // because status reports a problem rather than failing a test run.
+      console.error("[hooks] mode: blocked — the gate cannot read this repository");
+      console.error(`[hooks] blocked: ${preview.reason}`);
+      console.error(`[hooks] fix: ${preview.fix}`);
+      return 1;
+    }
+    console.log(`[hooks] ${MODE_LINE[preview.kind]}`);
+    console.log(`[hooks] ${WAIT_LINE[preview.kind]}`);
     return 0;
   }
 
