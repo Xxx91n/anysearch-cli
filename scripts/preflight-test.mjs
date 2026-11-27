@@ -212,9 +212,16 @@ if (selfTest) {
     result = { failed: [], tests: null, failure: `could not start the gate's own tests: ${error.message}` };
   }
   if (interrupted) await exitAfterFlush(interrupted);
-  if (result.failure || result.failed.length > 0) {
-    const reason = result.failure ?? `gate self-test failed: ${result.failed.map((group) => group.name).join(", ")}`;
-    writeStderr(`[preflight] ${reason}`);
+  // Design: the two answers stay apart — a group that could not even start is the
+  // gate failing (2), a group that ran and went red is a red test (1).
+  if (result.failure) {
+    writeStderr(`[preflight] ${result.failure}`);
+    reportKeptTestHome(testHome);
+    writeStderr("[preflight] blocked: the gate could not run its own tests");
+    await exitAfterFlush(2);
+  }
+  if (result.failed.length > 0) {
+    writeStderr(`[preflight] gate self-test failed: ${result.failed.map((group) => group.name).join(", ")}`);
     reportKeptTestHome(testHome);
     writeStderr("[preflight] blocked: the gate's own tests failed");
     await exitAfterFlush(1);
@@ -281,10 +288,12 @@ function readChange() {
   return files === null ? { unknown: "git could not name the change", fix: FETCH_FIRST } : { files };
 }
 
-// The plan for a run. `--full` never needs the change set — "run everything
-// anyway" is exactly what it is for — so an unreadable change set does not stop
-// it. Without `--full`, a change set git cannot name is a broken gate: nothing
-// starts, and the reason and its repair go to the caller.
+// The plan for a run.
+//
+// Design: `--full` never needs the change set — "run everything anyway" is exactly
+// what it is for — so an unreadable change set does not stop it. Without `--full`,
+// a change set git cannot name is a broken gate: nothing starts, and the reason
+// and its repair go to the caller.
 function planRun() {
   const change = readChange();
   if (change.note) console.log(`[preflight] ${change.note}`);

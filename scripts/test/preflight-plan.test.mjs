@@ -165,7 +165,7 @@ test("a root file outside the reader table belongs to no package", () => {
     "scripts/preflight-test.mjs",
     ".github/workflows/ci.yml",
     // hypothetical: domains/ holds only TOML today, so a non-TOML file dropped
-    // there is outside the row's ext and keeps the fallback.
+    // there is outside the row's ext, and no package owns it.
     "domains/schema.json",
   ]) {
     const plan = planPreflight(root, [file]);

@@ -32,9 +32,12 @@
 //
 // A file belongs to the package whose directory contains it. A workspace the
 // gate cannot read (a broken manifest, no pnpm-workspace.yaml) answers
-// "broken", never "nothing to run". A directory whose manifest has no name is
-// not a package, and a change under it is broken too: the manifest is damaged,
-// and skipping it would hide that.
+// "broken", never "nothing to run".
+//
+// Design: a directory whose manifest has no name is not a package, and a change
+// under it answers "broken" too — the manifest is damaged, and skipping the
+// change would hide that. The old answer ran the whole suite, which this plan no
+// longer does on its own.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -203,12 +206,13 @@ export function codeOwnership(files, packages) {
  * the file can break, because a test of theirs reads it.
  *
  * Design: the table is hand-written and deliberately short (#489) — a root file
- * that is not here keeps the full-suite fallback, the safe direction to be wrong
- * in, over guessing a reader from a directory name. `ext` narrows a row to the
- * files a loader reads (`domains/*.toml`), so a file dropped beside them keeps
- * the fallback. Readers do not bring their dependents: an app that depends on
- * store never opens the file through store's tests, so a dependent that does
- * read it is named in its own right, as cli is on the domains row.
+ * that is not here belongs to no package, so the push gate skips it and CI's
+ * check-build lane runs everything for it, which beats guessing a reader from a
+ * directory name. `ext` narrows a row to the files a loader reads
+ * (`domains/*.toml`), so a file dropped beside them is unowned too. Readers do
+ * not bring their dependents: an app that depends on store never opens the file
+ * through store's tests, so a dependent that does read it is named in its own
+ * right, as cli is on the domains row.
  *
  * mcp's build copies the root domains into its generated `apps/mcp/domains`.
  * Its domain tests point ANS_DOMAINS_DIR at their own temp dir, and clean tests
