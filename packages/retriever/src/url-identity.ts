@@ -96,10 +96,10 @@ export function normalizeTrustDomain(raw: string): string | undefined {
   // domain the user can recognize and approve.
   if (/[/?#@\\]/.test(raw) || raw.includes(":")) return undefined;
   const host = raw.toLowerCase().replace(/\.$/, "");
-  if (!host.includes(".") || host.startsWith(".") || host.includes("..")) return undefined;
+  if (!host.includes(".") || host.length > 253 || host.startsWith(".") || host.includes("..")) return undefined;
   if (!/^[a-z0-9.-]+$/.test(host)) return undefined;
   const labels = host.split(".");
-  if (labels.some((label) => !label || label.startsWith("-") || label.endsWith("-"))) return undefined;
+  if (labels.some((label) => !label || label.length > 63 || label.startsWith("-") || label.endsWith("-"))) return undefined;
   // A dotted decimal would be an IP literal, not a domain.
   if (!/^[a-z]{2,63}$/.test(labels[labels.length - 1]!)) return undefined;
   const parsed = parseWebUrl("https://" + host + "/");

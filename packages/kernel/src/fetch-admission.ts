@@ -50,7 +50,7 @@ export function fetchRejectMessage(reason: FetchRejectReason, context: FetchReje
       const trust = context.trustAvailable
         ? "还搜不到的话，带 requestTrustFor: \"" + (context.host ?? "域名") + "\" 再调一次，用户会看清网址后决定信不信任这个网站；"
         : "当前是非交互模式，不能弹确认；让用户把链接贴进对话，";
-      return "这个网址不在本会话的搜索结果或用户消息里，抓不了。" + site + "搜到了用 m: 句柄读。" + trust + "不要换写法重试。";
+      return "这个网址不在本会话的搜索结果或用户消息里，抓不了。" + site + "搜到了用 m: 句柄读。" + trust + "不要换 URL 写法重试。";
     }
     case "stale_handle":
       return "这个 m: 句柄对应的搜索结果不在本会话里，抓不了。重新搜一次，拿新的 m: 句柄。";
@@ -67,7 +67,7 @@ export function fetchRejectMessage(reason: FetchRejectReason, context: FetchReje
     case "trust_unavailable":
       return "这个网址不在本会话的搜索结果或用户消息里，抓不了。当前是非交互模式（headless/MCP），不能弹「信任这个网站」的确认；先做站点限定搜索，还搜不到就让用户把链接贴进对话。";
     case "trust_declined":
-      return "用户没有同意信任" + (context.host ? " " + context.host : "这个网站") + "，本会话里读不了它。先用已有材料回答；要读的话让用户把网页正文贴进来。";
+      return "用户没有同意信任" + (context.host ? " " + context.host : "这个网站") + "，这次先不读它。先用已有材料回答；要读的话让用户把网页正文贴进来。";
     default:
       return assertNever(reason);
   }

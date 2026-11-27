@@ -11,9 +11,9 @@
 
 ### Tests
 
-- `packages/retriever/test/url-identity.test.ts`：裸主机名归一化（大小写/尾点/协议/端口/路径/IP/下划线）。
+- `packages/retriever/test/url-identity.test.ts`：裸域名归一化（大小写/尾点/协议/端口/路径/IP/下划线）。
 - `packages/kernel/test/fetch-admission.test.ts`：交互与 headless 的拒绝文案。
-- `packages/kernel/test/fetch-tool.test.ts`：交互确认→写票→重试读页；同一个主机不再问，子域要单独信任；拒绝不重复问且计入软停；票写不进去时只问一次、之后直接拒；deny/allowlist/私网不给信任；`requestTrustFor` 只收主机名、handle 必须在同一主机；信任调用不发上游。
+- `packages/kernel/test/fetch-tool.test.ts`：交互确认→写票→重试读页；同域子域不再问；拒绝不重复问且计入软停；deny/allowlist/私网不给信任；`requestTrustFor` 只收域名、handle 必须在同域；信任调用不发上游。
 - `packages/kernel/test/fetch-runtime.test.ts`：用户看到的提示逐条列出网址和域名、去掉控制字符；非交互 runtime 即使传了回调也不接线，模型读到非交互拒绝，库里没有票。
 - `packages/store/test/fetch-tickets.test.ts`：tofu 票按会话隔离、归一化、随会话级联；旧 CHECK 的库重建后保留旧票并接受 tofu。
 

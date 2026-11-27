@@ -1,7 +1,7 @@
 // One URL identity for search dedup and archive writes.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { normalizeUrlIdentity, pickUnseenUrlResults } from "../src/url-identity";
+import { normalizeTrustDomain, normalizeUrlIdentity, pickUnseenUrlResults } from "../src/url-identity";
 
 test("scheme, www, trailing dot, standard port, tracking and fragment fold to one identity", () => {
   const spellings = [
@@ -65,6 +65,21 @@ test("non-web and unparseable input keep their trimmed spelling", () => {
   assert.equal(normalizeUrlIdentity("sk:42"), "sk:42");
   assert.equal(normalizeUrlIdentity("ftp://example.com/x"), "ftp://example.com/x");
   assert.equal(normalizeUrlIdentity("   "), "");
+});
+
+test("a trust domain is a bare lowercase host, never a URL or an IP", () => {
+  assert.equal(normalizeTrustDomain("Example.COM."), "example.com");
+  assert.equal(normalizeTrustDomain("docs.example.co.uk"), "docs.example.co.uk");
+  assert.equal(normalizeTrustDomain("https://example.com"), undefined);
+  assert.equal(normalizeTrustDomain("example.com/path"), undefined);
+  assert.equal(normalizeTrustDomain("example.com:8443"), undefined);
+  assert.equal(normalizeTrustDomain("user@example.com"), undefined);
+  assert.equal(normalizeTrustDomain(" example.com"), undefined);
+  assert.equal(normalizeTrustDomain(".example.com"), undefined);
+  assert.equal(normalizeTrustDomain("example"), undefined);
+  assert.equal(normalizeTrustDomain("127.0.0.1"), undefined);
+  assert.equal(normalizeTrustDomain("bad_host.example.com"), undefined);
+  assert.equal(normalizeTrustDomain("a".repeat(64) + ".example.com"), undefined);
 });
 
 test("pickUnseenUrlResults folds spellings and records only what it returns", () => {

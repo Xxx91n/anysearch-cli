@@ -80,24 +80,29 @@ export async function askAllowUrl(url: string): Promise<boolean> {
 }
 
 /**
- * Session TOFU prompt for #612. Shown only from an interactive CLI: it names
- * every URL the model wants to read and the domain the trust ticket would
- * cover, then defaults to no on EOF or error. Control characters are stripped
- * so a crafted URL cannot rewrite the terminal line.
+ * The exact text a TOFU prompt shows: every URL the model wants to read, then
+ * the domain the ticket would cover. Exported so the user-facing text has a
+ * test that does not need a TTY. Control characters are stripped so a crafted
+ * URL cannot rewrite the terminal line.
+ */
+export function fetchTrustPrompt(request: FetchTrustRequest): string {
+  const clean = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "");
+  const lines = request.urls.map((url) => "  - " + clean(url)).join("\n");
+  return "[anysearch] 模型想读这些网址，但本会话还没有读它们的凭据：\n" + lines + "\n\n" +
+    "[anysearch] 信任 " + clean(request.domain) + " 这个网站（含子域）吗？只在本会话有效，不写域名配置。[y/N] ";
+}
+
+/**
+ * Session TOFU prompt for #612. Shown only from an interactive CLI; it defaults
+ * to no on EOF or error.
  */
 export async function askFetchTrust(request: FetchTrustRequest): Promise<boolean> {
   if (!isInteractive()) return false;
-  const clean = (text: string): string => text.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, "");
-  const lines = request.urls.map((url) => "  - " + clean(url)).join("\n");
   const readline = await import("node:readline");
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
   try {
     const answer: string = await new Promise((resolve) => {
-      rl.question(
-        "[anysearch] 模型想读这些网址，但本会话还没有读它们的凭据：\n" + lines + "\n" +
-        "[anysearch] 信任 " + clean(request.domain) + " 这个网站吗？只在本会话有效，不写域名配置。[y/N] ",
-        resolve,
-      );
+      rl.question(fetchTrustPrompt(request), resolve);
     });
     return /^y(es)?$/i.test(answer.trim());
   } catch {

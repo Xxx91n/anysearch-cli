@@ -1,7 +1,6 @@
-// The pure half of fetch admission: address, domain and credential gates plus
-// user-URL ticket extraction.
+// The pure half of fetch admission: address, domain and credential gates,
+// user-URL ticket extraction, and trust refusal text.
 
-import { normalizeTrustDomain } from "@anysearch-cli/retriever";
 import {
   checkFetchAddress,
   checkFetchDomain,
@@ -158,20 +157,7 @@ assert(!fetchCredentialHit("https://example.com/sk-learn-python-in-30-days",
     "Chinese prose immediately after a bare URL is not swallowed");
 }
 
-// ---- trust domain -------------------------------------------------------
-assert(normalizeTrustDomain("Example.COM.") === "example.com",
-  "a trust domain is lowercased and loses its trailing dot");
-assert(normalizeTrustDomain("docs.example.co.uk") === "docs.example.co.uk",
-  "a multi-label trust domain is accepted");
-assert(normalizeTrustDomain("https://example.com") === undefined, "a scheme is not a trust domain");
-assert(normalizeTrustDomain("example.com/path") === undefined, "a path is not a trust domain");
-assert(normalizeTrustDomain("example.com:8443") === undefined, "a port is not a trust domain");
-assert(normalizeTrustDomain("user@example.com") === undefined, "userinfo is not a trust domain");
-assert(normalizeTrustDomain(" example.com") === undefined, "whitespace is not a trust domain");
-assert(normalizeTrustDomain(".example.com") === undefined, "a leading dot is not a trust domain");
-assert(normalizeTrustDomain("example") === undefined, "a dotless host is not a trust domain");
-assert(normalizeTrustDomain("127.0.0.1") === undefined, "an IP literal is not a trust domain");
-assert(normalizeTrustDomain("bad_host.example.com") === undefined, "an underscore host is not a trust domain");
+// ---- trust refusal messages ---------------------------------------------
 assert(fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: true }).includes("site:docs.example.com"),
   "an interactive no-ticket refusal teaches a site: query");
 assert(fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: true }).includes("requestTrustFor"),

@@ -12,7 +12,7 @@ import { SqliteSessionStore } from "@anysearch-cli/store";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { FetchProvider, FusedEnvelope } from "@anysearch-cli/retriever";
 import { Type } from "@sinclair/typebox";
-import { PiAgentRuntime } from "../src/pi-runtime";
+import { fetchTrustPrompt, PiAgentRuntime } from "../src/pi-runtime";
 import type { DomainConfigPort, RetrieverPort } from "../src/ports";
 
 let passed = 0, failed = 0;
@@ -101,6 +101,17 @@ const searchEnvelope: FusedEnvelope = {
 };
 
 async function main() {
+  // ---- the user-facing TOFU text names the URLs and the domain -----------
+  {
+    const prompt = fetchTrustPrompt({
+      domain: "docs.example.com",
+      urls: ["https://docs.example.com/guide", "https://docs.example.com/\u001b[31mred"],
+    });
+    assert(prompt.includes("https://docs.example.com/guide"), "the prompt shows the full URL");
+    assert(prompt.includes("信任 docs.example.com 这个网站"), "the prompt names the domain");
+    assert(!prompt.includes("\u001b"), "the prompt strips terminal control characters");
+  }
+
   // ---- registration: store + providers make fetch model-visible ----------
   {
     const workDir = mkdtempSync(join(tmpdir(), "ans-fetch-runtime-"));
