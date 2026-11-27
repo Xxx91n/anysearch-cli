@@ -81,6 +81,7 @@ assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.lengt
   const base = { schema: good.schema, scopes: good.scopes, entries: good.entries };
   assert(throws(() => readGoldenFile(path.join(dir, "absent.json"))), "missing file throws");
   assert(throws(() => readGoldenFile(write("bad-json.json", "{ not json"))), "invalid JSON throws");
+  assert(throws(() => readGoldenFile(write("bad-root.json", "null"))), "non-object root throws");
   assert(throws(() => readGoldenFile(write("bad-schema.json", JSON.stringify({ ...base, schema: "anysearch/docs-golden@9" })))), "wrong schema throws");
   assert(throws(() => readGoldenFile(write("bad-entries.json", JSON.stringify({ ...base, entries: {} })))), "entries not an array throws");
   assert(throws(() => readGoldenFile(write("bad-scopes.json", JSON.stringify({ ...base, scopes: [] })))), "scopes not an object throws");

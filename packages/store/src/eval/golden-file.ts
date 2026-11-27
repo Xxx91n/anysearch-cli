@@ -28,9 +28,6 @@ export function readGoldenFile(file: string): GoldenFile {
   } catch (err) {
     throw new Error("eval-golden: invalid JSON in " + file + ": " + (err as Error).message);
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("eval-golden: root must be an object in " + file);
-  }
   const problems = validateDocsGoldenSet(parsed);
   if (problems.length > 0) {
     throw new Error("eval-golden: " + problems.join("; ") + " in " + file);
