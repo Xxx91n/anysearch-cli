@@ -1,7 +1,6 @@
 // The docs-domain golden corpus lives in its own repo-root file,
 // eval-golden.json. This module owns the entry schema, the eight-dimension
-// slice vocabulary (first committed definition site), and the
-// eval-looks.coverage.json contract.
+// slice vocabulary, and the eval-looks.coverage.json contract.
 
 export const DOCS_GOLDEN_SCHEMA = "anysearch/docs-golden@1";
 export const DOCS_GOLDEN_COVERAGE_SCHEMA = "anysearch/eval-looks-coverage@1";
@@ -93,7 +92,8 @@ export interface DocsGoldenVerticalSpec {
 
 // Closed vocabularies: DOCS_GOLDEN_TOLERATED_SEGMENTS gates
 // expected.mustHitPaths.tolerate; DOCS_GOLDEN_STABILITY_CLASSES gates
-// entry.stability_class. Adding a value is a corpus-governance act.
+// entry.stability_class. To add a value, change the ADR and the registry
+// first; do not add one here in passing.
 export const DOCS_GOLDEN_TOLERATED_SEGMENTS = ["locale", "version", "dated"] as const;
 export type DocsGoldenToleratedSegment = (typeof DOCS_GOLDEN_TOLERATED_SEGMENTS)[number];
 export const DOCS_GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "external"] as const;
