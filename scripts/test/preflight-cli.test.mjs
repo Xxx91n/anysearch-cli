@@ -128,6 +128,10 @@ test(
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /partial output \(the run did not finish\): /);
         assert.doesNotMatch(result.stderr, /full output: /);
+        // The line above it must not blame a task: nothing failed, the process
+        // was killed from outside.
+        assert.match(result.stderr, /blocked after \d+\.\ds: killed by SIGTERM, see the output file/);
+        assert.doesNotMatch(result.stderr, /a task failed/);
       });
     });
   },
@@ -243,8 +247,9 @@ test("the output file's label names which of the three states it is in", () => {
   assert.equal(outputLabel({ failed: true, finished: true }), "incomplete output file");
   assert.equal(outputLabel({ failed: true, finished: false }), "incomplete output file");
   // A caller that forgets to say the run finished must not be handed the label of
-  // a whole run.
+  // a whole run — and forgetting the whole argument is that mistake, not a crash.
   assert.equal(outputLabel({ failed: false }), "partial output (the run did not finish)");
+  assert.equal(outputLabel(), "partial output (the run did not finish)");
   // A run that never opened a file gets no line at all, and the line carries the
   // label the state asked for.
   const lines = [];

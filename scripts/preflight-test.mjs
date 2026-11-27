@@ -356,8 +356,13 @@ if (timedOut) {
     console.error(`\n[preflight] last ${lines.length} line(s) of the run:`);
     for (const line of lines) console.error(line);
   }
-  const failed = failedTask(output ?? readTail());
-  console.error(`\n[preflight] blocked after ${seconds}s: ${failed ?? "a task failed, see the output above"}`);
+  // A run killed from outside has no failed task to name — calling it one would
+  // blame the code for a signal nobody's test threw.
+  const failed = child.signalCode ? null : failedTask(output ?? readTail());
+  const reason = child.signalCode
+    ? `killed by ${child.signalCode}, see the output file`
+    : (failed ?? "a task failed, see the output above");
+  console.error(`\n[preflight] blocked after ${seconds}s: ${reason}`);
   // A signal leaves no exit code, and the file it left is a prefix: a run nobody
   // let finish is not named as the whole run.
   reportRunOutput(dump, { write: console.error, finished: status !== null && child.signalCode === null });
