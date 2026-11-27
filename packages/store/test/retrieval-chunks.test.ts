@@ -237,7 +237,7 @@ async function main() {
     const afterVectors = await store.searchMemory(vectorOnly, 5);
     const vecHit = afterVectors.find((h) => h.rowid === vectorPage.id);
     assert(Boolean(vecHit), "the block-vector lane finds a synonym that no keyword lane shares");
-    assert(vecHit!.arms?.includes("content") === true, "the vector hit arrives through the content arm");
+    assert(vecHit!.arms?.includes("vector") === true, "a block-vector-only hit is labeled as the vector arm");
 
     // ---- deleting the page cascades the blocks and their FTS rows ---------
     const doomed = await store.savePage(session.id, {

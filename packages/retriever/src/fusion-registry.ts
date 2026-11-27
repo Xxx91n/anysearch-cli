@@ -1,10 +1,6 @@
-// (r118 impl): Fusion Governance Contract layer L1 — committed registration payload.
-// L0 = rrf.ts pure primitive (governance-free); L2 = MemoryFusion (store session-store.ts) and
-// WebFusion (kernel engine.ts) instances with zero data sharing; L3 = top-k consumption contract
-// (FusionProvenance in contract.ts).
-//
-// Single-consumer discipline (-adjacent): every registered leaf is consumed by exactly one
-// decision point — see the per-field comments; mutation tests prove no dead registrations.
+// The registered fusion parameters (RRF k, arm weights, windows). Values here
+// are read by the memory and web pipelines; changing one means repinning the
+// frozen hash in fusion-registry.test.ts in the same commit.
 
 import { createHash } from "node:crypto";
 

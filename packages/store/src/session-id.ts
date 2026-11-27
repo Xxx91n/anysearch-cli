@@ -51,9 +51,9 @@ const tempIdByAnchor = new Map<string, string>();
 // 1. ANS_SESSION_ID env (if non-empty) wins and is NOT written back.
 // 2. file content (if non-empty) is returned as-is.
 // 3. otherwise generate + atomically persist a new id.
-// Atomic-write is shared with url-policy.ts atomicWriteFile; re-implemented here
-// to keep this module dependency-free (the plugin hook bundle esbuild config
-// forbids importing @anysearch-cli/store, so hook callers must inline or copy).
+// Atomic-write mirrors url-policy.ts atomicWriteFile instead of importing it:
+// url-policy imports this module's readSessionId, so sharing it would create a
+// cycle. (The plugin hook bundle also forbids importing @anysearch-cli/store.)
 export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
   const envId = env[ENV_SESSION_ID];
   if (typeof envId === "string" && envId.trim().length > 0) return envId.trim();

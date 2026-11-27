@@ -262,6 +262,8 @@ export interface MemoryHit {
   rank: number;
   // arm provenance ("fts" | "content" | "entity" | "vector" | "relation" | "semantic"); absent on legacy paths. A vector-only hit is weak evidence (answer-layer abstain signal).
   arms?: string[];
+  /** Internal: which lane selected this content-arm hit (not serialized). */
+  contentVia?: "keyword" | "vector" | "both";
   // Page facts, filled for retrieval_results hits only (positive rowid).
   // Knowledge rows (-id) and message hits carry neither a URL nor sections.
   // `url` is the stored identity form (scheme-less), not a provider spelling.
@@ -272,6 +274,13 @@ export interface MemoryHit {
   hasContent?: boolean;
   /** Level-0 sections of the page, in reading order. Empty when there is no body. */
   sections?: MemorySection[];
+}
+
+/** Page-level fields carried by a retrieval_results hit. */
+interface PageFact {
+  url: string;
+  createdAt: string;
+  hasBody: boolean;
 }
 
 // eval-only snapshot of one searchMemory call's RRF inputs, so the runner can
@@ -1262,18 +1271,20 @@ export class SqliteSessionStore implements SessionStore {
    */
   private contentArmRows(query: string, limit: number, queryVector: Float32Array | null, model: string | null): MemoryHit[] {
     if (query.trim().length === 0) return [];
-    return searchChunkPages(this.db, query, limit, queryVector, model).map((h, i) => ({
+    return searchChunkPages(this.db, query, limit, queryVector, model).map((h) => ({
       rowid: h.pageId,
       sessionId: h.sessionId,
       role: h.title ?? "",
       content: h.matchText ?? h.snippet ?? "",
-      rank: -i,
+      // The content arm has no score; rank 0 says so instead of faking an order.
+      rank: 0,
+      contentVia: h.via,
     }));
   }
 
   /** Live page rows by id: url, write time, body flag. The body text is never read. */
-  private pageFacts(ids: number[]): Map<number, { url: string; createdAt: string; hasBody: boolean }> {
-    const facts = new Map<number, { url: string; createdAt: string; hasBody: boolean }>();
+  private pageFacts(ids: number[]): Map<number, PageFact> {
+    const facts = new Map<number, PageFact>();
     if (ids.length === 0) return facts;
     const rows = this.db.prepare(
       "SELECT r.id, r.url, r.created_at AS createdAt, " + HAS_PAGE_BODY_EXPR + " AS hasBody FROM retrieval_results r WHERE r.id IN (" +
@@ -1287,11 +1298,11 @@ export class SqliteSessionStore implements SessionStore {
   private materialState(ids: number[]): {
     live: Set<number>;
     body: Set<number>;
-    facts: Map<number, { url: string; createdAt: string; hasBody: boolean }>;
+    facts: Map<number, PageFact>;
   } {
     const live = new Set<number>();
     const body = new Set<number>();
-    const facts = new Map<number, { url: string; createdAt: string; hasBody: boolean }>();
+    const facts = new Map<number, PageFact>();
     const positives = ids.filter((id) => id > 0);
     if (positives.length === 0) return { live, body, facts };
     for (const [id, fact] of this.pageFacts(positives)) {
@@ -1307,7 +1318,7 @@ export class SqliteSessionStore implements SessionStore {
    * The page facts already came from `materialState`; only rows it did not see
    * are read again. The section table belongs to retrieval-chunks.
    */
-  private attachPageFacts(hits: MemoryHit[], known?: Map<number, { url: string; createdAt: string; hasBody: boolean }>): void {
+  private attachPageFacts(hits: MemoryHit[], known?: Map<number, PageFact>): void {
     const byId = new Map<number, MemoryHit>();
     for (const hit of hits) {
       hit.fetchedAt = null;
@@ -1320,7 +1331,7 @@ export class SqliteSessionStore implements SessionStore {
     }
     if (byId.size === 0) return;
     const ids = [...byId.keys()];
-    const facts = known ?? new Map<number, { url: string; createdAt: string; hasBody: boolean }>();
+    const facts = known ?? new Map<number, PageFact>();
     const missing = ids.filter((id) => !facts.has(id));
     if (missing.length > 0) {
       for (const [id, fact] of this.pageFacts(missing)) facts.set(id, fact);
@@ -1372,6 +1383,10 @@ export class SqliteSessionStore implements SessionStore {
    const vecHits = await this.vectorArmRows(fetchLimit, queryVector);
    // Page bodies through sections + blocks; absent when no page has chunks.
    const contentHits = this.contentArmRows(query, fetchLimit, queryVector, chunkModel);
+   // A page selected only by block vectors is semantic evidence (weight 0.5);
+   // only a keyword/both hit carries the full-text content weight.
+   const contentLexical = contentHits.filter((h) => h.contentVia !== "vector");
+   const contentVector = contentHits.filter((h) => h.contentVia === "vector");
    // relation arm (fifth, weight 0.5) — 1-hop neighbor memories via active edges.
    const relHits = this.relationArmRows(query, fetchLimit);
    // #277: which object this query names, resolved BEFORE the knowledge lane
@@ -1416,7 +1431,8 @@ export class SqliteSessionStore implements SessionStore {
    // hit on the page, not a side signal like an entity edge.
    const lists = [rawHits.map((h) => String(h.rowid))];
    const weights: number[] = [registryWeight("memory", "fts")];
-   if (contentHits.length > 0) { lists.push(contentHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "content")); }
+   if (contentLexical.length > 0) { lists.push(contentLexical.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "content")); }
+   if (contentVector.length > 0) { lists.push(contentVector.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
    if (armHits.length > 0) { lists.push(armHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "entity")); }
    if (vecHits.length > 0) { lists.push(vecHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "vector")); }
    if (relHits.length > 0) { lists.push(relHits.map((h) => String(h.rowid))); weights.push(registryWeight("memory", "relation")); }
@@ -1451,15 +1467,16 @@ export class SqliteSessionStore implements SessionStore {
    }
    // arm provenance — a hit recalled ONLY by the vector arm is weak evidence.
    const ftsIds = new Set(rawHits.map((h) => h.rowid));
-   const contentIds = new Set(contentHits.map((h) => h.rowid));
+   const contentIds = new Set(contentLexical.map((h) => h.rowid));
    const entIds = new Set(armHits.map((h) => h.rowid));
-   const vecIds = new Set(vecHits.map((h) => h.rowid));
+   const vecIds = new Set([...vecHits.map((h) => h.rowid), ...contentVector.map((h) => h.rowid)]);
    const relIds = new Set(relHits.map((h) => h.rowid));
    const semIds = new Set(semHitsGated.map((h) => h.rowid));
    // provenance snapshot taken BEFORE the read-side secret filter (the filter can
    // only remove rows; golden fixtures carry no secrets, so on/off deltas are unaffected).
    { const armLabels: string[] = ["fts"];
-     if (contentHits.length > 0) armLabels.push("content");
+     if (contentLexical.length > 0) armLabels.push("content");
+     if (contentVector.length > 0) armLabels.push("vector");
      if (armHits.length > 0) armLabels.push("entity");
      if (vecHits.length > 0) armLabels.push("vector");
      if (relHits.length > 0) armLabels.push("relation");
@@ -1489,7 +1506,12 @@ export class SqliteSessionStore implements SessionStore {
     // content + entity + vector arms; weights come from the registry. Labeled
     // arms so searchMemoryMultiQuery can annotate hit.arms provenance.
     const arms: { label: string; ids: string[] }[] = [];
-    if (contentHits.length > 0) arms.push({ label: "content", ids: contentHits.map((h) => String(h.rowid)) });
+    if (contentHits.some((h) => h.contentVia !== "vector")) {
+      arms.push({ label: "content", ids: contentHits.filter((h) => h.contentVia !== "vector").map((h) => String(h.rowid)) });
+    }
+    if (contentHits.some((h) => h.contentVia === "vector")) {
+      arms.push({ label: "vector", ids: contentHits.filter((h) => h.contentVia === "vector").map((h) => String(h.rowid)) });
+    }
     if (armHits.length > 0) arms.push({ label: "entity", ids: armHits.map((h) => String(h.rowid)) });
     if (vecHits.length > 0) arms.push({ label: "vector", ids: vecHits.map((h) => String(h.rowid)) });
     // relation arm on the raw query (weight 0.5 in fts5.ts like the other side arms).
@@ -1509,7 +1531,7 @@ export class SqliteSessionStore implements SessionStore {
       ? []
       : await this.semanticArmRows(queries[0] ?? "", limit, multiObject.kind === "resolved" ? multiObject.forms : undefined, queryVector);
     if (SEMANTIC_ARM_MODE === "serve" && semHits.length > 0) arms.push({ label: "semantic", ids: semHits.map((h) => String(h.rowid)) });
-    let multiFacts: Map<number, { url: string; createdAt: string; hasBody: boolean }> | undefined;
+    let multiFacts: Map<number, PageFact> | undefined;
     const hits = await searchMemoryMultiQuery<MemoryHit>(
       this, queries, limit, arms, (ids) => {
         const state = this.materialState(ids);
@@ -1765,8 +1787,14 @@ export class SqliteSessionStore implements SessionStore {
     for (const chunk of rows) {
       const vector = await embedText(blockSearchText(chunk.headingPath, chunk.text).trim(), "passage");
       if (!vector) { failed.push(chunk.chunkId); continue; }
-      insertChunkVector(this.db, chunk.chunkId, vector, model);
-      embedded += 1;
+      try {
+        insertChunkVector(this.db, chunk.chunkId, vector, model);
+        embedded += 1;
+      } catch {
+        // A page rebuilt by another process can invalidate this chunk id; keep
+        // the rest of the batch going and count it as failed.
+        failed.push(chunk.chunkId);
+      }
     }
     return { embedded, failed };
   }
@@ -1809,8 +1837,10 @@ export class SqliteSessionStore implements SessionStore {
     const batch = limit ?? PENDING_BATCH_DEFAULT;
     const model = await embeddingModelId();
     if (!dryRun && model === EMBEDDING_MODEL_UNAVAILABLE) {
-      // Nothing can embed without the package; the pages are still rebuilt.
-      return { scanned: 0, embedded: 0, failed: 0, ...this.rebuildMissingChunks(batch, limit) };
+      // The pages are still rebuilt, but every pending block is a failed item:
+      // the CLI must say so and exit non-zero instead of reporting 0/0 success.
+      const pending = chunkVectorBacklog(this.db).pending;
+      return { scanned: pending, embedded: 0, failed: pending, ...this.rebuildMissingChunks(batch, limit) };
     }
     if (dryRun) {
       // Same model the run will use; without the package, count every model so

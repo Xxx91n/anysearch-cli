@@ -299,8 +299,11 @@ export interface ChunkPageHit {
   pageId: number;
   sessionId: string;
   title: string | null;
-  /** Text of the section that matched; null when the page has no section row. */
+  /** Text of the section that matched (or a slice from the hit position);
+   *  null when the page has no section row. */
   matchText: string | null;
+  /** Which lane selected this page: keyword, block vector, or both. */
+  via: "keyword" | "vector" | "both";
   /** The row's snippet column: usually the body's first 4000 characters, but a
    *  snippet row filled with a body later keeps its original search snippet. */
   snippet: string | null;
@@ -326,14 +329,14 @@ function keywordSections(
   db: Database.Database,
   query: string,
   limit: number,
-): { ids: number[]; outside: Set<number> } {
+): { ids: number[]; outsideAt: Map<number, number> } {
   const terms = chunkQueryTerms(query);
   const fetchLimit = limit * CANDIDATE_SLACK;
   const out: number[] = [];
   const seen = new Set<number>();
-  // Section ids chosen for a hit that fell on a heading line or gap: their
-  // preview cannot cover the query, so the caller falls back to the snippet.
-  const outside = new Set<number>();
+  // Section id -> code-point position for a hit that fell on a heading line or
+  // gap; the preview is cut from that position instead of the section body.
+  const outsideAt = new Map<number, number>();
   const push = (sectionId: number): void => pushUnique(out, seen, sectionId);
 
   if (terms.fts) {
@@ -359,31 +362,38 @@ function keywordSections(
   // instr counts characters, the same unit as the stored offsets, so the first
   // position comes from SQL and no page body crosses into JS. Recency is the
   // order: counting occurrences would copy every matching page body in SQL.
-  for (const ch of terms.singleHan) {
-    if (out.length >= fetchLimit) break;
+  const hanChars = terms.singleHan;
+  if (hanChars.length > 0) {
+    // One table scan for all the single characters, not one scan per char.
+    const select = hanChars.map((_, i) => "instr(r.content, ?) - 1 AS at" + i).join(", ");
+    const any = hanChars.map(() => "instr(r.content, ?) > 0").join(" OR ");
     const pages = db.prepare(
-      "SELECT id, instr(content, ?) - 1 AS at " +
-        "FROM retrieval_results r WHERE " + HAS_PAGE_BODY_EXPR + " AND instr(r.content, ?) > 0 AND" + LIVE_PAGE_SQL +
-        " ORDER BY r.id DESC LIMIT ?",
-    ).all(ch, ch, fetchLimit) as Array<{ id: number; at: number }>;
-    const sectionMap = sectionsForPages(db, pages.map((p) => p.id));
+      "SELECT r.id, " + select + " FROM retrieval_results r WHERE " + HAS_PAGE_BODY_EXPR +
+        " AND (" + any + ") AND" + LIVE_PAGE_SQL + " ORDER BY r.id DESC LIMIT ?",
+    ).all(...hanChars, ...hanChars, fetchLimit) as Array<Record<string, number>>;
+    const sectionMap = sectionsForPages(db, pages.map((p) => p.id!));
     for (const page of pages) {
-      const sections = sectionMap.get(page.id);
+      const sections = sectionMap.get(page.id!);
       if (!sections || sections.length === 0) continue;
-      // The hit can land on a heading line or in trimmed whitespace between
-      // sections. Point at the section that follows, or the last one when the
-      // hit is after the final section, instead of dropping the page; mark it
-      // so the preview uses the page snippet (which contains the heading).
-      const inside = sections.find((s) => page.at >= s.startOffset && page.at < s.startOffset + s.chars);
-      const hit = inside ?? sections.find((s) => s.startOffset > page.at) ?? sections[sections.length - 1];
-      if (hit) {
-        if (!inside) outside.add(hit.sectionId);
-        push(hit.sectionId);
+      for (let i = 0; i < hanChars.length; i++) {
+        const at = page["at" + i] ?? -1;
+        if (at < 0) continue;
+        // The hit can land on a heading line or in trimmed whitespace between
+        // sections. Point at the section that follows, or the last one when the
+        // hit is after the final section, instead of dropping the page; remember
+        // the position so the preview is cut from there.
+        const inside = sections.find((s) => at >= s.startOffset && at < s.startOffset + s.chars);
+        const hit = inside ?? sections.find((s) => s.startOffset > at) ?? sections[sections.length - 1];
+        if (hit) {
+          if (!inside) outsideAt.set(hit.sectionId, at);
+          push(hit.sectionId);
+        }
+        if (out.length >= fetchLimit) break;
       }
       if (out.length >= fetchLimit) break;
     }
   }
-  return { ids: out, outside };
+  return { ids: out, outsideAt };
 }
 
 /** Vector lane: cosine over block vectors of live pages, then up to their sections. */
@@ -395,10 +405,14 @@ function vectorSections(db: Database.Database, queryVector: Float32Array, limit:
       "WHERE c.level = " + LEVEL_BLOCK + " AND v.embedding IS NOT NULL AND v.model = ? AND" + LIVE_PAGE_SQL +
       " ORDER BY c.page_id DESC LIMIT ?",
   ).all(model, VECTOR_SCAN_MAX) as Array<{ id: number; parent_id: number; embedding: Buffer }>;
-  const scored = rows.map((row) => {
-    const v = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
-    return { row, s: cosineSimilarity(queryVector, v) };
-  });
+  const scored: Array<{ row: (typeof rows)[number]; s: number }> = [];
+  for (const row of rows) {
+    try {
+      if (row.embedding.byteLength % 4 !== 0) continue;
+      const v = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
+      scored.push({ row, s: cosineSimilarity(queryVector, v) });
+    } catch { /* one corrupt blob must not take the whole lane down */ }
+  }
   scored.sort((a, b) => b.s - a.s);
   return sectionIds(scored.slice(0, limit * CANDIDATE_SLACK).map(({ row }) => ({ id: row.id, parent_id: row.parent_id as number | null })));
 }
@@ -419,6 +433,8 @@ export function searchChunkPages(
 ): ChunkPageHit[] {
   const keyword = keywordSections(db, query, limit);
   const vector = queryVector && model ? vectorSections(db, queryVector, limit, model) : [];
+  const keywordSet = new Set(keyword.ids);
+  const vectorSet = new Set(vector);
   const lists = [keyword.ids, vector].filter((l) => l.length > 0).map((l) => l.map(String));
   if (lists.length === 0) return [];
   // Same registry weights as the page-level arms: keyword fts 1.0, block
@@ -472,6 +488,16 @@ export function searchChunkPages(
           "WHERE s.id IN (" + sectionIdsForText.map(() => "?").join(", ") + ")",
       ).all(...sectionIdsForText) as Array<{ id: number; text: string; truncated: number }>;
   const textBySection = new Map(texts.map((t) => [t.id, t.truncated ? t.text + "…" : t.text]));
+  // A heading-line or gap hit has no section body covering it; cut the preview
+  // from that position so the searched character is actually in the text.
+  const outsideText = new Map<number, string>();
+  for (const [sectionId, at] of keyword.outsideAt) {
+    const row = db.prepare(
+      "SELECT substr(r.content, ? + 1, " + MATCH_PREVIEW_MAX_CHARS + ") AS text " +
+        "FROM retrieval_chunks s JOIN retrieval_results r ON r.id = s.page_id WHERE s.id = ?",
+    ).get(at, sectionId) as { text: string } | undefined;
+    if (row?.text) outsideText.set(sectionId, row.text);
+  }
   const hits: ChunkPageHit[] = [];
   for (const pageId of pageIds) {
     const page = byPage.get(pageId);
@@ -481,8 +507,11 @@ export function searchChunkPages(
       pageId,
       sessionId: page.sessionId,
       title: page.title,
-      matchText: keyword.outside.has(bestSectionId) ? page.snippet : (textBySection.get(bestSectionId) ?? null),
+      matchText: outsideText.get(bestSectionId) ?? textBySection.get(bestSectionId) ?? null,
       snippet: page.snippet,
+      via: keywordSet.has(bestSectionId) && vectorSet.has(bestSectionId)
+        ? "both"
+        : keywordSet.has(bestSectionId) ? "keyword" : "vector",
     });
   }
   return hits;

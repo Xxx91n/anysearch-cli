@@ -141,14 +141,13 @@ export async function embedText(text: string, role: "query" | "passage"): Promis
   return m.embedText(text, role);
 }
 
-// Model id for memory_embeddings.model — only resolved after embedText
-// produced a vector, so the module is known-present here.
 /** Returned when the optional embedding package is not installed. */
 export const EMBEDDING_MODEL_UNAVAILABLE = "unavailable";
 
+/** Model id for memory_embeddings.model; absent package yields the sentinel. */
 export async function embeddingModelId(): Promise<string> {
   const m = await loadEmbedding();
-  return m?.EMBEDDING_MODEL_ID ?? "unavailable";
+  return m?.EMBEDDING_MODEL_ID ?? EMBEDDING_MODEL_UNAVAILABLE;
 }
 
 export interface ArmTelemetry {

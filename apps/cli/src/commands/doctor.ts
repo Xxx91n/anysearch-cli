@@ -102,6 +102,9 @@ const BACKFILL_COMMAND = "ans memory backfill-vectors";
 
 function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): string {
   const facts = [`已补 ${backlog.embedded} 块 / 待补 ${backlog.pending} 块`];
+  if (chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {
+    facts.push("没装 embedding 包，这两个数按任意模型统计");
+  }
   if (backlog.pagesWithoutChunks > 0) {
     facts.push(`${backlog.pagesWithoutChunks} 页有正文但节或块缺失，关键词也搜不到`);
   }

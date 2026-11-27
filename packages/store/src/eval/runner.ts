@@ -45,7 +45,7 @@ export interface OpRecord {
   rorRankOn?: number;
   rorRankOff?: number;
   rorExcluded?: boolean; // expected memory never identified in any arm list
-  // Phase-2: semantic-arm counterfactual (six-arm list vs five-arm baseline).
+  // Phase-2: semantic-arm counterfactual (the full arm list vs its baseline).
   semRankOn?: number;
   semRankOff?: number;
   // uniform drop-arm counterfactual for every non-anchor memory arm.
@@ -61,9 +61,10 @@ export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "o
   relation: "critical",
   semantic: "critical",
 };
-/** content is known to the type but not measured yet, so it is not in this list. */
-export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts" | "content">[] = [
+/** Every non-anchor arm; content is measured now that it has a golden path. */
+export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts">[] = [
   "entity",
+  "content",
   "vector",
   "relation",
   "semantic",

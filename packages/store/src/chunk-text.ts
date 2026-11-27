@@ -117,12 +117,11 @@ export interface ChunkQueryTerms {
  * or more characters become a bigram phrase (positions matter, hence the
  * quotes); a separated word run becomes a prefix (`vector` finds `vectors`),
  * while a word inside one unbroken stretch is matched whole. A one-character
- * Han run cannot be matched by a bigram index, so callers run it as a
- * page-level LIKE instead.
+ * Han run cannot be matched by a bigram index, so it is returned in
+ * `singleHan` and callers run a page-level LIKE instead.
  */
 export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
   maxTerms = Math.max(1, Math.floor(maxTerms));
-  const singleHan: string[] = [];
   const groups: string[] = [];
   const runs = [...scriptRuns(query)];
   const hasSeparator = [...query].some((ch) => charKind(ch) === null);
@@ -141,9 +140,9 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
       run.kind === "han" ? hanTokens(run.text) : [run.text.toLowerCase()],
     );
     if (runs.length === 1 && runs[0]!.kind === "word") {
-      return { fts: runs[0]!.text.toLowerCase() + "*", singleHan };
+      return { fts: runs[0]!.text.toLowerCase() + "*", singleHan: [] };
     }
-    return { fts: '"' + phrase.slice(0, maxTerms).join(" ") + '"', singleHan };
+    return { fts: '"' + phrase.slice(0, maxTerms).join(" ") + '"', singleHan: [] };
   }
   // One budget for the whole query, not one per group: a long query cannot
   // turn into a MATCH expression many times the declared cap.
@@ -154,9 +153,9 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
     if (run.kind === "han") {
       const tokens = hanTokens(run.text);
       // A lone Han character inside a longer query cannot be matched by the
-      // bigram index. Mixed with other terms it would be an OR branch, so it
-      // is dropped; if the whole query is only lone Han characters, the page
-      // level LIKE lane takes them instead of returning nothing.
+      // bigram index. It is not an AND term (that would miss pages where the
+      // character is buried inside a longer run), so it is collected and the
+      // caller's page-level LIKE lane searches for it separately.
       if (tokens.length === 1 && [...run.text].length === 1) {
         loneHan.push(tokens[0]!);
         continue;
@@ -168,9 +167,7 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
       budget -= 1;
     }
   }
-  if (groups.length === 0 && loneHan.length > 0) {
-    return { fts: null, singleHan: loneHan.slice(0, maxTerms) };
-  }
+  const singleHan = [...new Set(loneHan)].slice(0, maxTerms);
   return { fts: groups.length > 0 ? groups.join(" AND ") : null, singleHan };
 }
 
@@ -252,7 +249,7 @@ interface Fence {
 
 /** An opening fence: at least three backticks or tildes, then an info string. */
 function isFenceStart(text: string): Fence | null {
-  const m = /^\s*(`{3,}|~{3,})/.exec(text);
+  const m = /^ {0,3}(`{3,}|~{3,})/.exec(text);
   if (!m) return null;
   const run = m[1]!;
   return { char: run[0] as "`" | "~", len: run.length };
@@ -260,7 +257,7 @@ function isFenceStart(text: string): Fence | null {
 
 /** A closing fence uses the same character and is at least as long as the opener. */
 function isFenceClose(text: string, fence: Fence): boolean {
-  const m = /^\s*(`{3,}|~{3,})\s*$/.exec(text);
+  const m = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(text);
   if (!m) return false;
   const run = m[1]!;
   return run[0] === fence.char && run.length >= fence.len;

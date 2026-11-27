@@ -1,11 +1,11 @@
 // ans memory — memory_embeddings maintenance.
-// backfill-vectors: idempotent re-embed of retrieval_results rows missing a vector.
+// backfill-vectors: idempotent re-embed of rows missing a vector, plus page-body block rebuild/backfill.
 // Serves 3 roles: pendingVectors cleanup, pre- upgrade backfill, future model re-embed.
 
 import { createEngineForActiveDomain } from "../db";
 
 interface MemoryStore {
-  vectorTelemetry?(): Promise<{ absent: boolean }>;
+  vectorTelemetry(): Promise<{ absent: boolean }>;
   backfillEmbeddings(dryRun?: boolean, limit?: number): Promise<{ scanned: number; embedded: number; failed: number }>;
   backfillChunkVectors(dryRun?: boolean, limit?: number): Promise<{ scanned: number; embedded: number; failed: number; rebuiltPages: number; rebuildFailed: number }>;
   // reversible active forgetting (archive + undo).
@@ -62,7 +62,7 @@ export async function runMemory(args: string[]): Promise<number> {
       process.stderr.write("hint: " + chunks.rebuildFailed + " page(s) could not be rebuilt; retry ans memory backfill-vectors.\n");
     }
     if (r.failed > 0 || chunks.failed > 0) {
-      const telemetry = store.vectorTelemetry ? await store.vectorTelemetry() : undefined;
+      const telemetry = await store.vectorTelemetry();
       process.stderr.write(
         telemetry?.absent
           ? "hint: @anysearch-cli/embedding is not installed; install it (npm i -g @anysearch-cli/embedding) and rerun ans memory backfill-vectors.\n"

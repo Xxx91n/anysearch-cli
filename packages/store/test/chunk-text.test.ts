@@ -181,9 +181,9 @@ function main() {
   const emptyHash = markdownSections([..."## ###\n\n正文"], "页");
   assert(emptyHash[0]!.headingPath === "页", "a heading of only hashes contributes no path segment");
 
-  // A lone Han character inside a longer query is not an OR branch.
+  // A lone Han character inside a longer query is kept for the LIKE lane.
   const mixedSingleHan = chunkQueryTerms("中文 年");
-  assert(mixedSingleHan.singleHan.length === 0, "a lone Han inside a longer query is not returned as a single-Han branch");
+  assert(mixedSingleHan.singleHan.join(",") === "年", "a lone Han inside a longer query is still returned");
   assert((mixedSingleHan.fts ?? "").includes("中文"), "the bigram phrase still drives the query");
 
   // A four-backtick fence may contain a three-backtick example; only a fence
