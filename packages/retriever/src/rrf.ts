@@ -30,8 +30,8 @@ export function rrfScores(
 }
 
 function rankedIds(scores: Map<string, number>, preferred?: ReadonlySet<string>): string[] {
-  // Quantize before comparing: equal keys tie, `preferred` breaks the tie, so
-  // the order is deterministic and independent of the sort implementation.
+  // Quantize before comparing: equal keys tie, `preferred` breaks the tie, and
+  // ids that are still equal keep their input order.
   const key = (score: number) => Math.round(score * 1e12);
   return [...scores.entries()]
     .sort((a, b) => {

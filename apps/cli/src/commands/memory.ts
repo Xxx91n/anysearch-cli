@@ -48,9 +48,9 @@ export async function runMemory(args: string[]): Promise<number> {
     const r = await store.backfillEmbeddings(dryRun, dryRun ? undefined : limit);
     const chunks = await store.backfillChunkVectors(dryRun, dryRun ? undefined : limit);
     if (dryRun) {
-      process.stdout.write("dry-run: " + r.scanned + " row(s) pending embedding; " +
+      process.stdout.write("dry-run: the whole archive has " + r.scanned + " row(s) pending embedding; " +
         chunks.rebuiltPages + " page(s) missing chunks; " + chunks.scanned +
-        " block(s) pending embedding in the whole archive (no writes)\n");
+        " block(s) pending embedding (no writes; --limit ignored)\n");
       return 0;
     }
     process.stdout.write("backfilled" + r.embedded + "/" + r.scanned + " vector(s)" + (r.failed > 0 ? " (" + r.failed + " failed)" : "") + "\n");
@@ -58,10 +58,7 @@ export async function runMemory(args: string[]): Promise<number> {
       chunks.embedded + "/" + chunks.scanned + " block vector(s)" +
       (chunks.failed > 0 ? " (" + chunks.failed + " failed)" : "") +
       (chunks.rebuildFailed > 0 ? " (" + chunks.rebuildFailed + " page(s) not rebuilt)" : "") + "\n");
-    // (spike finding d): a failed row means the embedding arm
-    // could not produce a vector — first use downloads the model, so the cause
-    // is almost always reachability. Point at the actionable knobs instead of
-    // leaving a bare count (npm arm transcript: raw ENOTDIR gave no guidance).
+    // 失败多半是模型下不下来，或者根本没装 embedding 包。
     if (chunks.rebuildFailed > 0) {
       process.stderr.write("hint: " + chunks.rebuildFailed + " page(s) could not be rebuilt; retry ans memory backfill-vectors.\n");
     }

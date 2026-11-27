@@ -17,9 +17,9 @@ import { HAS_PAGE_BODY_EXPR } from "./retrieval-content.js";
 import { blockSearchText, chunkIndexText, chunkMarkdownFromChars, chunkQueryTerms } from "./chunk-text.js";
 
 /** Section row (level 0) in `retrieval_chunks`. */
-export const LEVEL_SECTION = 0;
+const LEVEL_SECTION = 0;
 /** Block row (level 1) in `retrieval_chunks`. */
-export const LEVEL_BLOCK = 1;
+const LEVEL_BLOCK = 1;
 
 /** Pages whose read-side state is still live: not expired, quarantined, archived or replaced. */
 const LIVE_PAGE_SQL =
@@ -30,7 +30,7 @@ const CANDIDATE_SLACK = 4;
 /** Block-vector scan ceiling; a real index is future work, this is the bound. */
 const VECTOR_SCAN_MAX = 2_000;
 /** Preview cap for a matched section in recall JSON. */
-export const MATCH_PREVIEW_MAX_CHARS = 1000;
+const MATCH_PREVIEW_MAX_CHARS = 1000;
 /** Blocks the keyword lane may read before it has enough distinct sections. */
 const KEYWORD_BLOCK_SCAN_MAX = 2_000;
 /** Default batch for a repair/backfill pass. */
@@ -135,7 +135,9 @@ const PAGES_NEEDING_CHUNKS_SQL =
   HAS_PAGE_BODY_EXPR + " AND" + LIVE_PAGE_SQL +
   " AND NOT EXISTS (SELECT 1 FROM retrieval_page_chunks p WHERE p.page_id = r.id AND p.blocks = 0)" +
   " AND (NOT EXISTS (SELECT 1 FROM retrieval_chunks c WHERE c.page_id = r.id AND c.level = " + LEVEL_SECTION + ")" +
-  " OR NOT EXISTS (SELECT 1 FROM retrieval_chunks c WHERE c.page_id = r.id AND c.level = " + LEVEL_BLOCK + "))";
+  " OR NOT EXISTS (SELECT 1 FROM retrieval_chunks c WHERE c.page_id = r.id AND c.level = " + LEVEL_BLOCK + ")" +
+  " OR (SELECT COUNT(*) FROM retrieval_chunks c WHERE c.page_id = r.id AND c.level = " + LEVEL_BLOCK + ")" +
+  "   < (SELECT p.blocks FROM retrieval_page_chunks p WHERE p.page_id = r.id))";
 
 export interface ChunkVectorBacklog {
   /** Blocks that carry a usable vector for `model` (any model when it is omitted). */
@@ -459,15 +461,14 @@ export function searchChunkPages(
   const textBySection = new Map(texts.map((t) => [t.id, t.truncated ? t.text + "…" : t.text]));
   const hits: ChunkPageHit[] = [];
   for (const pageId of pageIds) {
-    const page = byPage.get(pageId);
-    const rank = bestRank.get(pageId);
-    if (!page || rank === undefined) continue;
-    const bestSectionId = bestSection.get(pageId);
+    const page = byPage.get(pageId)!;
+    const rank = bestRank.get(pageId)!;
+    const bestSectionId = bestSection.get(pageId)!;
     hits.push({
       pageId,
       sessionId: page.sessionId,
       title: page.title,
-      matchText: (bestSectionId === undefined ? null : textBySection.get(bestSectionId)) ?? null,
+      matchText: textBySection.get(bestSectionId) ?? null,
       snippet: page.snippet,
       order: sectionOrder.length - rank,
     });

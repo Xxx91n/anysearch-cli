@@ -60,6 +60,7 @@ import {
   pagesMissingChunks,
   insertChunkVector,
   sectionsForPages,
+  type PendingChunkVector,
   type MemorySection,
 } from "./retrieval-chunks.js";
 import { blockSearchText } from "./chunk-text.js";
@@ -1268,10 +1269,6 @@ export class SqliteSessionStore implements SessionStore {
     }));
   }
 
-  /**
-   * Which material candidates are still live and which carry a body. One read
-   * answers both the liveness filter and the body tie-break.
-   */
   /** Live page rows by id: url, write time, body flag. The body text is never read. */
   private pageFacts(ids: number[]): Map<number, { url: string; createdAt: string; hasBody: boolean }> {
     const facts = new Map<number, { url: string; createdAt: string; hasBody: boolean }>();
@@ -1518,15 +1515,15 @@ export class SqliteSessionStore implements SessionStore {
         return state.body;
       },
     );
-    // read-side exit: same guard as searchMemory.
-    const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
-    // The content arm's matched passage replaces the page-opening snippet when
-    // a page also arrived through another arm.
+    // The content arm's matched passage replaces the page-opening snippet
+    // BEFORE the secret filter, so the filter sees the text that will be served.
     const contentText = new Map(contentHits.map((h) => [h.rowid, h.content]));
-    for (const h of kept) {
+    for (const h of hits) {
       const text = contentText.get(h.rowid);
       if (text !== undefined) h.content = text;
     }
+    // read-side exit: same guard as searchMemory.
+    const kept = hits.filter((h) => !containsSecret(h.role + " " + h.content));
     // Page facts and the section list travel with every recall hit.
     this.attachPageFacts(kept, multiFacts);
     // same exactly-once touch as searchMemory (both recall paths feed the signals).
@@ -1749,15 +1746,22 @@ export class SqliteSessionStore implements SessionStore {
     }
   }
 
+  /** Embed one batch of blocks; a failed block never drops the rest. */
+  private async embedChunkRows(rows: PendingChunkVector[], model: string): Promise<{ embedded: number; failed: number[] }> {
+    let embedded = 0;
+    const failed: number[] = [];
+    for (const chunk of rows) {
+      const vector = await embedText(blockSearchText(chunk.headingPath, chunk.text).trim(), "passage");
+      if (!vector) { failed.push(chunk.chunkId); continue; }
+      insertChunkVector(this.db, chunk.chunkId, vector, model);
+      embedded += 1;
+    }
+    return { embedded, failed };
+  }
+
   private async embedChunksForPage(pageId: number): Promise<void> {
     const model = await embeddingModelId();
-    for (const chunk of chunksMissingVectors(this.db, pageId, model)) {
-      const vector = await embedText(blockSearchText(chunk.headingPath, chunk.text).trim(), "passage");
-      // One block that cannot embed (too long, empty, breaker open) must not
-      // drop the rest of the page; the durable pending count still names it.
-      if (!vector) continue;
-      insertChunkVector(this.db, chunk.chunkId, vector, model);
-    }
+    await this.embedChunkRows(chunksMissingVectors(this.db, pageId, model), model);
   }
 
   /**
@@ -1798,20 +1802,17 @@ export class SqliteSessionStore implements SessionStore {
     let scanned = 0;
     let embedded = 0;
     let failed = 0;
+    const failedIds = new Set<number>();
     for (;;) {
-      const rows = pendingChunkVectors(this.db, batch, model);
+      const rows = pendingChunkVectors(this.db, batch, model).filter((row) => !failedIds.has(row.chunkId));
       if (rows.length === 0) break;
       scanned += rows.length;
-      let progressed = false;
-      for (const chunk of rows) {
-        const vector = await embedText(blockSearchText(chunk.headingPath, chunk.text).trim(), "passage");
-        if (!vector) { failed += 1; continue; }
-        insertChunkVector(this.db, chunk.chunkId, vector, model);
-        embedded += 1;
-        progressed = true;
-      }
+      const result = await this.embedChunkRows(rows, model);
+      embedded += result.embedded;
+      failed += result.failed.length;
+      for (const id of result.failed) failedIds.add(id);
       // An absent model must not turn this into a spin on the same batch.
-      if (!progressed || limit !== undefined) break;
+      if (result.embedded === 0 || limit !== undefined) break;
     }
     return { scanned, embedded, failed, rebuiltPages, rebuildFailed };
   }
@@ -2239,10 +2240,10 @@ export class SqliteSessionStore implements SessionStore {
       scored.sort((a, b) => b.s - a.s);
       vector = scored.slice(0, limit).map((x) => x.h);
     }
-    // Validity recheck: the two SELECTs above are separate statements, so a
-    // concurrent correction can still close a row between them. Drop ids that
-    // are no longer live before merging, so one answer never carries both a
-    // replaced row and its successor.
+    // A concurrent correction (or a test seam) can close a row between the
+    // keyword read and the vector read. Drop ids that are no longer live
+    // before merging, so one answer never carries both a replaced row and its
+    // successor.
     if (keyword.length > 0 || vector.length > 0) {
       const ids = [...keyword, ...vector].map((h) => Math.abs(h.rowid));
       const ph = ids.map(() => "?").join(", ");

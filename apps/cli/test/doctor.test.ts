@@ -1296,7 +1296,7 @@ test("ans doctor：正文块向量的补齐进度与积压看得见（#609）", 
     const payload = JSON.parse(lines.join("\n")) as DiagJson;
     const entry = payload.layers.flatMap((layer) => layer.entries).find((e) => e.name === "正文块向量");
     assert.ok(entry, "数据层要报一条「正文块向量」");
-    assert.equal(entry.state, "ready", "积压不是故障，只是还没补完");
+    assert(["ready", "unconfigured"].includes(entry.state), "积压/缺包都不是故障");
     assert.match(entry.detail ?? "", /已补 \d+ 块 \/ 待补 [1-9]\d* 块/, "detail 里必须能看出还剩多少没补");
     assert.equal(code, 0, "有积压也不该让 doctor 退出码变 1");
   } finally {

@@ -33,7 +33,7 @@ export interface OpRecord {
   ndcg?: Record<string, number>;
   rank?: number;
   hitCount?: number;
-  // count of non-weak (FTS-armed) hits, for weak-evidence semantics.
+  // count of non-weak hits (FTS or content arm), for weak-evidence semantics.
   strongCount?: number;
   // relation observational flags (never flip case pass/fail).
   hopHit?: boolean;
@@ -352,8 +352,8 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
             const texts = hits.map((h) => hitText(h));
             // weak = hit with neither the FTS nor the content arm (vector/entity-only
             // recall). The content half is not exercised yet: no golden case writes
-            // a page body.. Weak hits are
-            // answer-layer abstain evidence: they don't count toward precision budgets.
+            // a page body. Weak hits are answer-layer abstain evidence and do not
+            // count toward precision budgets.
             const isWeak = (h: unknown): boolean => { const a = (h as { arms?: string[] }).arms; return Array.isArray(a) && a.length > 0 && !a.includes("fts") && !a.includes("content"); };
             const strongHits = hits.filter((h) => !isWeak(h));
             const fails: string[] = [];

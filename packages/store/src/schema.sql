@@ -138,9 +138,9 @@ CREATE TABLE IF NOT EXISTS retrieval_chunks (
 CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_page ON retrieval_chunks(page_id, level, ord);
 CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_parent ON retrieval_chunks(parent_id, ord);
 
--- Which pages have had their blocks built. `blocks = 0` records a page that
--- yields no section (heading-only, blank), so a repair run does not retry it
--- forever; a page whose blocks disappear still has blocks > 0 and is repaired.
+-- Which pages have had their blocks built. `blocks` is the expected block count:
+-- 0 for a page that yields no section, and the number a repair pass compares
+-- against to catch partially lost blocks.
 CREATE TABLE IF NOT EXISTS retrieval_page_chunks (
   page_id INTEGER PRIMARY KEY REFERENCES retrieval_results(id) ON DELETE CASCADE,
   blocks INTEGER NOT NULL

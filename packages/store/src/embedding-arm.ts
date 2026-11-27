@@ -143,6 +143,9 @@ export async function embedText(text: string, role: "query" | "passage"): Promis
 
 // Model id for memory_embeddings.model — only resolved after embedText
 // produced a vector, so the module is known-present here.
+/** Returned when the optional embedding package is not installed. */
+export const EMBEDDING_MODEL_UNAVAILABLE = "unavailable";
+
 export async function embeddingModelId(): Promise<string> {
   const m = await loadEmbedding();
   return m?.EMBEDDING_MODEL_ID ?? "unavailable";

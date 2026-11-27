@@ -160,6 +160,11 @@ function main() {
   const marked = chunkIndexText("مُحَمَّد");
   assert(marked.split(" ").length === 1, "combining marks do not split a word into fragments");
 
+  // A query made only of lone Han characters still reaches the page-level lane.
+  const twoLone = chunkQueryTerms("年 月");
+  assert(twoLone.fts === null && twoLone.singleHan.join(",") === "年,月",
+    "two spaced lone Han characters are both returned for the page-level lane");
+
   // A zero term cap must not build an empty phrase (FTS5 rejects "").
   const zeroTerms = chunkQueryTerms("中文", 0);
   assert((zeroTerms.fts ?? "").startsWith('"') && (zeroTerms.fts ?? "").length > 2,

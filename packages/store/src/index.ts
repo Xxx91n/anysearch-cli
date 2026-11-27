@@ -37,11 +37,11 @@ export * from "./time-decay";
 // FTS5 query tokenizer + multi-query RRF fusion helpers.
 export * from "./fts5";
 
-// Page-body sections/blocks, block vectors, and block-level search. Only the
-// read-only backlog reader is public; the writers stay inside the store.
+// Only the read-only block-backlog reader and its return type are public here;
+// the writers stay inside the store.
 export { readChunkVectorBacklogFile, type ChunkVectorBacklog } from "./retrieval-chunks";
-// The active embedding model id — doctor compares the backlog against it.
-export { embeddingModelId } from "./embedding-arm";
+// The active embedding model id, plus the sentinel for "package not installed".
+export { embeddingModelId, EMBEDDING_MODEL_UNAVAILABLE } from "./embedding-arm";
 
 // entity-relation edge layer (fifth arm).
 export * from "./relation";

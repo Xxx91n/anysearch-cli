@@ -148,15 +148,19 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
   // One budget for the whole query, not one per group: a long query cannot
   // turn into a MATCH expression many times the declared cap.
   let budget = maxTerms;
+  const loneHan: string[] = [];
   for (const run of runs) {
     if (budget <= 0) break;
     if (run.kind === "han") {
       const tokens = hanTokens(run.text);
       // A lone Han character inside a longer query cannot be matched by the
-      // bigram index; treating it as an OR would let any page with that
-      // character in, so it is dropped. The all-single-character query was
-      // already returned above.
-      if (tokens.length === 1 && [...run.text].length === 1) continue;
+      // bigram index. Mixed with other terms it would be an OR branch, so it
+      // is dropped; if the whole query is only lone Han characters, the page
+      // level LIKE lane takes them instead of returning nothing.
+      if (tokens.length === 1 && [...run.text].length === 1) {
+        loneHan.push(tokens[0]!);
+        continue;
+      }
       groups.push('"' + tokens.slice(0, budget).join(" ") + '"');
       budget -= Math.min(tokens.length, budget);
     } else {
@@ -164,6 +168,7 @@ export function chunkQueryTerms(query: string, maxTerms = 8): ChunkQueryTerms {
       budget -= 1;
     }
   }
+  if (groups.length === 0 && loneHan.length > 0) return { fts: null, singleHan: loneHan };
   return { fts: groups.length > 0 ? groups.join(" AND ") : null, singleHan };
 }
 
@@ -449,10 +454,7 @@ function atoms(chars: string[], section: Range): Atom[] {
       current.end = line.end;
     }
   }
-  if (current) {
-    if (fence) current.end = lines.length > 0 ? lines[lines.length - 1]!.end : current.end;
-    flush();
-  }
+  if (current) flush();
   return out.filter((a) => rangeLength(a) > 0);
 }
 

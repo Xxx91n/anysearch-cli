@@ -244,6 +244,34 @@ async function main() {
     assert(again.action === "unchanged", "the same body is unchanged");
     assert(chunks(page.id as number).length > 0, "an unchanged save rebuilds missing blocks");
 
+    // ---- a page that lost some blocks is repaired ------------------------
+    const partial = await store.savePage(session.id, {
+      url: "https://example.com/partial",
+      title: "部分块",
+      content: "## 第一节\n\n第一段正文。\n\n## 第二节\n\n第二段正文。\n\n## 第三节\n\n第三段正文。",
+      source: "exa",
+    });
+    const partialRows = chunks(partial.id as number);
+    const keepBlock = partialRows.find((r) => r.level === 1)!;
+    const rawPartial = new Database(dbPath);
+    try {
+      rawPartial.pragma("foreign_keys = ON");
+      rawPartial.prepare("DELETE FROM retrieval_chunks WHERE page_id = ? AND level = 1 AND id <> ?").run(partial.id, keepBlock.id);
+    } finally {
+      rawPartial.close();
+    }
+    const rawPartialCheck = new Database(dbPath);
+    try {
+      assert(pagesMissingChunks(rawPartialCheck, 50).includes(partial.id as number),
+        "a page that kept one block but lost others is queued for repair");
+    } finally {
+      rawPartialCheck.close();
+    }
+    const partialRepair = await store.backfillChunkVectors(true);
+    assert(partialRepair.rebuiltPages >= 1, "the partially lost page is reported for rebuild");
+    await store.backfillChunkVectors();
+    assert(chunks(partial.id as number).filter((r) => r.level === 1).length > 1, "missing blocks are rebuilt");
+
     // ---- a heading-only page is attempted once, not every backfill ------
     const headingOnly = await store.savePage(session.id, {
       url: "https://example.com/heading-only",

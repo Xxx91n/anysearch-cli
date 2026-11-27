@@ -133,9 +133,7 @@ export async function searchMemoryMultiQuery<THit extends { rowid: number }>(
   const weights = lists.map((_, i) => (i >= baseCount ? registryWeight("memory", presentArms[i - baseCount]!.label) : FUSION_REGISTRY.weights.memory.fts));
   let fusedIds: string[];
   if (lists.length === 1) {
-    // The lookup is not needed for a tie-break here, but callers use it to
-    // collect page facts; skipping it made the multi-query path refetch them.
-    if (bodyLookup) bodyLookup([...new Set(lists[0]!.map(Number))].filter((id) => id > 0));
+    // No tie-break to make; page facts are filled by the caller when needed.
     fusedIds = lists[0]!;
   } else {
     const preferred = bodyLookup

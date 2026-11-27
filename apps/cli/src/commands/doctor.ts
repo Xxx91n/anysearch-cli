@@ -24,6 +24,7 @@ import {
   preMigrationRecordPath,
   readChunkVectorBacklogFile,
   embeddingModelId,
+  EMBEDDING_MODEL_UNAVAILABLE,
   readMigrationStatus,
   type ChunkVectorBacklog,
   type MigrationLayoutStatus,
@@ -104,8 +105,7 @@ function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): st
   if (backlog.pagesWithoutChunks > 0) {
     facts.push(`${backlog.pagesWithoutChunks} 页有正文但节或块缺失，关键词也搜不到`);
   }
-  // The lane scans only the active model's vectors; an old model's rows must
-  // not fake a truncation warning.
+  // 只按当前模型的向量数判断截断，别的模型留下的旧行不算。
   if (backlog.embedded > backlog.vectorScanLimit) {
     facts.push(`当前模型的块向量 ${backlog.embedded} 条，检索只扫最近 ${backlog.vectorScanLimit} 条（更老的正文只剩关键词那条）`);
   }
@@ -117,7 +117,7 @@ function chunkBacklogDetail(backlog: ChunkVectorBacklog, chunkModel: string): st
     if (needsBlocks) actions.push("重建缺块");
     if (needsVectors) actions.push("补块向量");
     repair = "跑 " + BACKFILL_COMMAND + " " + actions.join("、");
-    if (needsVectors && chunkModel === "unavailable") {
+    if (needsVectors && chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {
       repair += "；块向量要装 embedding 包后才能补";
     }
   }
@@ -1152,11 +1152,12 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
     // 不用构造器，免得 doctor 顺手迁移或做备份。
     if (dbPath !== ":memory:" && existsSync(dbPath)) {
       try {
-        // Report against the model search will actually use. Without the
-        // embedding package the id is "unavailable", which makes every block
-        // pending — the same number a real run would face.
+        // 按当前模型统计；没装 embedding 包时退回按任意模型统计。
         const chunkModel = await embeddingModelId();
-        const backlog = readChunkVectorBacklogFile(dbPath, chunkModel);
+        const backlog = readChunkVectorBacklogFile(
+          dbPath,
+          chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? undefined : chunkModel,
+        );
         if (!backlog) {
           report.add({
             layer: "data",
@@ -1169,8 +1170,8 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
           report.add({
             layer: "data",
             name: "正文块向量",
-            // Missing blocks is a one-command repair, not a broken install.
-            state: backlog.pagesWithoutChunks > 0 ? "unconfigured" : "ready",
+            // 缺块或缺 embedding 包都是待补能力，不是坏掉。
+            state: backlog.pagesWithoutChunks > 0 || chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? "unconfigured" : "ready",
             mode: "offline",
             detail: chunkBacklogDetail(backlog, chunkModel),
           });

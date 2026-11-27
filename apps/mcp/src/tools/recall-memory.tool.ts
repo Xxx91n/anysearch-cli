@@ -83,20 +83,14 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
             content: h.content.slice(0, 200),
             rank: h.rank,
             sessionId: h.sessionId,
-            // #263 (D9): the archive row this hit came from. A summary records
+            // The archive row this hit came from. A summary records
             // its dependencies by id, so the material the model actually read
             // can be bound to the summary that used it. Positive rowid = archive
             // material, negative = knowledge row (SessionStore's semantic arm).
             rowid: h.rowid,
             provenance: "internal",
-            // What the caller can do with this hit. The four fields always
-            // appear: `url`/`fetchedAt` are null when absent, `hasContent` is
-            // false, `sections` is []. `url` is the stored identity without a
-            // scheme (`example.com/guide`), not an openable link; `fetchedAt`
-            // is the row write time (created_at), not the provider fetch time.
-            // `sections` lists level-0 sections only — id, heading path,
-            // character count, start offset — and is empty when the row has no
-            // body or its sections were never built.
+            // 四个字段恒定出现；url/fetchedAt 缺了给 null，hasContent 缺了给
+            // false，sections 缺了给 []。字段含义见 docs/mcp-server.md。
             url: h.url ?? null,
             fetchedAt: h.fetchedAt ?? null,
             hasContent: h.hasContent === true,
