@@ -417,6 +417,9 @@ test("a red run keeps the test home and prints where it is", async () => {
 test("an interrupted run keeps the test home and stops the whole tree", { skip: process.platform === "win32" }, async () => {
   await withWorkspace({ pnpm: writeSleepingPnpm }, async ({ root, bin }) => {
     const env = gateEnv(bin);
+    // The workspace's own copy of the gate would otherwise run its self-test,
+    // which needs the three group files it does not carry.
+    env.PREFLIGHT_SELF_TEST = "0";
     const gate = spawn(process.execPath, [join(root, "scripts", "preflight-test.mjs"), "--full"], {
       cwd: root,
       env,
@@ -1152,7 +1155,7 @@ function writeSignalPnpm(bin) {
   // The write has to land before the signal, or the gate reads an empty file and
   // the test fails for a reason the gate is right about.
   writeNodePnpm(bin, "signal.mjs", [
-    'process.stdout.write("suite started\n", () => process.kill(process.pid, "SIGTERM"));',
+    'process.stdout.write("suite started" + "\\n", () => process.kill(process.pid, "SIGTERM"));',
     "",
   ]);
 }
