@@ -329,7 +329,7 @@ export function classifyProviderError(errText: string, providerErrorClass?: Prov
   // a 429/5xx that also says "usage limit" stays transient; a 402 without the
   // x402 marks is the keyed request's quota wall.
   if (is402 || QUOTA_EXHAUSTED_RE.test(t)) return "quota-exhausted";
-  if (/malformed|Search Results|unexpected Content-Type|no result object|reply id mismatch|isError|no text content/i.test(t)) return "permanent-protocol";
+  if (/malformed|Search Results|unexpected Content-Type|no result object|reply id mismatch|carried no reply|isError|no text content/i.test(t)) return "permanent-protocol";
   if (/HTTP 4[0-9][0-9]/.test(t) || statusFamily("4")) return "permanent-protocol";
   return "unknown";
 }

@@ -20,5 +20,5 @@ urlAllowlist = ["modelcontextprotocol.io", "typescriptlang.org", "www.typescript
 adapter = "none"
 
 [hooks]
-# fetch is not registered yet; this whitelist entry is a placeholder.
+# 宿主接了读页源、store 也能写正文才会注册 fetch；声明 skills.toolRequires 时把 fetch 列进去。
 toolWhitelist = ["search", "fetch"]

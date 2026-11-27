@@ -45,9 +45,9 @@ try {
   assert.match(captured, /\[anysearch\] provider exa construction failed: /,
     "named stderr line present (stdout keeps MCP protocol purity)");
   // Other arms (tavily keyless, anysearch optional-key) built fine: the record
-  // holds exactly the failed arms, no per-key absence probing.
-  assert.deepEqual(Object.keys(r.providerBuildErrors), ["exa"],
-    "record holds exactly the failed arms");
+  // holds only the failed search arm; page-read failures stay on stderr.
+  assert.deepEqual(Object.keys(r.providerBuildErrors).sort(), ["exa"],
+    "record holds the failed search arm only");
   closeResult(r);
 
   // Domain path: domain enabling only exa surfaces the same named degradation.
@@ -66,6 +66,22 @@ try {
     assert.ok(d.providerBuildErrors.exa, "domain-scoped exa failure recorded");
     assert.match(captured, /\[anysearch\] provider exa construction failed:/, "domain path stderr line");
     closeResult(d);
+
+    // A name from Object.prototype is not a provider factory.
+    captured = "";
+    fs.writeFileSync(path.join(dir, "proto.toml"), [
+      'name = "proto"',
+      '[sources]',
+      'enabled = ["constructor"]',
+      '[rag]',
+      'adapter = "none"',
+      "",
+    ].join("\n"), "utf8");
+    const proto = createEngine("proto", { domainsDirs: [dir], dbPath: ":memory:", searchCredentials: envCredentials });
+    assert.equal((proto.retriever as unknown as { providers?: unknown[] }).providers?.length ?? 0, 0,
+      "a prototype key does not become a provider");
+    assert.deepEqual(proto.providerBuildErrors, {}, "a prototype key is not a build failure");
+    closeResult(proto);
 
     // Healthy path: every enabled arm builds -> empty record, no stderr noise.
     captured = "";

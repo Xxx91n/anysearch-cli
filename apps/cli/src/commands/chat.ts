@@ -271,6 +271,7 @@ export async function runChat(argv: string[]): Promise<number> {
         signal: cancellation.signal,
         retriever,
         domain,
+        fetchProviders: engine.fetchProviders,
         // store + sessionId together are what make PiAgentRuntime build the
         // MemoryPipeline (#129): RAG Stage-1 injection and L1/L2 memory now run on
         // the real `ans chat` path instead of being silently skipped.
