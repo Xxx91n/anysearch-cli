@@ -349,12 +349,6 @@ export function parseAliasReply(text: string, expected: number): AliasJudgeVerdi
 // maxTokens (8192 on a custom endpoint) and over-reserving on every cluster.
 const SUMMARY_OUTPUT_RESERVE_TOKENS = 1024;
 
-// Prompt characters to tokens. Deliberately coarse and conservative: this is
-// only the pre-call reservation, and the actual provider figure settles it.
-function estimateReservationTokens(prompt: string): number {
-  return Math.max(1, Math.ceil(prompt.length / 2));
-}
-
 type RawUsage = {
   input?: number;
   output?: number;
@@ -421,7 +415,10 @@ async function completeText(
           "consolidation stopped: the call budget is exhausted (reserveCalls rejected)",
         );
       }
-      reservedTokens = estimateReservationTokens(prompt) + SUMMARY_OUTPUT_RESERVE_TOKENS;
+      // Design: reserve with the same language-aware estimate the feed uses —
+      // a Latin prompt at chars/2 over-reserved and a CJK prompt at chars/2
+      // under-reserved; the provider figure still settles the call afterwards.
+      reservedTokens = estimatePromptTokens(prompt) + SUMMARY_OUTPUT_RESERVE_TOKENS;
       if (!budget.ledger.reserveTokens(budget.sessionId, reservedTokens)) {
         // The call reservation succeeded, so it must be given back before this
         // call aborts: otherwise reserved_calls stays +1 for the rest of the
@@ -649,12 +646,11 @@ function renderCandidate(c: PlannedEvidenceCandidate, ordinal: number): { block:
 /**
  * Lay materials out for one summary call under the 24k-token budget.
  *
- * Design: under the cap the whole body (or snippet) goes in, in the caller's
- * order. Over the cap the planner reads only section metadata (heading path,
- * offset, length) to rank sections against the cluster's titles; the selected
- * sections are then sliced out of the body. Blocks are placed most-relevant
- * LAST and least-relevant in the middle, because the model attends to both ends
- * of a long prompt more than the middle.
+ * Design: feed the whole body (or snippet) under the cap, and only section
+ * metadata over it — ranking by heading path/offset/length avoids reading
+ * blocks that may be dropped. Blocks go most-relevant LAST and least-relevant
+ * in the middle, because the model attends to both ends of a long prompt more
+ * than the middle.
  */
 export function planClusterEvidence(
   episodes: ConsolidateEvidence[],
@@ -737,14 +733,14 @@ export function planClusterEvidence(
   const chosen: PlannedEvidenceCandidate[] = [];
   let used = 0;
   for (const c of ranked) {
-    // A section is costed by its metadata ceiling: one token per code point,
-    // plus the header. This keeps the ranking read-only; Latin sections may be
-    // under-filled, which is the safe direction for a hard cap.
-    const tokens = c.section
-      ? estimatePromptTokens(renderHeader(c, c.materialIndex + 1)) + c.section.chars
-      : renderCandidate(c, c.materialIndex + 1).tokens;
+    // Ranking was metadata-only; now that order is fixed, slice this candidate
+    // and cost it with the same language-aware estimate used in the report.
+    // Reading only the candidate under consideration keeps unselected sections
+    // out of the planner, while Latin pages no longer under-fill the cap.
+    const withText = c.section ? { ...c, text: candidateText(c) } : c;
+    const tokens = renderCandidate(withText, c.materialIndex + 1).tokens;
     if (used + tokens <= budget) {
-      chosen.push(c);
+      chosen.push(withText);
       used += tokens;
     }
   }
@@ -775,10 +771,9 @@ export function planClusterEvidence(
     }
   }
 
-  // Most relevant last, least relevant in the middle. Section text is sliced
-  // here, after the ranking, so the planner never reads unselected blocks.
-  const selected = chosen.map((c) => (c.section ? { ...c, text: candidateText(c) } : c));
-  const ordered = arrangeByRelevance(selected);
+  // Most relevant last, least relevant in the middle. Sections were sliced
+  // only as each candidate was costed, so unselected blocks were never read.
+  const ordered = arrangeByRelevance(chosen);
   const materials: ConsolidateMaterialFeed[] = episodes.map((e, i) => ({
     cluster: 0,
     materialId: e.materialId ?? null,
@@ -1016,10 +1011,10 @@ export function createConsolidationSeams(
     // example a note that documents this very prompt) would have its own body
     // overwritten and the candidate section left empty (#273 review).
     //
-    // Design: the judge reads the summarizer's verbatim quotes, not the full
-    // evidence. `undefined` means an old caller that has no quotes yet; only
-    // then fall back to the evidence lines. An empty string is a real answer
-    // ("the model quoted nothing") and must not be replaced with the evidence.
+    // Design: judges read the summarizer's verbatim quotes instead of the full
+    // evidence — quotes bound what the judge must verify without re-feeding the
+    // cluster. `undefined` keeps old callers working; an empty string is a real
+    // answer ("the model quoted nothing") and must not fall back to evidence.
     const quoteText = quotes === undefined ? evidenceLines(evidence) : quotes;
     const prompt = fillTemplate(CORRECTION_CHECK_PROMPT, {
       OLD: oldContent,

@@ -83,5 +83,29 @@ assert(estimatePromptTokens("a你b") === 2, "estimate: the two scripts are count
   assert(planned.materials.reduce((n, m) => n + m.fedChars, 0) > 0, "mixed sizes: something is fed");
 }
 
+// --- over budget: most relevant LAST, least relevant in the middle --------
+
+{
+  const body = "A".repeat(610);
+  const eps: ConsolidateEvidence[] = [{
+    title: "Most",
+    snippet: "opening",
+    url: "https://a.example/order",
+    content: body,
+    sections: [
+      { sectionId: 1, headingPath: "Most", startOffset: 0, chars: 10 },
+      { sectionId: 2, headingPath: "Other", startOffset: 300, chars: 10 },
+      { sectionId: 3, headingPath: "Mid", startOffset: 600, chars: 10 },
+    ],
+  }];
+  const planned = planClusterEvidence(eps, 100);
+  const most = planned.prompt.indexOf("Most");
+  const other = planned.prompt.indexOf("Other");
+  const mid = planned.prompt.indexOf("Mid");
+  assert(planned.overBudget === true, "order: over budget");
+  assert(other >= 0 && mid > other && most > mid,
+    "order: least relevant is in the middle and most relevant is last");
+}
+
 console.log("consolidate-page-feed: " + passed + " passed, " + failed + " failed");
 if (failed > 0) process.exit(1);

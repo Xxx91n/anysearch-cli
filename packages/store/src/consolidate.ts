@@ -168,10 +168,9 @@ export interface ConsolidateSummaryText {
 /**
  * Split a shaped summarizer reply into <quotes> and <conclusion>.
  *
- * Design: the tags are the contract, not a suggestion. A reply in any other
- * shape is kept WHOLE as the conclusion and flagged `quotesMissing`, so an older or
- * malformed model answer can never silently lose the facts it stated. Only the
- * conclusion is persisted; the quotes travel to the judges and the report.
+ * Design: persist only <conclusion> and send <quotes> to the judges/report —
+ * a malformed reply is kept whole and flagged `quotesMissing` instead, so an
+ * older or malformed model answer can never silently lose its stated facts.
  */
 export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
   const raw = text.trim();
@@ -1359,6 +1358,15 @@ export async function consolidateMemoryRun(
     // feed and quote reports use it so a per-material line can be matched to
     // the prompt it travelled in.
     let clusterOrdinal = 0;
+    // One cluster can hit the merge fallback more than once (the main UPDATE
+    // path, then a collision re-merge). Keep one quote entry per cluster: the
+    // primary summarizer's quotes win, and a later fallback must not duplicate.
+    const quotedClusters = new Set<number>();
+    const recordQuotes = (cluster: number, quotes: string | null | undefined): void => {
+      if (!quotes || quotedClusters.has(cluster)) return;
+      quotedClusters.add(cluster);
+      report.quotes.push({ cluster, quotes });
+    };
 
     // D6: one place builds the refusal the caller gets back, so the
     // single-evidence and batch paths cannot drift in shape. What is missing is
@@ -1455,12 +1463,11 @@ export async function consolidateMemoryRun(
       }
       if (!summarized.text || summarized.text.trim().length === 0) { report.llmUnavailable++; continue; }
       const shaped = splitConsolidateSummary(summarized.text);
-      if (!shaped.conclusion) { report.llmUnavailable++; continue; }
       const summary: string = shaped.conclusion;
       const quotes: string | null = shaped.quotes;
       clusterOrdinal++;
       if (shaped.quotesMissing) report.quotesMissing++;
-      if (quotes) report.quotes.push({ cluster: clusterOrdinal, quotes });
+      recordQuotes(clusterOrdinal, quotes);
       if (summarized.materials.length > 0) {
         for (const m of summarized.materials) {
           report.materialsFed.push({
@@ -1762,9 +1769,7 @@ export async function consolidateMemoryRun(
         // relationship judge; the merge call's own quotes are a fallback for a
         // model that only quoted during the merge.
         const finalQuotes = quotes ?? mergedShape.quotes ?? "";
-        if (!quotes && mergedShape.quotes) {
-          report.quotes.push({ cluster: clusterOrdinal, quotes: mergedShape.quotes });
-        }
+        recordQuotes(clusterOrdinal, mergedShape.quotes);
         const mergedEmb = await embedText(finalSummary, "passage");
         const finalEmbBuf = mergedEmb ? Buffer.from(mergedEmb.buffer, mergedEmb.byteOffset, mergedEmb.byteLength) : null;
         // D7 second check: the final content's basis and fact retention.
