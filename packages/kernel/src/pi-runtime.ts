@@ -771,6 +771,9 @@ export class PiAgentRuntime {
           taskBudget: opts.taskBudget ?? q.taskBudget,
           ...(opts.includeAnswer ? { includeSourceUrls: true } : {}),
         }),
+        // The wrapper is a port of its own: a report read from it must name the
+        // clock the underlying retriever actually runs.
+        requestTimeoutMs: opts.retriever.requestTimeoutMs,
       }
       : opts.retriever;
     // #302: the session half of the routing keeps the old three-part gate

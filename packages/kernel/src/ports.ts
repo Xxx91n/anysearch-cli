@@ -47,9 +47,9 @@ export type Query = SearchRequest & {
 export interface RetrieverPort {
   search(q: Query): Promise<FusedEnvelope>;
   // The clock this wrapper runs on, when it runs one; omit it otherwise. A
-  // wrapper that starts its own timer must fill this in: reportedDeadlineMs
-  // falls back to the orchestration default (4000ms), so an unreported clock
-  // reports a budget the run never enforced.
+  // wrapper that starts its own timer must forward it here: reportedDeadlineMs
+  // otherwise reports the orchestration default, not the wait the wrapper
+  // enforced.
   readonly requestTimeoutMs?: number;
 }
 
