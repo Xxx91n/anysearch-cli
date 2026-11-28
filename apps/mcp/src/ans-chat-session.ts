@@ -607,11 +607,18 @@ export function buildAnsChatConsolidateResult(
         "; re-judge retries=" + d.retries + ", sameFact=" + d.sameFact + ", reliable=" + d.reliable +
         (d.reason ? "; " + d.reason : "") + ")",
       ).join("\n");
-  // One readable line per material. fedChars 0 means the material did not fit
-  // the cluster budget; it is named instead of silently omitted.
-  const feedText = (report.materialsFed ?? []).length === 0
+  // Same rule as the CLI: the text half names only the materials that need
+  // attention — fed nothing, cut short, or planned by section. A full-archive
+  // run would otherwise bury the counts under a thousand lines. The complete
+  // list stays in structuredContent.report.materialsFed.
+  const fed = report.materialsFed ?? [];
+  const notableFed = fed.filter((m) => m.fedChars === 0 || m.truncated || m.sections.length > 0);
+  const feedText = notableFed.length === 0
     ? ""
-    : "\n" + report.materialsFed.map(formatConsolidateMaterialFeed).join("\n");
+    : "\n" + notableFed.map(formatConsolidateMaterialFeed).join("\n") +
+      (notableFed.length < fed.length
+        ? "\n  (" + notableFed.length + " of " + fed.length + " materials shown; the rest are in the structured report)"
+        : "");
   // The quotes are report-only; semantic memory never stores them.
   const quotesText = (report.quotes ?? []).length === 0
     ? ""

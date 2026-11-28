@@ -49,7 +49,7 @@ function help(): string {
   return [
     "ans consolidate - turn stored research materials into long-term knowledge",
     "",
-    "Usage: ans consolidate [--session ID | --memory ID]... [--single-evidence] [--dry-run|--apply] [--limit N]",
+    "Usage: ans consolidate [--session ID | --memory ID]... [--single-evidence] [--dry-run|--apply] [--limit N] [--verbose]",
     "",
     "An explicit scope is required. --session ID reads that session's materials;",
     "--memory ID reads exactly the listed materials (repeatable). Both flags may be",

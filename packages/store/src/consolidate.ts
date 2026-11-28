@@ -226,8 +226,8 @@ function stripSummaryTags(text: string): string {
   // A closing tag ends a block, so it becomes a line break; an opening tag adds
   // nothing. Without that, two blocks written on one line would run together.
   const withoutTags = text
-    .replace(/<\/(?:quotes|conclusion)>/g, "\n")
-    .replace(/<(?:quotes|conclusion)>/g, "");
+    .replace(/<\/(?:quotes|conclusion)>/gi, "\n")
+    .replace(/<(?:quotes|conclusion)>/gi, "");
   return withoutTags
     .split("\n")
     .map((line) => line.trim())
@@ -244,10 +244,10 @@ function stripSummaryTags(text: string): string {
  * forgets `</quotes>` is common — so everything from that tag on is dropped.
  */
 function withoutQuotesBlock(text: string): string {
-  const closed = text.replace(/<quotes>[\s\S]*?<\/quotes>/g, "\n");
-  const orphan = closed.indexOf("<quotes>");
+  const closed = text.replace(/<quotes>[\s\S]*?<\/quotes>/gi, "\n");
+  const orphan = closed.search(/<quotes>/i);
   const kept = orphan >= 0 ? closed.slice(0, orphan) : closed;
-  return kept.replace(/<\/?quotes>/g, "\n");
+  return kept.replace(/<\/?quotes>/gi, "\n");
 }
 
 /**
@@ -263,41 +263,64 @@ function withoutQuotesBlock(text: string): string {
  */
 export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
   const raw = text.trim();
-  const QUOTES_OPEN = "<quotes>";
-  const QUOTES_CLOSE = "</quotes>";
-  const CONCLUSION_OPEN = "<conclusion>";
-  const CONCLUSION_CLOSE = "</conclusion>";
-  const quotesOpen = raw.indexOf(QUOTES_OPEN);
-  const quotesClose = raw.indexOf(QUOTES_CLOSE, quotesOpen >= 0 ? quotesOpen + QUOTES_OPEN.length : 0);
-  const conclusionOpen = raw.indexOf(CONCLUSION_OPEN);
-  const conclusionClose = raw.indexOf(CONCLUSION_CLOSE, conclusionOpen >= 0 ? conclusionOpen + CONCLUSION_OPEN.length : 0);
+  // Tags are matched case-insensitively: a model that writes <QUOTES> or
+  // <Quotes> means the same block, and reading it as prose would store the
+  // quoted page as the conclusion. A regex gives the offset in the original
+  // string, which lower-casing the reply first would not (some scripts change
+  // length when folded).
+  const findTag = (name: string, closing: boolean, from = 0): { start: number; end: number } | null => {
+    const re = new RegExp("<" + (closing ? "/" : "") + name + ">", "gi");
+    re.lastIndex = from;
+    const m = re.exec(raw);
+    return m ? { start: m.index, end: m.index + m[0].length } : null;
+  };
+  const quotesOpen = findTag("quotes", false);
+  const quotesClose = quotesOpen ? findTag("quotes", true, quotesOpen.end) : null;
+  const conclusionOpen = findTag("conclusion", false);
+  const conclusionClose = conclusionOpen ? findTag("conclusion", true, conclusionOpen.end) : null;
+  const quotesEnd = quotesOpen?.end ?? -1;
+  const quotesCloseEnd = quotesClose?.end ?? -1;
+  const quotesCloseStart = quotesClose?.start ?? -1;
+  const conclusionStart = conclusionOpen?.start ?? -1;
+  const conclusionEnd = conclusionOpen?.end ?? -1;
+  const conclusionCloseEnd = conclusionClose?.end ?? -1;
   // The contract is exact: <quotes> first, then <conclusion>, with nothing
   // outside the two blocks. A preamble, a reversed order, or a missing tag is
   // a malformed shape: the reply is kept as the conclusion without its tags, so
   // no stated fact is lost and no markup reaches stored knowledge.
   const wellFormed =
-    quotesOpen === 0 &&
-    quotesClose >= 0 &&
-    conclusionOpen >= quotesClose + QUOTES_CLOSE.length &&
+    quotesOpen?.start === 0 &&
+    quotesClose !== null &&
+    conclusionStart >= quotesCloseEnd &&
     // Whitespace/newlines between the blocks are fine; prose is not.
-    raw.slice(quotesClose + QUOTES_CLOSE.length, conclusionOpen).trim() === "" &&
-    conclusionClose >= 0 &&
-    raw.slice(conclusionClose + CONCLUSION_CLOSE.length).trim() === "";
+    raw.slice(quotesCloseEnd, conclusionStart).trim() === "" &&
+    conclusionClose !== null &&
+    raw.slice(conclusionCloseEnd).trim() === "";
   if (!wellFormed) {
-    const kept = stripSummaryTags(withoutQuotesBlock(raw));
+    // An intact <conclusion> block still says what the model concluded, even
+    // when the quote block was left open — preferring it saves the cluster
+    // instead of running a model call for nothing. Only when it sits after the
+    // quote block, never inside it: a page that prints its own
+    // <conclusion> tag must not become the conclusion.
+    const afterQuotes = quotesClose === null || conclusionStart >= quotesCloseEnd;
+    const declared = conclusionOpen && conclusionClose && afterQuotes
+      ? raw.slice(conclusionEnd, conclusionClose.start).trim()
+      : "";
+    const kept = declared || stripSummaryTags(withoutQuotesBlock(raw));
+    const reportedQuotes = quotesOpen && quotesClose ? raw.slice(quotesEnd, quotesClose.start).trim() : "";
     return {
       // Never persist markup as knowledge: a reply that ignored the shape still
       // has a chance of holding a fact, so its own prose is kept. A reply that
       // was nothing but a quote block yields "" and the caller drops it.
       conclusion: kept,
-      quotes: null,
+      quotes: reportedQuotes.length > 0 ? reportedQuotes : null,
       quotesMissing: true,
       quotesMalformed: true,
       conclusionMissing: kept.length === 0,
     };
   }
-  const quotes = raw.slice(quotesOpen + QUOTES_OPEN.length, quotesClose).trim();
-  const conclusion = raw.slice(conclusionOpen + CONCLUSION_OPEN.length, conclusionClose).trim();
+  const quotes = raw.slice(quotesOpen!.end, quotesClose!.start).trim();
+  const conclusion = raw.slice(conclusionEnd, conclusionClose!.start).trim();
   if (!conclusion) {
     // A shaped reply that states no conclusion produces nothing to persist. The
     // quotes still go to the report and the judges; leaving the text empty is
@@ -517,7 +540,7 @@ interface PendingCollision {
   /** quotes from the summarizer call that produced the candidate. */
   quotes?: string;
   /** 1-based cluster ordinal, so a re-merge can add its quotes to the report. */
-  cluster?: number;
+  cluster: number;
   epsIds: number[];
   /** Design: #262 (D11) — the update-kind insert parameters from plan time
    * travel with the pending op; the merged TEXT the first attempt produced
@@ -575,9 +598,9 @@ export interface ConsolidateReport {
   // the <quotes> block each cluster returned, verbatim. Only the
   // conclusion is persisted; quotes exist for the judges and this audit trail.
   quotes: ConsolidateQuoteReport[];
-  // clusters whose reply had no usable <quotes>: the shape was wrong (the whole
-  // reply was kept as the conclusion) or the block was empty. Hosts that need
-  // to tell those apart read quotesMalformed.
+  // Clusters whose reply had no usable <quotes>: the shape was wrong (the
+  // reply's own prose was kept, the quote block dropped) or the block was
+  // empty. Hosts that need to tell those apart read quotesMalformed.
   quotesMissing: number;
   // The subset of quotesMissing where the reply was malformed, not merely
   // quote-less. quotesMissing - quotesMalformed is the empty-block count.
@@ -1289,7 +1312,7 @@ export async function consolidateMemoryRun(
       epsIds: number[];
       confidence?: number;
       salience?: number;
-      cluster?: number;
+      cluster: number;
     },
   ): void => {
     if (replacedRowIds.has(row.id)) {
@@ -1306,7 +1329,7 @@ export async function consolidateMemoryRun(
       epsIds: info.epsIds,
       ...(info.confidence !== undefined ? { confidence: info.confidence } : {}),
       ...(info.salience !== undefined ? { salience: info.salience } : {}),
-      ...(info.cluster !== undefined ? { cluster: info.cluster } : {}),
+      cluster: info.cluster,
     });
   };
 
@@ -1647,10 +1670,10 @@ export async function consolidateMemoryRun(
         }
       }
       if (summarized.overBudget) report.clustersOverBudget++;
-      // A reply that was nothing but markup has no conclusion to persist. That
-      // is not a model fault: count it separately, so llmUnavailable keeps
-      // meaning "the model was not called or did not work".
-      if (!summary.trim()) { report.noConclusion++; continue; }
+      // A reply that states no conclusion has nothing to persist. That is not a
+      // model fault: count it separately, so llmUnavailable keeps meaning "the
+      // model was not called or did not work".
+      if (shaped.conclusionMissing || !summary.trim()) { report.noConclusion++; continue; }
 
       // D4 fidelity gate (kernel classifyClaim shape, injected). Row verdict = worst claim:
       // any unsupported -> reject the whole consolidation; any uncertain -> LOW_CONFIDENCE row.
@@ -2279,7 +2302,7 @@ export async function consolidateMemoryRun(
       const finalQuotes = pending.quotes ?? mergedShape.quotes ?? undefined;
       // The re-merge's quotes belong to the cluster the plan phase counted; the
       // primary summarizer's quotes win if it already supplied any.
-      if (pending.cluster !== undefined) recordQuotes(pending.cluster, finalQuotes);
+      recordQuotes(pending.cluster, finalQuotes);
       const mergedEmb = await embedText(finalSummary, "passage");
       const finalEmbBuf = mergedEmb ? Buffer.from(mergedEmb.buffer, mergedEmb.byteOffset, mergedEmb.byteLength) : null;
       // Design: #262 — insert parameters: update-kind pendings carry the
