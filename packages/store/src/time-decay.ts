@@ -5,6 +5,7 @@
 
 import type { Database as SqliteDatabase } from "better-sqlite3";
 import { NO_PAGE_BODY_SQL } from "./retrieval-content.js";
+import { parseSqliteUtc } from "./sqlite-time.js";
 
 // Tiered half-life (tau) in days: news decays fast, evergreen decays slow.
 export const TAU_TIER = {
@@ -62,7 +63,7 @@ export function decayMultiplier(ageInDays: number, tier: ContentTier, taus: TauT
 
 function sqliteTsToMs(ts: string | null): number | null {
   if (!ts || typeof ts !== "string") return null;
-  const ms = new Date(ts.replace(" ", "T") + "Z").getTime();
+  const ms = parseSqliteUtc(ts);
   return Number.isFinite(ms) ? ms : null;
 }
 

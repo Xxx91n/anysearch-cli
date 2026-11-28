@@ -36,7 +36,7 @@ function inIdBatches<T>(ids: readonly number[], run: (batch: number[]) => T[]): 
 }
 
 /** Pages whose read-side state is still live: not expired, quarantined, archived or replaced. */
-const LIVE_PAGE_SQL =
+export const LIVE_PAGE_SQL =
   " r.valid_until IS NULL AND r.quarantine IS NULL AND r.archived = 0 AND r.superseded_by IS NULL";
 
 /** How many candidates each lane may bring before the section fusion. */

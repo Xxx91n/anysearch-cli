@@ -42,6 +42,10 @@ export * from "./fts5";
 // Only the read-only block-backlog reader and its return type are public here;
 // the writers stay inside the store.
 export { readChunkVectorBacklogFile, type ChunkVectorBacklog } from "./retrieval-chunks";
+// Expand's request/result types are the MCP seam; the reader itself stays
+// internal and is reached through SqliteSessionStore.expandMemory. The ceiling
+// is exposed only by the native-free ./expand-limits subpath, never here.
+export type { MemoryExpandRequest, MemoryExpandResult, MemoryExpandErrorCode } from "./retrieval-expand";
 // The active embedding model id, plus the sentinel for "the package cannot be
 // loaded (not installed, or installed but broken)".
 export { embeddingModelId, EMBEDDING_MODEL_UNAVAILABLE } from "./embedding-arm";
