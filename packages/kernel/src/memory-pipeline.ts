@@ -47,6 +47,7 @@ import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, omitPartialAnswerFromSummary, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
+import { isPositiveWholeInt } from "./engine";
 // #286: the block renderer, the exact-block remover and the recall cap are owned
 // by the store, because the rebuild path rebuilds the very same block strings to
 // strip them by exact match. `SUMMARY_INJECT_MAX_CHARS` is not imported here: every
@@ -178,7 +179,7 @@ export function readSummarySourcesForWrite(
   const inheritIds = [
     ...(req.previousAnchorIds ?? []),
     ...(req.previousAnchorId !== undefined ? [req.previousAnchorId] : []),
-  ].filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+  ].filter(isPositiveWholeInt);
   if (!hasResolve && !hasReads && !(hasInherit && inheritIds.length > 0)) {
     return { ok: true, sources: [] };
   }
@@ -200,7 +201,7 @@ export function readSummarySourcesForWrite(
     for (const r of req.gapReads ?? []) {
       if (!r) continue;
       const rowId = (r as { rowId?: unknown }).rowId;
-      const hasRowId = typeof rowId === "number" && Number.isInteger(rowId) && rowId > 0;
+      const hasRowId = isPositiveWholeInt(rowId);
       const url = typeof r.url === "string" ? r.url : "";
       if (!hasRowId && url.length === 0) continue;
       reads.push({ url, rowId: hasRowId ? (rowId as number) : null });

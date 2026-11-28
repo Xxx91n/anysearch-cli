@@ -7,7 +7,7 @@
 
 import { TavilyProvider, AnySearchProvider, createExaProvider, createExaFetchProvider } from "@anysearch-cli/retriever/providers";
 import { redactSecrets, type FetchProvider, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
-import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine, isPositiveWholeMs } from "./engine";
+import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine, isPositiveWholeInt } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   ansAttributionRoot,
@@ -373,7 +373,7 @@ const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 // being truncated into a 1ms budget nobody asked for, and a cap above the
 // engine's ceiling is clamped rather than thrown from the constructor.
 function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_MS): number {
-  if (!isPositiveWholeMs(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
+  if (!isPositiveWholeInt(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
   // A cap at or above 1ms is rounded down. Anything smaller is invalid and
   // falls back to the eval ceiling; it must not become a 1ms budget that
   // cancels every arm.
@@ -391,8 +391,8 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
  */
 export function reportedDeadlineMs(eng: Pick<CompositionResult, "requestTimeoutMs" | "retriever">): number {
   const retrieverMs = eng.retriever.requestTimeoutMs;
-  if (isPositiveWholeMs(retrieverMs)) return Math.min(retrieverMs, MAX_REQUEST_TIMEOUT_MS);
-  if (isPositiveWholeMs(eng.requestTimeoutMs)) return Math.min(eng.requestTimeoutMs, MAX_REQUEST_TIMEOUT_MS);
+  if (isPositiveWholeInt(retrieverMs)) return Math.min(retrieverMs, MAX_REQUEST_TIMEOUT_MS);
+  if (isPositiveWholeInt(eng.requestTimeoutMs)) return Math.min(eng.requestTimeoutMs, MAX_REQUEST_TIMEOUT_MS);
   return DEFAULT_REQUEST_TIMEOUT_MS;
 }
 

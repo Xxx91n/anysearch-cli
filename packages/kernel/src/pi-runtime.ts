@@ -50,6 +50,7 @@ import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, ansProjectHitlPath, ansProjectPi
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink, TaskBudgetScope } from "./ports";
 import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
+import { isPositiveWholeInt } from "./engine";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 import { SEARCH_MODE_DESCRIPTION } from "./tool-schemas";
 import { BUILTIN_FETCH_TOOL, createFetchTool, type FetchStorePort } from "./fetch-tool";
@@ -206,7 +207,7 @@ async function writeSearchTickets(
   sessionId: string,
   ids: ReadonlyArray<number | null>,
 ): Promise<boolean> {
-  const values = ids.filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+  const values = ids.filter(isPositiveWholeInt);
   if (values.length === 0) return true;
   if (typeof store.saveFetchTickets !== "function") return false;
   try {
@@ -268,7 +269,7 @@ function stampArchiveRowIds(envelope: any, ids: Array<number | null> | undefined
     ...envelope,
     results: results.map((r: any, i: number) => {
       const id = ids[i];
-      return typeof id === "number" && Number.isInteger(id) && id > 0
+      return isPositiveWholeInt(id)
         ? { ...(r ?? {}), archiveRowId: id, ...(withHandle ? { handle: searchHandle(id) } : {}) }
         : r;
     }),
@@ -771,9 +772,6 @@ export class PiAgentRuntime {
           taskBudget: opts.taskBudget ?? q.taskBudget,
           ...(opts.includeAnswer ? { includeSourceUrls: true } : {}),
         }),
-        // Also a RetrieverPort: report the clock the inner retriever runs on,
-        // else callers assume the default.
-        ...(opts.retriever.requestTimeoutMs !== undefined ? { requestTimeoutMs: opts.retriever.requestTimeoutMs } : {}),
       }
       : opts.retriever;
     // #302: the session half of the routing keeps the old three-part gate

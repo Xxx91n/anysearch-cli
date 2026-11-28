@@ -46,10 +46,11 @@ export type Query = SearchRequest & {
 // RetrieverPort: the kernel calls this to search.
 export interface RetrieverPort {
   search(q: Query): Promise<FusedEnvelope>;
-  // The clock the wrapper reports. A wrapper that just forwards calls passes the
-  // inner retriever's value through; one that runs its own timer reports that
-  // timer's budget. Leaving it out makes reportedDeadlineMs fall back to the
-  // orchestration default, not the wait this wrapper enforced.
+  // The wait this retriever actually enforces, when it knows it: the engine
+  // exposes its own, and a wrapper that runs its own timer reports that timer's
+  // budget. reportedDeadlineMs reads this value first, then the composition
+  // result's own copy, and only then the 4s default — a wrapper that enforces a
+  // different wait and leaves this out is reported as the result's budget.
   readonly requestTimeoutMs?: number;
 }
 
