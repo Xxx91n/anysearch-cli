@@ -291,10 +291,11 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
   const conclusionClose = conclusionOpen ? findTag("conclusion", true, conclusionOpen.end) : null;
   const quotesEnd = quotesOpen?.end ?? -1;
   const quotesCloseEnd = quotesClose?.end ?? -1;
-  const quotesCloseStart = quotesClose?.start ?? -1;
   const conclusionStart = conclusionOpen?.start ?? -1;
   const conclusionEnd = conclusionOpen?.end ?? -1;
   const conclusionCloseEnd = conclusionClose?.end ?? -1;
+  // One slice for both branches: the reply's quote block, when it has one.
+  const quotesText = quotesOpen && quotesClose ? raw.slice(quotesEnd, quotesClose.start).trim() : "";
   // The contract is exact: <quotes> first, then <conclusion>, with nothing
   // outside the two blocks. A preamble, a reversed order, or a missing tag is
   // a malformed shape: the reply is kept as the conclusion without its tags, so
@@ -318,19 +319,17 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
       ? raw.slice(conclusionEnd, conclusionClose.start).trim()
       : "";
     const kept = declared || stripSummaryTags(withoutQuotesBlock(raw));
-    const reportedQuotes = quotesOpen && quotesClose ? raw.slice(quotesEnd, quotesClose.start).trim() : "";
     return {
       // Never persist markup as knowledge: a reply that ignored the shape still
       // has a chance of holding a fact, so its own prose is kept. A reply that
       // was nothing but a quote block yields "" and the caller drops it.
       conclusion: kept,
-      quotes: reportedQuotes.length > 0 ? reportedQuotes : null,
-      quotesMissing: reportedQuotes.length === 0,
+      quotes: quotesText.length > 0 ? quotesText : null,
+      quotesMissing: quotesText.length === 0,
       quotesMalformed: true,
       conclusionMissing: kept.length === 0,
     };
   }
-  const quotes = raw.slice(quotesOpen!.end, quotesClose!.start).trim();
   const conclusion = raw.slice(conclusionEnd, conclusionClose!.start).trim();
   if (!conclusion) {
     // A shaped reply that states no conclusion produces nothing to persist. The
@@ -338,19 +337,19 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
     // what stops the quoted page from being stored as the distilled fact.
     return {
       conclusion: "",
-      quotes: quotes.length > 0 ? quotes : null,
-      quotesMissing: quotes.length === 0,
+      quotes: quotesText.length > 0 ? quotesText : null,
+      quotesMissing: quotesText.length === 0,
       quotesMalformed: false,
       conclusionMissing: true,
     };
   }
   return {
     conclusion,
-    quotes: quotes.length > 0 ? quotes : null,
+    quotes: quotesText.length > 0 ? quotesText : null,
     // A shape with an empty <quotes> block is still a missing-evidence report:
     // the judges would otherwise receive an empty string and no alarm. It is
     // not malformed, though — the conclusion was read as written.
-    quotesMissing: quotes.length === 0,
+    quotesMissing: quotesText.length === 0,
     quotesMalformed: false,
     conclusionMissing: false,
   };
@@ -614,7 +613,8 @@ export interface ConsolidateReport {
   // can come back in the wrong shape and still carry a readable quote block.
   quotesMissing: number;
   // Clusters whose reply ignored the `<quotes>` + `<conclusion>` shape. Their
-  // own prose was kept and the quote block dropped (see splitConsolidateSummary).
+  // conclusion was taken from the reply's own prose (or from a complete
+  // `<conclusion>` block), and a closed `<quotes>` block is still reported.
   quotesMalformed: number;
   // token cap for one cluster's material block (24,000).
   clusterTokenBudget: number;
@@ -1684,7 +1684,7 @@ export async function consolidateMemoryRun(
       // A reply that states no conclusion has nothing to persist. That is not a
       // model fault: count it separately, so llmUnavailable keeps meaning "the
       // model was not called or did not work".
-      if (shaped.conclusionMissing || !summary.trim()) { report.noConclusion++; continue; }
+      if (shaped.conclusionMissing) { report.noConclusion++; continue; }
 
       // D4 fidelity gate (kernel classifyClaim shape, injected). Row verdict = worst claim:
       // any unsupported -> reject the whole consolidation; any uncertain -> LOW_CONFIDENCE row.

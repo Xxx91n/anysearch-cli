@@ -612,9 +612,11 @@ export function buildAnsChatConsolidateResult(
         "; re-judge retries=" + d.retries + ", sameFact=" + d.sameFact + ", reliable=" + d.reliable +
         (d.reason ? "; " + d.reason : "") + ")",
       ).join("\n");
-  // The text half names only the materials that need attention; the complete
-  // list stays in structuredContent.report.materialsFed. The rule is shared with
-  // the CLI (store's notableMaterialFeeds) so the two cannot drift.
+  // The text half names only the materials that need attention. The rule is
+  // shared with the CLI (store's notableMaterialFeeds) so the two cannot drift.
+  // Consequence for a content-only host: it sees this trimmed list, not the
+  // whole feed — the complete list is in structuredContent.report.materialsFed,
+  // and the count line says how many were left out.
   const fed = report.materialsFed ?? [];
   const notableFed = notableMaterialFeeds(fed);
   const feedText = notableFed.length === 0
