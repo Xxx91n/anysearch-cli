@@ -328,8 +328,15 @@ const readStale = () => {
   assert(keptErr.some((line) => line.includes(staleTmp) && line.includes("keeping")), "keeping it is reported on stderr, naming the file");
   assert((kept as Record<string, unknown>).schema_version === 1, "keeping golden keeps schema_version");
 }
-// With the corpus beside it the block is a stale copy: dropped and reported.
+// A corpus that exists but is torn (no entries) cannot replace the block either.
 fs.writeFileSync(staleCorpus, JSON.stringify({ schema: "anysearch/docs-golden@1", scopes: { probe: "stub" }, entries: [] }), "utf8");
+{
+  const { ledger: kept, lines: keptErr } = readStale();
+  assert(Object.hasOwn(kept, "golden"), "a golden block stays when the corpus beside it is unreadable");
+  assert(keptErr.some((line) => line.includes(staleTmp) && line.includes("keeping")), "keeping it is reported for an unusable corpus too");
+}
+// A usable corpus beside it makes the block a stale copy: dropped and reported.
+fs.writeFileSync(staleCorpus, JSON.stringify({ schema: "anysearch/docs-golden@1", scopes: { probe: "stub" }, entries: [{ id: "probe" }] }), "utf8");
 const { ledger: stale, lines: staleErr } = readStale();
 assert(!Object.hasOwn(stale, "golden"), "a stale golden block is dropped when the corpus is on disk");
 assert(staleErr.some((line) => line.includes(staleTmp)), "dropping a stale golden block is reported on stderr, naming the file");

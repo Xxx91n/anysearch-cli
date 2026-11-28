@@ -49,6 +49,21 @@ export function emptyLooksLedger(): LooksLedger {
   return { schema: LOOKS_LEDGER_SCHEMA, looks: [] };
 }
 
+// A corpus this reader would stand behind: an object with a non-empty entries
+// array and a scopes object. Anything else (absent, torn, empty) cannot replace
+// the ledger's block.
+function usableCorpus(file: string): boolean {
+  if (!existsSync(file)) return false;
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown> | null;
+    return !!parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      && Array.isArray(parsed.entries) && parsed.entries.length > 0
+      && !!parsed.scopes && typeof parsed.scopes === "object" && !Array.isArray(parsed.scopes);
+  } catch {
+    return false;
+  }
+}
+
 function hashRows(rows: LooksLedgerEntry[]): string {
   return createHash("sha256").update(JSON.stringify(rows)).digest("hex");
 }
@@ -66,18 +81,19 @@ export function readLooksLedger(file: string): LooksLedger {
   if (!parsedRoot || typeof parsedRoot !== "object" || !Array.isArray(parsedRoot.looks)) return emptyLooksLedger();
   // An old checkout (or a merge conflict) can still leave a `golden` block in
   // the ledger; the corpus lives in eval-golden.json beside it, so this copy is
-  // dropped and reported. The input object is left untouched. When that file is
-  // missing the block is the only copy left — a write would erase it for good,
-  // so keep it and say why instead of dropping it silently.
+  // dropped and reported. The input object is left untouched. Dropping it is
+  // only safe when the corpus can replace it — a present-but-torn file
+  // (conflict markers, a half write, empty entries) is no copy at all, and the
+  // next write would erase the ledger's block for good.
   let j = parsedRoot;
   if (parsedRoot.golden !== undefined) {
     const corpus = join(dirname(file), GOLDEN_FILE);
-    if (existsSync(corpus)) {
+    if (usableCorpus(corpus)) {
       const { golden: _stale, ...rest } = parsedRoot;
       j = rest;
       writeStderr("[eval] ignoring a stale golden block in " + file + " — the corpus lives in " + corpus + "\n");
     } else {
-      writeStderr("[eval] keeping the golden block in " + file + " — " + corpus + " is missing\n");
+      writeStderr("[eval] keeping the golden block in " + file + " — " + corpus + " is missing or unreadable\n");
     }
   }
   const looks: LooksLedgerEntry[] = [];
