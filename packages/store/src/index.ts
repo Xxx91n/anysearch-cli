@@ -80,9 +80,10 @@ export * from "./db-perms";
 // instead of letting libuv reap them at exit (macOS F-16 libc++abi abort).
 export * from "./teardown";
 export * from "./db";
-// Golden corpus reader and its scope predicates: the eval executors read the
-// corpus, and kernel's stub executor test asks the same live/stub question.
-export * from "./eval/golden-file";
+// Golden corpus scope predicates: kernel's stub executor test asks the same
+// live/stub question. The reader and its validator stay module-relative, so
+// reading a corpus file is not part of this package's surface.
+export { isLiveScope, isStubScope } from "./eval/golden-file";
 
 // consumed/synthetic switch governance (state machine + chain evidence).
 export * from "./eval/switch-machine";
