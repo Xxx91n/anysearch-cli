@@ -351,6 +351,18 @@ const { ledger: stale, lines: staleErr } = readStale();
 assert(!Object.hasOwn(stale, "golden"), "a stale golden block is dropped when the corpus is on disk");
 assert(staleErr.some((line) => line.includes(staleTmp)), "dropping a stale golden block is reported on stderr, naming the file");
 assert((stale as Record<string, unknown>).schema_version === 1, "dropping golden keeps schema_version");
+// A block that still claims a row the corpus lacks is not a stale copy: the
+// next write would erase that row with only a log line to show for it.
+fs.writeFileSync(
+  staleTmp,
+  JSON.stringify({ schema: "anysearch/eval-looks@2", schema_version: 1, golden: { scopes: {}, entries: [{ id: "docs-gone" }] }, looks: [] }),
+  "utf8",
+);
+{
+  const { ledger: kept, lines: keptErr } = readStale();
+  assert(Object.hasOwn(kept, "golden"), "a block holding a row the corpus lacks stays");
+  assert(keptErr.some((line) => line.includes("docs-gone")), "keeping it names the row the corpus lacks");
+}
 fs.rmSync(staleDir, { recursive: true, force: true });
 const appended = appendLook(
   ledger,

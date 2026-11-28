@@ -1,7 +1,11 @@
 // Structural corpus checks for eval-golden.json, shared by ship-gate and the
-// badcase backfill. The vocabularies' TS originals live in
-// packages/store/src/eval/docs-golden.ts (GOLDEN_FILE in eval/corpus-files.ts);
+// badcase backfill. The vocabularies' TS originals live in the store package:
+// eval/docs-golden.ts, plus GOLDEN_FILE in eval/corpus-files.ts.
 // packages/store/test/eval-golden-vocab-parity.test.ts compares the two by value.
+// This is the outermost layer only: schema, entries/scopes shape (ids present and
+// unique), scope vocabulary and the tombstone-vs-scope pairing. The per-entry
+// rules — id format, intent, expected — stay in the store validator that the gate
+// and the backfill run afterwards.
 export const GOLDEN_FILE = "eval-golden.json";
 export const GOLDEN_SCHEMA = "anysearch/docs-golden@1";
 export const GOLDEN_SCOPE_VALUES = ["stub", "live", "both"];
@@ -54,10 +58,8 @@ export function goldenShapeProblems(doc) {
       if (!GOLDEN_SCOPE_VALUES.includes(scope)) problems.push("scope for " + id + " must be " + GOLDEN_SCOPE_VALUES.join("|"));
     }
   }
-  // The pairing readGoldenFile enforces: a deleted row whose scope lingers (or a
-  // scope-less row) loads fine here but throws when the live executor opens the
-  // same file, so gate and executor would disagree. Checked once the shapes
-  // above are sound, because the pairing reads ids out of them.
+  // Same pairing readGoldenFile makes: a tombstoned row has no scope, every
+  // other row has exactly one. Checked after the shapes above, which supply ids.
   if (problems.length === 0) {
     const scopes = doc.scopes;
     const ids = new Set(doc.entries.map((e) => e.id));

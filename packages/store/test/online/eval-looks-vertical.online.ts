@@ -12,8 +12,9 @@
 // Control entries (role:"control") record existence facts — their failures
 // walk the degraded list, never the red gate (iii).
 // ANS_VERTICAL_DELTA_LIMIT=N caps the corpus slice for smoke runs.
-// If set, it must be a positive integer; an invalid value fails the run. The
-// check runs after the missing-dist SKIP, so a lane that skips still skips.
+// Unset or empty runs the full corpus; anything else must be a positive integer
+// and an invalid value fails the run (whitespace included). The check runs after
+// the missing-dist SKIP, so a lane that skips still skips.
 
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";

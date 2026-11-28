@@ -13,7 +13,6 @@ import { providerErrorHints } from "@anysearch-cli/kernel";
 // The arm-list guard is shared with the CLI, so both hosts refuse the same
 // envelope. docs/mcp-server.md states the contract for host implementers.
 export { envelopeArmLists } from "@anysearch-cli/kernel";
-export type { EnvelopeArmLists } from "@anysearch-cli/kernel";
 
 /** Execution-failure result: isError true, text content, no structuredContent. */
 export function toolFailure(text: string): CallToolResult {

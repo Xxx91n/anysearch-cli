@@ -115,10 +115,12 @@ function tree(t, options = {}) {
   return dir;
 }
 
-function run(dir, args, nodeArgs = []) {
+function run(dir, args, nodeArgs = [], env = {}) {
   const r = spawnSync(process.execPath, [...nodeArgs, SCRIPT, ...args], {
     cwd: REPO,
-    env: { ...process.env, ANS_BACKFILL_ROOT: dir },
+    // ANS_BACKFILL_VALIDATOR is blanked unless a case sets it: a shell that
+    // exported it would otherwise point every case at another validator.
+    env: { ...process.env, ANS_BACKFILL_ROOT: dir, ANS_BACKFILL_VALIDATOR: "", ...env },
     encoding: "utf8",
     timeout: 30_000,
   });
@@ -572,18 +574,26 @@ test("--new rejects a question already in the golden corpus", (t) => {
   expectFail(t, () => {}, /use --into/, ["--id", "docs-bc0001", "--new"], { goldenQuestion: QUESTION });
 });
 
+test("--new starts at docs-g0001 when the corpus has no docs rows", (t) => {
+  const dir = tree(t);
+  // The next id comes from the docs-gNNNN rows already in the corpus; with none
+  // of them the counter branch with no numbers is what runs.
+  editJson(join(dir, "eval-golden.json"), (g) => {
+    g.entries = [liveRow("vert-f1105", "Which vertical handles travel?")];
+    g.scopes = { "vert-f1105": "live" };
+  });
+  const r = run(dir, ["--id", "docs-bc0001", "--new"]);
+  assert.equal(r.status, 0, r.stderr);
+  const g = readJson(dir, "eval-golden.json");
+  assert.equal(g.entries.at(-1).id, "docs-g0001");
+  assert.equal(g.scopes["docs-g0001"], "live");
+});
+
 test("a validator that cannot load stops the run before anything is written", (t) => {
   const dir = tree(t);
   const before = LEDGERS.map((file) => ledgerText(dir, file));
-  const r = spawnSync(process.execPath, [SCRIPT, "--id", "docs-bc0001", "--new"], {
-    cwd: REPO,
-    env: {
-      ...process.env,
-      ANS_BACKFILL_ROOT: dir,
-      ANS_BACKFILL_VALIDATOR: pathToFileURL(join(dir, "no-such-validator.ts")).href,
-    },
-    encoding: "utf8",
-    timeout: 30_000,
+  const r = run(dir, ["--id", "docs-bc0001", "--new"], [], {
+    ANS_BACKFILL_VALIDATOR: pathToFileURL(join(dir, "no-such-validator.ts")).href,
   });
   // Only an unloadable .ts on an old node may be skipped; a validator that is
   // missing for any other reason must stop the write.

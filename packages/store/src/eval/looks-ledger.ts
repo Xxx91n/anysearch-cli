@@ -50,18 +50,30 @@ export function emptyLooksLedger(): LooksLedger {
   return { schema: LOOKS_LEDGER_SCHEMA, looks: [] };
 }
 
-// undefined when the reader accepts the corpus, else the reader's own reason.
-// This decides whether the ledger's `golden` block can be replaced, so ask the
-// reader itself: a hand-rolled shape check here accepted a corpus whose schema
-// or scopes were wrong, dropped the block, and left the next read throwing with
-// the only copy already gone.
-function corpusUnusableReason(file: string): string | undefined {
+type CorpusCheck =
+  | { ok: true; entryIds: Set<string> }
+  | { ok: false; reason: string };
+
+// The reader decides whether a corpus can replace the ledger's `golden` block: a
+// hand-rolled shape check here once accepted a corpus whose schema was wrong and
+// dropped the only copy of that block.
+function checkCorpus(file: string): CorpusCheck {
   try {
-    readGoldenFile(file);
-    return undefined;
+    return { ok: true, entryIds: new Set(readGoldenFile(file).entries.map((e) => e.id)) };
   } catch (err) {
-    return err instanceof Error ? err.message : String(err);
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
+}
+
+// The row ids a ledger's `golden` block still claims. Anything the corpus beside
+// the ledger lacks would be lost when that block is dropped.
+function goldenBlockIds(value: unknown): string[] {
+  const entries = (value as { entries?: unknown } | undefined)?.entries;
+  if (!Array.isArray(entries)) return [];
+  return entries.flatMap((entry) => {
+    const id = (entry as { id?: unknown } | undefined)?.id;
+    return typeof id === "string" ? [id] : [];
+  });
 }
 
 function hashRows(rows: LooksLedgerEntry[]): string {
@@ -79,22 +91,26 @@ export function readLooksLedger(file: string): LooksLedger {
   }
   const parsedRoot = parsed as Record<string, unknown>;
   if (!parsedRoot || typeof parsedRoot !== "object" || !Array.isArray(parsedRoot.looks)) return emptyLooksLedger();
-  // An old checkout (or a merge conflict) can still leave a `golden` block in
-  // the ledger; the corpus lives in eval-golden.json beside it, so this copy is
-  // dropped and reported. The input object is left untouched. Dropping it is
-  // only safe when the corpus can replace it — a present-but-torn file
-  // (conflict markers, a half write, empty entries) is no copy at all, and the
-  // next write would erase the ledger's block for good.
+  // An old checkout or a merge conflict can leave a `golden` block in the
+  // ledger. The next write drops it for good, so drop it here only when the
+  // corpus beside it holds every row the block claims. The input object is left
+  // untouched either way.
   let j = parsedRoot;
   if (parsedRoot.golden !== undefined) {
     const corpus = join(dirname(file), GOLDEN_FILE);
-    const problem = corpusUnusableReason(corpus);
-    if (problem === undefined) {
-      const { golden: _stale, ...rest } = parsedRoot;
-      j = rest;
-      writeStderr("[eval] dropping a stale golden block in " + file + " — the corpus lives in " + corpus + ", so the next write of this ledger leaves the block out\n");
+    const check = checkCorpus(corpus);
+    if (!check.ok) {
+      writeStderr("[eval] keeping the golden block in " + file + " — " + corpus + ": " + check.reason + "\n");
     } else {
-      writeStderr("[eval] keeping the golden block in " + file + " — " + corpus + " cannot replace it: " + problem + "\n");
+      const known = check.entryIds;
+      const lost = goldenBlockIds(parsedRoot.golden).filter((id) => !known.has(id));
+      if (lost.length > 0) {
+        writeStderr("[eval] keeping the golden block in " + file + " — " + corpus + " has no row for " + lost.join(", ") + "\n");
+      } else {
+        const { golden: _stale, ...rest } = parsedRoot;
+        j = rest;
+        writeStderr("[eval] dropping the stale golden block in " + file + " — " + corpus + " is the copy\n");
+      }
     }
   }
   const looks: LooksLedgerEntry[] = [];

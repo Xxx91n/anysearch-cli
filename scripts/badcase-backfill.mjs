@@ -81,8 +81,10 @@ if (typeof bc.domain !== "string" || bc.domain.length === 0) fail(id + " has no 
 if (!bc.expected || typeof bc.expected !== "object" || Array.isArray(bc.expected)) fail(id + " has no expected block");
 
 const golden = readJson(GOLDEN, GOLDEN_FILE);
-// Shape checks live in scripts/golden-shape.mjs, shared with ship-gate.
-for (const problem of goldenShapeProblems(golden)) fail(GOLDEN_FILE + " " + problem);
+// Shape checks live in scripts/golden-shape.mjs, shared with ship-gate. One
+// fail() for all of them: the first call exits, so a loop shows only one.
+const shapeProblems = goldenShapeProblems(golden);
+if (shapeProblems.length > 0) fail(GOLDEN_FILE + " " + shapeProblems.join("; "));
 const cov = readJson(COVERAGE, "eval-looks.coverage.json");
 if (!cov || typeof cov !== "object" || Array.isArray(cov)) fail("eval-looks.coverage.json root must be an object");
 if (!Array.isArray(cov.dimensions)) fail("eval-looks.coverage.json: dimensions must be an array");
@@ -174,16 +176,18 @@ if (into) {
   if (mustNotHitPaths !== undefined && (!Array.isArray(mustNotHitPaths) || mustNotHitPaths.length === 0 || mustNotHitPaths.some((u) => typeof u !== "string" || u.length === 0))) {
     fail(id + " mustNotHitPaths must be a non-empty string[]");
   }
-  const mustHit = (expected.mustHitHosts?.length ?? 0) > 0 || (expected.mustHitUrls?.length ?? 0) > 0 || (expected.mustHitPaths?.length ?? 0) > 0;
-  if (!(expected.verdict === "answer" && mustHit)) {
-    fail("--new can only auto-scope an answer+mustHit* row (live); " + next + " needs the stub lane, which needs a kernel scenario fixture this script cannot invent — add the row and fixture by hand");
-  }
-  // Judge the values that go into the row, not `?? []` stand-ins: a null list
-  // would pass that test and be written as null, which CI's validator rejects.
+  // Shape first, and the values that go into the row: a null list read through
+  // `?? []` would pass the answer+mustHit* gate below, then be written as null
+  // for CI's validator to reject. It would also point the reader at the kernel
+  // fixtures instead of the field that is wrong.
   if (expected.mustHitUrls !== undefined && !Array.isArray(expected.mustHitUrls)) fail(id + " mustHitUrls must be an array");
   if (expected.mustHitHosts !== undefined && !Array.isArray(expected.mustHitHosts)) fail(id + " mustHitHosts must be an array");
   const mustHitUrls = expected.mustHitUrls ?? [];
   const mustHitHosts = expected.mustHitHosts ?? [];
+  const mustHit = mustHitHosts.length > 0 || mustHitUrls.length > 0 || (expected.mustHitPaths?.length ?? 0) > 0;
+  if (!(expected.verdict === "answer" && mustHit)) {
+    fail("--new can only auto-scope an answer+mustHit* row (live); " + next + " needs the stub lane, which needs a kernel scenario fixture this script cannot invent — add the row and fixture by hand");
+  }
   // Element type before the allowlist lookup, or [123] reports "outside
   // urlAllowlist" and sends the reader to the wrong file.
   if (mustHitHosts.some((h) => typeof h !== "string")) fail(id + " mustHitHosts must be string[]");
