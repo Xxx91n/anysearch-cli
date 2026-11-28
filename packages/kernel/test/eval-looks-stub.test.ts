@@ -14,7 +14,8 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RetroaererdEngine } from "../src/engine";
-import { loadDomainByNameIn, resolvePolicyFromSchema, defaultDomainsDirs, isLiveScope, isStubScope } from "@anysearch-cli/store";
+import { loadDomainByNameIn, resolvePolicyFromSchema, defaultDomainsDirs } from "@anysearch-cli/store";
+import { isLiveScope, isStubScope } from "@anysearch-cli/store/eval/corpus-files";
 import type { SearchProvider, SearchRequest, ProviderEnvelope, NormalizedResult } from "@anysearch-cli/retriever";
 import type { RetrievalObservationSink } from "../src/ports";
 

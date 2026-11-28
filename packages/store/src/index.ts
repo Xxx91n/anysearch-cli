@@ -83,7 +83,6 @@ export * from "./db";
 // Golden corpus scope predicates, forwarded from the leaf so importing the
 // package root does not pull the reader and its validator in: kernel's stub
 // executor test asks the same live/stub question.
-export { isLiveScope, isStubScope } from "./eval/corpus-files";
 
 // consumed/synthetic switch governance (state machine + chain evidence).
 export * from "./eval/switch-machine";

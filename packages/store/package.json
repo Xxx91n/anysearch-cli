@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./local-service": "./src/local-service.ts",
     "./paths": "./src/ans-paths.ts",
-    "./process-liveness": "./src/process-liveness.ts"
+    "./process-liveness": "./src/process-liveness.ts",
+    "./eval/corpus-files": "./src/eval/corpus-files.ts"
   },
   "scripts": {
     "test": "node --import tsx --import ./test/helpers/exit-teardown.mjs --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-concurrency=1 --test-timeout=30000",
