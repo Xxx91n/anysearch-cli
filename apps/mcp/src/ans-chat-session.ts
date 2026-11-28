@@ -535,9 +535,12 @@ export function buildAnsChatConsolidateResult(
           : "") +
         ((report.quotesMalformed ?? 0) > 0
           ? "\n  " + report.quotesMalformed + " cluster(s) ignored the <quotes>/<conclusion> shape" +
-            " (the conclusion was taken from the reply's own prose or a complete <conclusion> block; a closed <quotes> block is still reported)"
+            " (a closed <quotes> block is still reported; a reply that stated a conclusion keeps it," +
+            " one that only quoted lands under no conclusion)"
           : "") +
-        "\n  the two counts can overlap: do not add them up as a cluster count" +
+        ((report.quotesMissing ?? 0) > 0 && (report.quotesMalformed ?? 0) > 0
+          ? "\n  the two counts can overlap: do not add them up as a cluster count"
+          : "") +
         "\n  treat corrections from those clusters as unverified"
       : "") +
     ((report.noConclusion ?? 0) > 0
