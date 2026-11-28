@@ -73,16 +73,16 @@ function coverage() {
     schema: "anysearch/eval-looks-coverage@1",
     domain: "docs",
     recordedAt: "2026-11-27",
-    // All eight slices, laid out like the real manifest: seven covered and the
-    // deferred adversarial trigger carrying its owner.
+    // Shaped like the real manifest: all eight slices present, the two the one
+    // live row tags are covered, the rest deferred with an owner.
     dimensions: [
       { dimension: "intent", status: "covered", count: 1, classes: { howto: 1 } },
       { dimension: "lang", status: "covered", count: 1, classes: { en: 1 } },
-      { dimension: "source-tier", status: "covered", count: 0, classes: {} },
-      { dimension: "freshness", status: "covered", count: 0, classes: {} },
-      { dimension: "attribution", status: "covered", count: 0, classes: {} },
-      { dimension: "hops", status: "covered", count: 0, classes: {} },
-      { dimension: "negative", status: "covered", count: 0, classes: {} },
+      { dimension: "source-tier", status: "deferred", entryTrigger: "first spec-tier row", owner: "B1" },
+      { dimension: "freshness", status: "deferred", entryTrigger: "first active-page row", owner: "B1" },
+      { dimension: "attribution", status: "deferred", entryTrigger: "first claim-level row", owner: "B2" },
+      { dimension: "hops", status: "deferred", entryTrigger: "first multi-hop row", owner: "B2" },
+      { dimension: "negative", status: "deferred", entryTrigger: "first abstain row", owner: "B3" },
       { dimension: "adversarial", status: "deferred", entryTrigger: "first injection attempt", owner: "B4" },
     ],
   };
@@ -151,9 +151,8 @@ function expectFail(t, mutate, pattern, args = ["--id", "docs-bc0001", "--new"],
   });
 }
 
-// One row per refused input: the ledger it corrupts, the edit, and the message
-// the script must print. Cases that take non-default argv, rewrite several
-// files, or delete a file stay as their own tests below.
+// Cases that take non-default argv, rewrite several files, or delete a file
+// stay as their own tests below.
 const REJECTS = [
   {
     name: "--new rejects a host outside the allowlist",
@@ -278,7 +277,10 @@ const REJECTS = [
   {
     name: "--new rejects a row the auto-scope cannot build (not answer+mustHit*)",
     file: "eval-badcases.json",
-    edit: (b) => { delete b.badcases[0].expected.mustHitHosts; },
+    edit: (b) => {
+      delete b.badcases[0].expected.mustHitHosts;
+      delete b.badcases[0].expected.mustHitPaths;
+    },
     pattern: /can only auto-scope an answer\+mustHit\*/,
   },
   {
@@ -298,6 +300,18 @@ const REJECTS = [
     file: "eval-golden.json",
     edit: (g) => { g.scopes = {}; },
     pattern: /scopes must not be empty/,
+  },
+  {
+    name: "a golden scopes value that is not an object is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.scopes = []; },
+    pattern: /scopes must be an object/,
+  },
+  {
+    name: "a golden entries value that is not an array is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.entries = {}; },
+    pattern: /has no entries/,
   },
   {
     name: "coverage dimensions that are not an array are rejected",
@@ -380,6 +394,12 @@ const REJECTS = [
   {
     name: "--new rejects mustNotHitPaths holding a non-string",
     file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustNotHitPaths = ["/blog", 42]; },
+    pattern: /mustNotHitPaths must be a non-empty string\[\]/,
+  },
+  {
+    name: "--new rejects an empty mustNotHitPaths entry",
+    file: "eval-badcases.json",
     edit: (b) => { b.badcases[0].expected.mustNotHitPaths = [""]; },
     pattern: /mustNotHitPaths must be a non-empty string\[\]/,
   },
@@ -430,16 +450,32 @@ test("--new persists a URL anchor with its stability_class", (t) => {
   assert.equal(cov.dimensions.find((d) => d.dimension === "intent")?.classes?.howto, 2);
 });
 
+test("a mustHitPaths-only answer row still auto-scopes live", (t) => {
+  const dir = tree(t);
+  editJson(join(dir, "eval-badcases.json"), (b) => {
+    delete b.badcases[0].expected.mustHitHosts;
+  });
+  const r = run(dir, ["--id", "docs-bc0001", "--new"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(readJson(dir, "eval-golden.json").scopes["docs-g0002"], "live");
+});
+
 test("a valid --new writes an entry the store validator accepts", async (t) => {
   const dir = tree(t);
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
-  const { validateDocsGoldenEntry, validateCoverageManifest } = await import(
+  const { crossCheckDocsGolden, validateCoverageManifest, validateDocsGoldenEntry } = await import(
     "../../packages/store/src/eval/docs-golden.ts"
   );
   const written = readJson(dir, "eval-golden.json");
+  const manifest = readJson(dir, "eval-looks.coverage.json");
   assert.deepEqual(validateDocsGoldenEntry(written.entries.at(-1)), [], "the written row passes the real entry validator");
-  assert.deepEqual(validateCoverageManifest(readJson(dir, "eval-looks.coverage.json")), [], "the recount leaves a valid manifest");
+  assert.deepEqual(validateCoverageManifest(manifest), [], "the recount leaves a valid manifest");
+  assert.deepEqual(
+    crossCheckDocsGolden(written, manifest, ["docs.example.com"]),
+    [],
+    "the recounted manifest still agrees with the entries it counts",
+  );
 });
 
 test("--new rejects a question already in the golden corpus", (t) => {
