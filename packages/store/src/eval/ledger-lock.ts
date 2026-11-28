@@ -17,6 +17,7 @@
 import { closeSync, linkSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
+import { isPositiveWholeInt } from "@anysearch-cli/retriever";
 import { probePid } from "../process-liveness.js";
 
 // A lock whose claim names no usable identity is reaped past this age. It bounds the wait on a
@@ -104,7 +105,7 @@ function readLock(lockPath: string): LockSnapshot | null {
 // the owner. Only a positive pid is an identity worth a probe.
 function lockIsReapable(snapshot: LockSnapshot): boolean {
   const pid = snapshot.owner?.pid;
-  if (typeof pid === "number" && Number.isInteger(pid) && pid > 0) {
+  if (isPositiveWholeInt(pid)) {
     const liveness = probePid(pid);
     if (liveness === "dead") return true;
     if (liveness === "alive") return false;

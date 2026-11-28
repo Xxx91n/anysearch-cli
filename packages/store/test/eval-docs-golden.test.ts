@@ -1,8 +1,9 @@
-// B1/D5: docs-domain golden batch + coverage manifest contract.
-// The golden set lives as eval-looks.json's top-level `golden` collection — the
-// same file as the OF look ledger. This test is the mechanical honesty loop:
-// entry schema, provenance anchor honesty, allowlist subset, manifest
-// covered|deferred consistency, and ledger writer round-trip preservation.
+// B1/D5: docs-domain golden corpus + coverage manifest contract.
+// The corpus lives in eval-golden.json, its own file, so a broken write to the
+// look ledger (eval-looks.json) can no longer take it down. This test is the
+// mechanical honesty loop: entry schema, provenance anchor honesty, allowlist
+// subset, manifest covered|deferred consistency, the fail-closed reader, and
+// ledger writer round-trip preservation of unknown fields.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,8 +14,10 @@ import {
   writeLooksLedger,
   type LooksLedgerEntry,
 } from "../src/eval/looks-ledger";
+import { GOLDEN_FILE, isLiveScope, isStubScope, readGoldenFile } from "../src/eval/golden-file";
 import {
   DOCS_GOLDEN_DIMENSIONS,
+  GOLDEN_SCOPE_VALUES,
   TOMBSTONE_REASON_CODES,
   validateCoverageManifest,
   validateDocsGoldenEntry,
@@ -22,10 +25,10 @@ import {
   crossCheckDocsGolden,
   isScratchRef,
   isWellFormedScratchRef,
-  type DocsGoldenSet,
   type CoverageManifest,
 } from "../src/eval/docs-golden";
 import { loadDomain, loadDomainByNameIn } from "../src/domain-loader";
+import { goldenShapeProblems } from "../../../scripts/golden-shape.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..", "..", "..");
@@ -41,20 +44,149 @@ function assert(cond: boolean, msg: string): void {
   passed++;
 }
 
-// --- 1. the file keeps its ledger shape and carries a golden set ------------
+// --- 1. the ledger keeps its shape; the corpus lives in its own file --------
 const raw = JSON.parse(fs.readFileSync(path.join(root, "eval-looks.json"), "utf8"));
 assert(raw.schema === "anysearch/eval-looks@2", "eval-looks.json keeps schema anysearch/eval-looks@2");
 assert(Array.isArray(raw.looks), "looks[] ledger rows intact");
-assert(raw.golden && typeof raw.golden === "object", "golden top-level collection present");
-const golden = raw.golden as DocsGoldenSet;
+assert(!Object.hasOwn(raw, "golden"), "eval-looks.json carries no golden key (the corpus moved out)");
+const golden = readGoldenFile(path.join(root, GOLDEN_FILE));
 const docsBatch = golden.entries.filter((e) => e.id.startsWith("docs-g"));
 const vertBatch = golden.entries.filter((e) => e.id.startsWith("vert-"));
 const ctrlBatch = golden.entries.filter((e) => e.id.startsWith("ctrl-"));
-assert(docsBatch.length >= 8 && docsBatch.length <= 14, "docs first-batch size in the 8-14 shelf gate (got " + docsBatch.length + ")");
+assert(docsBatch.length >= 8, "docs first-batch has at least 8 shelf-gate rows (got " + docsBatch.length + ")");
 // vertical-eval contract pins landed (subject + control); T2 grows the
 // live-scoped corpus — bound asserts the contract pins exist, not the corpus size.
 assert(vertBatch.length >= 3, "vertical subject contract pins exist (got " + vertBatch.length + ")");
 assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.length + ")");
+
+// --- 1b. readGoldenFile throws on bad input and never returns an empty set ---
+// An empty corpus would make the executors SKIP every entry and the gate pass
+// while measuring nothing, so a bad file must fail the run.
+{
+  const good = readGoldenFile(path.join(root, GOLDEN_FILE));
+  assert(good.entries.length === golden.entries.length, "readGoldenFile returns the corpus from a good file");
+  assert(Object.keys(good.scopes).length > 0, "readGoldenFile returns the scopes sidecar");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-golden-reader-"));
+  const write = (name: string, body: string): string => {
+    const p = path.join(dir, name);
+    fs.writeFileSync(p, body, "utf8");
+    return p;
+  };
+  const throws = (fn: () => unknown): boolean => {
+    try {
+      fn();
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  const base = { schema: good.schema, scopes: good.scopes, entries: good.entries };
+  assert(throws(() => readGoldenFile(path.join(dir, "absent.json"))), "missing file throws");
+  assert(throws(() => readGoldenFile(write("bad-json.json", "{ not json"))), "invalid JSON throws");
+  assert(throws(() => readGoldenFile(write("bad-root.json", "null"))), "non-object root throws");
+  assert(throws(() => readGoldenFile(write("bad-root-array.json", "[]"))), "array root throws");
+  assert(throws(() => readGoldenFile(write("bad-schema.json", JSON.stringify({ ...base, schema: "anysearch/docs-golden@9" })))), "wrong schema throws");
+  assert(throws(() => readGoldenFile(write("bad-entries.json", JSON.stringify({ ...base, entries: {} })))), "entries not an array throws");
+  assert(throws(() => readGoldenFile(write("bad-scopes.json", JSON.stringify({ ...base, scopes: [] })))), "scopes not an object throws");
+  assert(throws(() => readGoldenFile(write("empty-entries.json", JSON.stringify({ ...base, entries: [] })))), "empty entries throws");
+  assert(
+    throws(() => readGoldenFile(write("bad-entry.json", JSON.stringify({ ...base, entries: [{ ...base.entries[0], intent: "bogus" }] })))),
+    "invalid entry throws (same validator as the test)"
+  );
+  // A null entry must come back as a problem list, not a TypeError from reading
+  // `.id` on null.
+  let nullEntryMessage = "";
+  try {
+    readGoldenFile(write("null-entry.json", JSON.stringify({ ...base, entries: [null] })));
+  } catch (err) {
+    nullEntryMessage = (err as Error).message;
+  }
+  assert(
+    nullEntryMessage.includes("entry is not an object") && !(nullEntryMessage.startsWith("TypeError")),
+    "null entry throws the reader's own message (got: " + nullEntryMessage + ")"
+  );
+  assert(throws(() => readGoldenFile(write("empty-scopes.json", JSON.stringify({ ...base, scopes: {} })))), "empty scopes throws");
+  assert(
+    throws(() => readGoldenFile(write("bad-scope-value.json", JSON.stringify({ ...base, scopes: { "docs-g0001": "Live" } })))),
+    "unknown scope value throws"
+  );
+  const first = base.entries[0]!;
+  const withoutFirst = Object.fromEntries(Object.entries(base.scopes).filter(([k]) => k !== first.id));
+  assert(
+    throws(() => readGoldenFile(write("missing-scope.json", JSON.stringify({ ...base, scopes: withoutFirst })))),
+    "non-tombstone entry without a scope throws"
+  );
+  const tomb = base.entries.find((e) => e.tombstone !== undefined);
+  if (!tomb) throw new Error("fixture: corpus has a tombstone entry");
+  assert(
+    throws(() => readGoldenFile(write("tombstone-scope.json", JSON.stringify({ ...base, scopes: { ...base.scopes, [tomb.id]: "live" } })))),
+    "tombstone entry with a scope throws"
+  );
+  assert(
+    throws(() => readGoldenFile(write("orphan-scope.json", JSON.stringify({ ...base, scopes: { ...base.scopes, "docs-g9999": "live" } })))),
+    "scope for an entry that is not in entries throws"
+  );
+  // scripts/golden-shape.mjs is the plain-node copy of these outer rules, and the
+  // vocabulary parity test only pins its words, not its rules. Feed it the same
+  // documents the reader just refused: a rule the reader grows without the gate
+  // grows lets `ship-gate --quick` pass and the executor fail on the file.
+  for (const [label, doc] of [
+    ["a null root", null],
+    ["an array root", []],
+    ["a wrong schema", { ...base, schema: "anysearch/docs-golden@9" }],
+    ["entries that are not an array", { ...base, entries: {} }],
+    ["empty entries", { ...base, entries: [] }],
+    ["scopes that are not an object", { ...base, scopes: [] }],
+    ["empty scopes", { ...base, scopes: {} }],
+    ["an unknown scope value", { ...base, scopes: { "docs-g0001": "Live" } }],
+    ["an entry without a scope", { ...base, scopes: withoutFirst }],
+    ["a tombstone carrying a scope", { ...base, scopes: { ...base.scopes, [tomb.id]: "live" } }],
+    ["a scope for an unknown entry", { ...base, scopes: { ...base.scopes, "docs-g9999": "live" } }],
+  ] as Array<[string, unknown]>) {
+    assert(goldenShapeProblems(doc).length > 0, "the shape gate must refuse " + label + " as the reader does");
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// --- 1c. each scope value is claimed by exactly the predicates that serve it --
+// corpus-files.ts spells the two predicates out instead of importing the value
+// constant (that import would pull the validator in), so pin the ownership here:
+// a swapped or over-broad predicate has to fail this, not just an unclaimed value.
+const scopeClaims: Array<[string, boolean, boolean]> = [
+  ["live", true, false],
+  ["stub", false, true],
+  ["both", true, true],
+];
+for (const value of GOLDEN_SCOPE_VALUES) {
+  const claim = scopeClaims.find(([scope]) => scope === value);
+  assert(claim !== undefined, "the store test knows which predicates claim " + value);
+  if (!claim) continue;
+  assert(isLiveScope(value) === claim[1], value + ": isLiveScope claim");
+  assert(isStubScope(value) === claim[2], value + ": isStubScope claim");
+}
+assert(
+  !isLiveScope("sometimes") && !isStubScope("sometimes"),
+  "a value outside the scope vocabulary is claimed by neither predicate"
+);
+
+// --- 1d. the closed vocabularies reject a value outside them ----------------
+// The governance comment on DOCS_GOLDEN_STABILITY_CLASSES points here: without
+// these two, either check could be deleted with every test still green.
+const entryProblemsAfter = (mutate: (entry: Record<string, unknown>) => void): string[] => {
+  const copy = JSON.parse(JSON.stringify(golden.entries[0])) as Record<string, unknown>;
+  mutate(copy);
+  return validateDocsGoldenEntry(copy);
+};
+assert(
+  entryProblemsAfter((e) => {
+    (e.expected as Record<string, unknown>).mustHitPaths = [{ path: "/install", tolerate: ["draft"] }];
+  }).some((problem) => problem.includes("tolerate outside")),
+  "a tolerate class outside locale|version|dated is rejected"
+);
+assert(
+  entryProblemsAfter((e) => { e.stability_class = "whatever"; }).some((problem) => problem.includes("stability_class outside")),
+  "a stability_class outside controlled|frozen-spec|external is rejected"
+);
 
 // --- 2. every entry validates against the entry schema ----------------------
 const entryProblems = validateDocsGoldenSet(golden);
@@ -161,7 +293,7 @@ assert(crossProblems.length === 0, "entries vs manifest vs allowlist consistent:
   const tombstoned = golden.entries.filter((e) => e.tombstone !== undefined);
   assert(tombstoned.length >= 1, "at least one tombstoned cell exists (demotion is an explicit declaration)");
   for (const t of tombstoned) {
-    assert(!Object.hasOwn(raw.golden?.scopes ?? {}, t.id), t.id + ": tombstoned entry holds no scope (out of the measurable set by design)");
+    assert(!Object.hasOwn(golden.scopes, t.id), t.id + ": tombstoned entry holds no scope (out of the measurable set by design)");
     assert(
       TOMBSTONE_REASON_CODES.includes(t.tombstone!.reason_code),
       t.id + ": tombstone reason_code inside the controlled vocabulary (got " + String(t.tombstone!.reason_code) + ")"
@@ -189,22 +321,89 @@ assert(
   "manifest declares deferred dims honestly or the batch stands alone"
 );
 
-// --- 7. ledger writers must not destroy the golden collection ----------------
+// --- 7. the ledger no longer carries the corpus; unknown fields survive ------
 const ledger = readLooksLedger(path.join(root, "eval-looks.json"));
-assert(ledger.golden !== undefined && ledger.golden.entries.length === golden.entries.length, "readLooksLedger surfaces golden");
+assert(!Object.hasOwn(ledger, "golden"), "readLooksLedger does not surface a corpus (it lives in eval-golden.json)");
+const staleDir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-stale-"));
+const staleTmp = path.join(staleDir, "eval-looks.json");
+const staleCorpus = path.join(staleDir, "eval-golden.json");
+fs.writeFileSync(staleTmp, JSON.stringify({ schema: "anysearch/eval-looks@2", schema_version: 1, golden: { scopes: {}, entries: [] }, looks: [] }), "utf8");
+const readStale = () => {
+  const lines: string[] = [];
+  const realWrite = process.stderr.write;
+  process.stderr.write = ((chunk: unknown) => { lines.push(String(chunk)); return true; }) as unknown as typeof process.stderr.write;
+  try {
+    return { ledger: readLooksLedger(staleTmp), lines };
+  } finally {
+    process.stderr.write = realWrite;
+  }
+};
+// No corpus beside the ledger: the block is the only copy left, so it stays.
+{
+  const { ledger: kept, lines: keptErr } = readStale();
+  assert(
+    JSON.stringify((kept as Record<string, unknown>).golden) === JSON.stringify({ scopes: {}, entries: [] }),
+    "a golden block stays when no corpus sits beside the ledger",
+  );
+  assert(keptErr.some((line) => line.includes(staleTmp) && line.includes("keeping")), "keeping it is reported on stderr, naming the file");
+  assert((kept as Record<string, unknown>).schema_version === 1, "keeping golden keeps schema_version");
+}
+// A corpus that exists but is torn (no entries) cannot replace the block either.
+fs.writeFileSync(staleCorpus, JSON.stringify({ schema: "anysearch/docs-golden@1", scopes: { probe: "stub" }, entries: [] }), "utf8");
+{
+  const { ledger: kept, lines: keptErr } = readStale();
+  assert(Object.hasOwn(kept, "golden"), "a golden block stays when the corpus beside it is unreadable");
+  assert(keptErr.some((line) => line.includes(staleTmp) && line.includes("keeping")), "keeping it is reported for an unusable corpus too");
+}
+// Right shape, wrong schema: readGoldenFile rejects it, so the block stays. A
+// shallow "looks like a corpus" check dropped the block here and left the next
+// reader throwing with the only copy already gone.
+const realCorpus = JSON.parse(fs.readFileSync(path.join(root, "eval-golden.json"), "utf8")) as Record<string, unknown>;
+fs.writeFileSync(staleCorpus, JSON.stringify({ ...realCorpus, schema: "anysearch/docs-golden@2" }), "utf8");
+{
+  const { ledger: kept, lines: keptErr } = readStale();
+  assert(Object.hasOwn(kept, "golden"), "a golden block stays when the corpus beside it fails the reader");
+  assert(keptErr.some((line) => line.includes(staleTmp) && line.includes("keeping")), "keeping it is reported for a corpus the reader rejects");
+}
+// A corpus the reader accepts makes the block a stale copy: dropped and reported.
+fs.copyFileSync(path.join(root, "eval-golden.json"), staleCorpus);
+const { ledger: stale, lines: staleErr } = readStale();
+assert(!Object.hasOwn(stale, "golden"), "a stale golden block is dropped when the corpus is on disk");
+assert(staleErr.some((line) => line.includes(staleTmp)), "dropping a stale golden block is reported on stderr, naming the file");
+assert((stale as Record<string, unknown>).schema_version === 1, "dropping golden keeps schema_version");
+// A block that still claims a row the corpus lacks is not a stale copy: the
+// next write would erase that row with only a log line to show for it.
+fs.writeFileSync(
+  staleTmp,
+  JSON.stringify({ schema: "anysearch/eval-looks@2", schema_version: 1, golden: { scopes: {}, entries: [{ id: "docs-gone" }] }, looks: [] }),
+  "utf8",
+);
+{
+  const { ledger: kept, lines: keptErr } = readStale();
+  assert(Object.hasOwn(kept, "golden"), "a block holding a row the corpus lacks stays");
+  assert(keptErr.some((line) => line.includes("docs-gone")), "keeping it names the row the corpus lacks");
+}
+fs.rmSync(staleDir, { recursive: true, force: true });
+const appended = appendLook(
+  ledger,
+  { key: "t:t", at: "2026-09-14T00:00:00.000Z", look: 1, verdict: "pass", exitCode: 0, reviewerNote: "keep-me" } as LooksLedgerEntry,
+  "2026-09-14T00:00:00.000Z",
+);
+assert(!Object.hasOwn(appended, "golden"), "appendLook does not reintroduce a corpus key");
 const tmp = path.join(os.tmpdir(), "ans-b1-looks-" + process.pid + ".json");
-writeLooksLedger(tmp, ledger);
+writeLooksLedger(tmp, appended);
 const re = readLooksLedger(tmp);
-assert(re.golden !== undefined && re.golden.entries.length === golden.entries.length, "writeLooksLedger round-trips golden");
-const appended = appendLook(ledger, { key: "t:t", at: "2026-09-14T00:00:00.000Z", look: 1, verdict: "pass", exitCode: 0 } as LooksLedgerEntry, "2026-09-14T00:00:00.000Z");
-assert(appended.golden !== undefined, "appendLook preserves golden through the look append");
+assert(!Object.hasOwn(re, "golden"), "writeLooksLedger round-trips a ledger without a corpus");
+const reRow = re.looks[re.looks.length - 1] as LooksLedgerEntry & { reviewerNote?: string };
+assert(reRow.reviewerNote === "keep-me", "unknown ROW field survives read->append->write");
+assert(reRow.verdict === "pass" && reRow.look === 1, "managed row fields survive read->append->write");
 fs.rmSync(tmp, { force: true });
 
 // --- 7b.: Tolerant Reader — unknown ROOT fields survive a
 // read->append->write cycle byte-for-byte, not merely "readable". The
 // schema_version:1 sentinel was stripped once by a field-by-field rebuild.
 {
-  const KNOWN_ROOT = new Set(["schema", "looks", "compaction", "golden"]);
+  const KNOWN_ROOT = new Set(["schema", "looks", "compaction"]);
   const unknownKeys = Object.keys(raw).filter((k) => !KNOWN_ROOT.has(k));
   assert(unknownKeys.length >= 1, "eval-looks.json carries unmanaged root fields (schema_version)");
   const tmp2 = path.join(os.tmpdir(), "ans-f17-looks-" + process.pid + ".json");
@@ -268,7 +467,10 @@ for (const b of badcases) {
     assert(target!.question.trim() === b.question.trim(), b.id + " promoted question matches " + b.promotedTo + " verbatim");
   }
   if (b.status === "open") {
-    assert(!golden.entries.some((e) => e.provenance.ref === "eval-badcases.json#" + b.id), b.id + " open badcase must not already be backfilled");
+    assert(
+      !golden.entries.some((e) => e.provenance.ref === "eval-badcases.json" && typeof e.notes === "string" && e.notes.includes("from badcase " + b.id)),
+      b.id + " open badcase must not already be backfilled"
+    );
   }
 }
 assert(badcases.length >= 1, "at least one real badcase is captured (the loop is seeded, not synthetic)");

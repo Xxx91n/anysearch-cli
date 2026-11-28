@@ -3,6 +3,7 @@ export * from "./ports";
 export * from "./fallback-domain";
 export * from "./runtime";
 export * from "./engine";
+export * from "./envelope-arms";
 // One remedy sentence per provider error class, printed by both hosts.
 export * from "./provider-error-hints";
 // #533: what is wrong with the user credential file, said once for every surface.

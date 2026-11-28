@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createEngine } from "../src/composition";
+import { createEngine, reportedDeadlineMs } from "../src/composition";
 import { resolveSearchCredentials } from "@anysearch-cli/store";
 
 function closeResult(r: { store: unknown; observation: { close?: () => void } }) {
@@ -171,6 +171,33 @@ try {
   const hugeClock = createEngine(undefined, { dbPath: ":memory:", searchCredentials: envCredentials, requestTimeoutMs: 3_000_000_000, requestTimeoutCapMs: 3_000_000_000 });
   assert.equal(hugeClock.requestTimeoutMs, 2_147_483_647, "超过引擎上限的值和 cap 都夹到 2^31-1，不把 RangeError 甩给调用方");
   closeResult(hugeClock);
+
+  const retriever = { search: async () => { throw new Error("not run"); }, requestTimeoutMs: 9000 };
+  assert.equal(reportedDeadlineMs({ requestTimeoutMs: 4000, retriever }), 9000, "结果的包装器报了预算就用它");
+  for (const bad of [0, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(reportedDeadlineMs({ requestTimeoutMs: 4000, retriever: { ...retriever, requestTimeoutMs: bad } }), 4000, "包装器报 0/NaN/Infinity 时回落结果自己的预算（传的是 " + String(bad) + "）");
+  }
+  // A wrapper may report more than the engine's ceiling; the report is clamped
+  // to what the engine actually waits with.
+  assert.equal(
+    reportedDeadlineMs({ requestTimeoutMs: 4000, retriever: { ...retriever, requestTimeoutMs: 3_000_000_000 } }),
+    2_147_483_647,
+    "包装器报的值超过引擎上限时夹到 2^31-1"
+  );
+  // The result's own copy is held to the same rule: a hand-built
+  // CompositionResult must not report a budget the engine would have rejected.
+  for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(
+      reportedDeadlineMs({ requestTimeoutMs: bad, retriever: { search: async () => { throw new Error("not run"); } } }),
+      4000,
+      "结果自己的预算非法时回落 4s（传的是 " + String(bad) + "）"
+    );
+  }
+  assert.equal(
+    reportedDeadlineMs({ requestTimeoutMs: 3_000_000_000, retriever: { search: async () => { throw new Error("not run"); } } }),
+    2_147_483_647,
+    "结果自己的预算超过引擎上限时夹到 2^31-1"
+  );
 
   // Best-effort diagnostic: a broken stderr must not crash the fail-open
   // build. Sync arm — write() throws. The failure has to be a real one, so the

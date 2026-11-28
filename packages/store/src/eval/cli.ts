@@ -239,12 +239,10 @@ async function main(): Promise<number> {
     writeFileSync(baselinePath, JSON.stringify(next, null, 2) + "\n", "utf8");
     // calibration flips the fingerprint pair, so the pre-registered OF look ledger
     // resets. The ledger is the git-committed repo-root file; commit the reset with the baseline.
-    // the reset must not destroy the docs-domain golden batch that
-    // shares this file — read-then-write preserves the golden collection.
     const priorLooks = readLooksLedger(LOOKS_LEDGER_PATH);
     // the reset drops `looks` and the now-orphaned `compaction`
-    // only — every other root field (golden, schema_version, future unknowns)
-    // rides through the spread instead of being rebuilt away.
+    // only — every other root field (schema_version, future unknowns) rides
+    // through the spread instead of being rebuilt away.
     const { looks: _droppedRows, compaction: _droppedCompaction, ...preserved } = priorLooks;
     writeLooksLedger(LOOKS_LEDGER_PATH, { ...preserved, ...emptyLooksLedger() });
     console.log(`[eval:calibrate] baseline written: fingerprint=${next.fingerprint} allowance sup<=${next.allowance.supersessionFails} qfp<=${next.allowance.quarantineFp} relationGain sigmaDU=${next.relationGain!.sigmaDU} lockedN=${next.relationGain!.lockedN} (rawN=${next.relationGain!.rawN}, pilot n=${pilotDeltas.length})`);
@@ -260,7 +258,7 @@ async function main(): Promise<number> {
   let baseline: EvalBaseline | null = null;
   if (existsSync(baselinePath)) baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as EvalBaseline;
 
-  // +: per-fingerprint OF look ledger — the git-committed repo-root
+  // per-fingerprint OF look ledger — the git-committed repo-root
   // eval-looks.json. Reading always happens so the next look number comes from committed state;
   // the append happens AFTER evaluateGate (below) so each row can carry its verdict.
   const looksPath = LOOKS_LEDGER_PATH;

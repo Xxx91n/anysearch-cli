@@ -239,8 +239,9 @@ export const ROOT_READERS = [
   },
   { path: "AGENTS.md", readers: ["@anysearch-cli/store"] },
   { path: "eval-badcases.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
+  { path: "eval-golden.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
   { path: "eval-looks.coverage.json", readers: ["@anysearch-cli/store"] },
-  { path: "eval-looks.json", readers: ["@anysearch-cli/kernel", "@anysearch-cli/store"] },
+  { path: "eval-looks.json", readers: ["@anysearch-cli/store"] },
 ];
 
 /** The readers the table names for a root file, or null when it names none. */

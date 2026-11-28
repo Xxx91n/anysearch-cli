@@ -1,0 +1,3581 @@
+{
+  "schema": "anysearch/docs-golden@1",
+  "scopes": {
+    "docs-g0001": "live",
+    "docs-g0002": "live",
+    "docs-g0003": "live",
+    "docs-g0004": "live",
+    "docs-g0005": "live",
+    "docs-g0006": "live",
+    "docs-g0007": "stub",
+    "docs-g0008": "live",
+    "docs-g0009": "live",
+    "docs-g0010": "live",
+    "docs-g0011": "live",
+    "docs-g0012": "live",
+    "docs-g0013": "stub",
+    "docs-g0014": "both",
+    "vert-f0001": "stub",
+    "vert-f0002": "stub",
+    "vert-f0003": "stub",
+    "ctrl-0001": "stub",
+    "ctrl-0002": "stub",
+    "vert-f1101": "live",
+    "vert-f1102": "live",
+    "vert-f1103": "live",
+    "vert-f1104": "live",
+    "vert-f1106": "live",
+    "vert-f1201": "live",
+    "vert-f1202": "live",
+    "vert-f1203": "live",
+    "vert-f1204": "live",
+    "vert-f1205": "live",
+    "vert-a1101": "live",
+    "vert-a1102": "live",
+    "vert-a1103": "live",
+    "vert-a1104": "live",
+    "vert-a1105": "live",
+    "vert-a1201": "live",
+    "vert-a1202": "live",
+    "vert-a1203": "live",
+    "vert-a1204": "live",
+    "vert-a1205": "live",
+    "vert-c1101": "live",
+    "vert-c1102": "live",
+    "vert-c1103": "live",
+    "vert-c1104": "live",
+    "vert-c1105": "live",
+    "vert-c1201": "live",
+    "vert-c1202": "live",
+    "vert-c1203": "live",
+    "vert-c1204": "live",
+    "vert-c1205": "live",
+    "vert-h1101": "live",
+    "vert-h1102": "live",
+    "vert-h1103": "live",
+    "vert-h1104": "live",
+    "vert-h1105": "live",
+    "vert-h1201": "live",
+    "vert-h1202": "live",
+    "vert-h1203": "live",
+    "vert-h1204": "live",
+    "vert-h1205": "live",
+    "vert-i1101": "live",
+    "vert-i1102": "live",
+    "vert-i1103": "live",
+    "vert-i1104": "live",
+    "vert-i1105": "live",
+    "vert-i1201": "live",
+    "vert-i1202": "live",
+    "vert-i1203": "live",
+    "vert-i1204": "live",
+    "vert-i1205": "live",
+    "ctrl-f101": "live",
+    "ctrl-f102": "live",
+    "ctrl-f103": "live",
+    "ctrl-f104": "live",
+    "ctrl-a101": "live",
+    "ctrl-a102": "live",
+    "ctrl-a103": "live",
+    "ctrl-a104": "live",
+    "ctrl-c101": "live",
+    "ctrl-c102": "live",
+    "ctrl-c103": "live",
+    "ctrl-c104": "live",
+    "ctrl-h101": "live",
+    "ctrl-h102": "live",
+    "ctrl-h103": "live",
+    "ctrl-h104": "live",
+    "ctrl-i101": "live",
+    "ctrl-i102": "live",
+    "ctrl-i103": "live",
+    "ctrl-i104": "live"
+  },
+  "entries": [
+    {
+      "id": "docs-g0001",
+      "domain": "docs",
+      "question": "MCP 的 session id 在 Streamable HTTP transport 里怎么传播？",
+      "questionLang": "zh",
+      "intent": "reference",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "modelcontextprotocol.io"
+        ],
+        "mustHitUrls": [
+          "https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http"
+        ],
+        "mustHitPaths": [
+          {
+            "path": "/basic/transports",
+            "tolerate": [
+              "dated"
+            ]
+          }
+        ],
+        "mustNotHitPaths": [
+          "/legacy/"
+        ],
+        "minResults": 1
+      },
+      "dimensions": [
+        "intent:reference",
+        "source-tier:spec",
+        "freshness:stable",
+        "lang:zh",
+        "attribution:claim",
+        "hops:single"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": "apps/plugin/test/propagation.test.ts",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "session-id propagation work; apps/plugin propagation.test.ts is the in-repo evidence",
+      "stability_class": "frozen-spec",
+      "failure_class": "external-doc-dated-rotation",
+      "migration": {
+        "from": "mustHitUrls:[https://modelcontextprotocol.io/specification/2025-06-18/basic/transports] (byte-exact only)",
+        "to": "mustHitPaths:[/basic/transports tolerate dated] + mustNotHitPaths:[/legacy/] + byte-exact mustHitUrls re-anchored to the frozen 2026-07-28 streamable-http spec snapshot",
+        "drift": "probe-0 live 2026-09-16: modelcontextprotocol.io returned /specification/{2025-06-18,2026-07-28,draft,2025-11-25}/basic/transports* + sdk subdomains — dated spec path rotates, page family stable; leg calibration: 2025-06-18 snapshot present in probe-0/run-01/run-02 then absent runs 03-06 (dated-snapshot coverage rotates) — re-anchored to 2026-07-28 streamable-http, 3/3 recurrence in probe-1",
+        "decidedAt": "2026-09-16"
+      },
+      "watch": true
+    },
+    {
+      "id": "docs-g0002",
+      "domain": "docs",
+      "question": "pnpm-workspace.yaml 的 pmOnFail 和 package.json 的 devEngines.packageManager 怎么配合钉死 pnpm 版本？",
+      "questionLang": "zh",
+      "intent": "howto",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "pnpm.io"
+        ],
+        "mustHitPaths": [
+          {
+            "path": "/settings",
+            "tolerate": [
+              "locale",
+              "version"
+            ]
+          }
+        ],
+        "mustNotHitPaths": [
+          "/blog/"
+        ],
+        "minResults": 1
+      },
+      "dimensions": [
+        "intent:howto",
+        "source-tier:settings",
+        "freshness:active",
+        "lang:zh",
+        "attribution:claim",
+        "hops:single"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": "pnpm-workspace.yaml",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "pinning work; repo package.json devEngines + pnpm-workspace.yaml pmOnFail in-repo",
+      "stability_class": "external",
+      "failure_class": "external-doc-locale-version-wrap",
+      "migration": {
+        "from": "mustHitUrls:[https://pnpm.io/settings]",
+        "to": "mustHitPaths:[/settings tolerate locale+version] + mustNotHitPaths:[/blog/]",
+        "drift": "probe-0 live 2026-09-16: pnpm.io returned /settings plus /zh/ /it/ /10.x/ /11.x/ wrapped variants — locale/version wrappers dominate the byte-level path",
+        "decidedAt": "2026-09-16"
+      }
+    },
+    {
+      "id": "docs-g0003",
+      "domain": "docs",
+      "question": "better-sqlite3 不想跑 node-gyp，pnpm 怎么只放行它的 prebuild、不跑安装脚本？",
+      "questionLang": "zh",
+      "intent": "troubleshoot",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "pnpm.io"
+        ],
+        "mustHitPaths": [
+          {
+            "path": "/settings",
+            "tolerate": [
+              "locale",
+              "version"
+            ]
+          }
+        ],
+        "mustNotHitPaths": [
+          "/blog/"
+        ],
+        "minResults": 1
+      },
+      "dimensions": [
+        "intent:troubleshoot",
+        "source-tier:settings",
+        "freshness:active",
+        "lang:zh",
+        "attribution:claim",
+        "hops:single"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": "AGENTS.md",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "AGENTS.md platform note (allowBuilds better-sqlite3) + pnpm-workspace.yaml in-repo",
+      "stability_class": "external",
+      "failure_class": "external-doc-locale-version-wrap",
+      "migration": {
+        "from": "mustHitUrls:[https://pnpm.io/settings]",
+        "to": "mustHitPaths:[/settings tolerate locale+version] + mustNotHitPaths:[/blog/]",
+        "drift": "probe-0 live 2026-09-16: pnpm.io returned /settings plus /zh/ /it/ /10.x/ /11.x/ wrapped variants — locale/version wrappers dominate the byte-level path",
+        "decidedAt": "2026-09-16"
+      }
+    },
+    {
+      "id": "docs-g0004",
+      "domain": "docs",
+      "question": "tsconfig 的 moduleResolution \"bundler\" 和 \"nodenext\" 区别是什么？",
+      "questionLang": "zh",
+      "intent": "comparison",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "www.typescriptlang.org"
+        ],
+        "mustHitPaths": [
+          {
+            "path": "/tsconfig",
+            "tolerate": [
+              "locale"
+            ]
+          }
+        ],
+        "mustNotHitPaths": [
+          "/play/"
+        ],
+        "minResults": 1
+      },
+      "dimensions": [
+        "intent:comparison",
+        "source-tier:reference",
+        "freshness:stable",
+        "lang:zh",
+        "attribution:claim",
+        "hops:single"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": "apps/cli/tsconfig.json",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "all 8 repo tsconfigs use moduleResolution Bundler + paths to ../../packages/*/src",
+      "stability_class": "external",
+      "failure_class": "external-doc-path-flaky",
+      "migration": {
+        "from": "mustHitUrls:[https://www.typescriptlang.org/tsconfig]",
+        "to": "mustHitPaths:[/tsconfig tolerate locale] + mustNotHitPaths:[/play/]",
+        "drift": "probe-0 live 2026-09-16: typescriptlang.org returned /tsconfig and /tsconfig/<option>.html variants (ko-localized forms seen) — exact bare path flaky across runs",
+        "decidedAt": "2026-09-16"
+      },
+      "watch": true
+    },
+    {
+      "id": "docs-g0005",
+      "domain": "docs",
+      "question": "MCP 规范里 HTTP+SSE transport 是不是已经被 Streamable HTTP 取代了？",
+      "questionLang": "zh",
+      "intent": "factoid",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "modelcontextprotocol.io"
+        ],
+        "mustHitUrls": [
+          "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"
+        ],
+        "mustHitPaths": [
+          {
+            "path": "/basic/transports",
+            "tolerate": [
+              "dated"
+            ]
+          }
+        ],
+        "mustNotHitPaths": [
+          "/legacy/"
+        ],
+        "minResults": 1
+      },
+      "dimensions": [
+        "intent:factoid",
+        "source-tier:spec",
+        "freshness:supersede-event",
+        "lang:zh",
+        "attribution:claim",
+        "hops:single"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": ".github/workflows/conformance.yml",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "repo runs @modelcontextprotocol/conformance weekly; SSE deprecation is a real spec supersede event (2025-03-26)",
+      "stability_class": "frozen-spec",
+      "failure_class": "external-doc-dated-rotation",
+      "migration": {
+        "from": "mustHitUrls:[https://modelcontextprotocol.io/specification/2025-06-18/basic/transports]",
+        "to": "mustHitPaths:[/basic/transports tolerate dated] + mustNotHitPaths:[/legacy/] + byte-exact mustHitUrls re-anchored to the frozen 2025-11-25 spec snapshot (observed in probe-0)",
+        "drift": "probe-0 live 2026-09-16: modelcontextprotocol.io returned /specification/{2025-06-18,2026-07-28,draft,2025-11-25}/basic/transports* + sdk subdomains — dated spec path rotates, page family stable",
+        "decidedAt": "2026-09-16"
+      },
+      "watch": true
+    },
+    {
+      "id": "docs-g0006",
+      "domain": "docs",
+      "question": "Where does tsc write the .tsbuildinfo file when incremental is true?",
+      "questionLang": "en",
+      "intent": "reference",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "www.typescriptlang.org"
+        ],
+        "mustHitPaths": [
+          {
+            "path": "/tsconfig",
+            "tolerate": [
+              "locale"
+            ]
+          }
+        ],
+        "mustNotHitPaths": [
+          "/play/"
+        ],
+        "minResults": 1
+      },
+      "dimensions": [
+        "intent:reference",
+        "source-tier:reference",
+        "freshness:stable",
+        "lang:en",
+        "attribution:claim",
+        "hops:single"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": ".gitignore",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "repo gitignores *.tsbuildinfo across the turbo monorepo",
+      "stability_class": "external",
+      "failure_class": "external-doc-path-flaky",
+      "migration": {
+        "from": "mustHitUrls:[https://www.typescriptlang.org/tsconfig]",
+        "to": "mustHitPaths:[/tsconfig tolerate locale] + mustNotHitPaths:[/play/]",
+        "drift": "probe-0 live 2026-09-16: typescriptlang.org returned /tsconfig and /tsconfig/<option>.html variants (ko-localized forms seen) — exact bare path flaky across runs",
+        "decidedAt": "2026-09-16"
+      },
+      "watch": true
+    },
+    {
+      "id": "docs-g0007",
+      "domain": "docs",
+      "question": "tokio::JoinSet 怎么给检索 fanout 做结构化并发？",
+      "questionLang": "zh",
+      "intent": "howto",
+      "expected": {
+        "verdict": "abstain"
+      },
+      "dimensions": [
+        "intent:howto",
+        "lang:zh",
+        "freshness:stable",
+        "hops:single",
+        "negative:abstain"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": "packages/store/test/eval-abstain.test.ts",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "real out-of-corpus question: CONTEXT.md:9 claimed tokio::JoinSet for a TS codebase; tokio docs outside allowlist → expect abstain | badcase docs-bc0001 observed 10 results (expected abstain)"
+    },
+    {
+      "id": "docs-g0008",
+      "domain": "docs",
+      "question": "pnpm monorepo 里子包 tsconfig 用 paths 指到 workspace 包源码时，moduleResolution 该配什么？",
+      "questionLang": "zh",
+      "intent": "howto",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "pnpm.io"
+        ],
+        "minResults": 1
+      },
+      "dimensions": [
+        "intent:howto",
+        "source-tier:reference",
+        "freshness:stable",
+        "lang:zh",
+        "attribution:domain",
+        "hops:multi"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": "apps/cli/tsconfig.json",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "real config decision embodied by this repo: paths -> ../../packages/*/src under a pnpm workspace",
+      "stability_class": "external",
+      "failure_class": "locale-clustering-suppressed-cross-host",
+      "migration": {
+        "from": "mustHitHosts:[pnpm.io, www.typescriptlang.org] (paired cross-host)",
+        "to": "mustHitHosts:[pnpm.io] single-host; hops:multi kept as dimensions observation, not an assertion",
+        "drift": "probe-0 live 2026-09-16: 10/10 results were pnpm.io/zh/* — locale clustering suppressed the typescriptlang.org leg entirely",
+        "decidedAt": "2026-09-16"
+      }
+    },
+    {
+      "id": "docs-g0009",
+      "domain": "docs",
+      "question": "Option 'baseUrl' is deprecated and will stop functioning in TypeScript 7 — How can I fix this error?",
+      "questionLang": "en",
+      "intent": "troubleshoot",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "www.typescriptlang.org"
+        ],
+        "mustHitPaths": [
+          {
+            "path": "/tsconfig",
+            "tolerate": [
+              "locale"
+            ]
+          }
+        ],
+        "mustNotHitPaths": [
+          "/branding/"
+        ],
+        "minResults": 1
+      },
+      "dimensions": [
+        "intent:troubleshoot",
+        "source-tier:reference",
+        "freshness:supersede-event",
+        "lang:en",
+        "attribution:claim",
+        "hops:single"
+      ],
+      "provenance": {
+        "type": "external-community",
+        "ref": "https://stackoverflow.com/questions/79923194",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "verbatim SO question title+ask (score 23, answered); fetched via Stack Exchange API 2026-09-14",
+      "stability_class": "external",
+      "failure_class": "external-doc-path-flaky",
+      "migration": {
+        "from": "mustHitUrls:[https://www.typescriptlang.org/tsconfig]",
+        "to": "mustHitPaths:[/tsconfig tolerate locale] + mustNotHitPaths:[/branding/]",
+        "drift": "probe-0 live 2026-09-16: typescriptlang.org returned /tsconfig and /tsconfig/<option>.html variants (ko-localized forms seen) — exact bare path flaky across runs (probe-0 also returned /play/ and /docs/handbook/ families)",
+        "decidedAt": "2026-09-16"
+      },
+      "watch": true
+    },
+    {
+      "id": "docs-g0010",
+      "domain": "docs",
+      "question": "Mark SSE transport as deprecated",
+      "questionLang": "en",
+      "intent": "reference",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "modelcontextprotocol.io"
+        ],
+        "mustHitPaths": [
+          {
+            "path": "/deprecated",
+            "tolerate": [
+              "dated"
+            ]
+          }
+        ],
+        "mustNotHitPaths": [
+          "/quickstart"
+        ],
+        "minResults": 1,
+        "mustHitUrls": [
+          "https://modelcontextprotocol.io/specification/2024-11-05/basic/transports"
+        ]
+      },
+      "dimensions": [
+        "intent:reference",
+        "source-tier:spec",
+        "freshness:supersede-event",
+        "lang:en",
+        "attribution:claim",
+        "hops:single"
+      ],
+      "provenance": {
+        "type": "external-community",
+        "ref": "https://github.com/modelcontextprotocol/python-sdk/issues/2278",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "verbatim GH issue title; body documents HTTP+SSE → Streamable HTTP supersede (spec 2025-03-26)",
+      "stability_class": "frozen-spec",
+      "failure_class": "external-doc-superseded",
+      "migration": {
+        "from": "mustHitUrls:[https://modelcontextprotocol.io/specification/2025-06-18/basic/transports]",
+        "to": "mustHitPaths:[/deprecated tolerate dated] + mustNotHitPaths:[/quickstart] + byte-exact mustHitUrls on the frozen 2024-11-05 spec snapshot (SSE-era spec — directly on-question, 3/3 recurrence in probe-1)",
+        "drift": "probe-0 live 2026-09-16: dated 2025-06-18 spec superseded; answers resumed with /specification/{draft,2026-07-28}/deprecated + 2024-11-05 basic/transports (earlier quarantine was a transient all-off-domain abstain episode); probe-1: answers remained stable across 3 further runs, /deprecated family + 2024-11-05 snapshot recurring 3/3; audit-window flip observed on the 2024-11-05 leg (fail,fail,pass across 3 runs) — watch:true added in the F4 rework window",
+        "decidedAt": "2026-09-16"
+      },
+      "watch": true
+    },
+    {
+      "id": "docs-g0011",
+      "domain": "docs",
+      "question": "npm→pnpm migration: silent breakage when pnpm.onlyBuiltDependencies allowlist is removed (native modules like better-sqlite3 stop building without warning)",
+      "questionLang": "en",
+      "intent": "troubleshoot",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "pnpm.io"
+        ],
+        "mustHitPaths": [
+          {
+            "path": "/settings",
+            "tolerate": [
+              "locale",
+              "version"
+            ]
+          }
+        ],
+        "mustNotHitPaths": [
+          "/workspaces"
+        ],
+        "minResults": 1
+      },
+      "dimensions": [
+        "intent:troubleshoot",
+        "source-tier:settings",
+        "freshness:active",
+        "lang:en",
+        "attribution:claim",
+        "hops:single"
+      ],
+      "provenance": {
+        "type": "external-community",
+        "ref": "https://github.com/pnpm/pnpm/issues/12749",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "verbatim GH issue title; same better-sqlite3 surface as docs-g0003",
+      "stability_class": "external",
+      "failure_class": "external-doc-locale-version-wrap",
+      "migration": {
+        "from": "mustHitUrls:[https://pnpm.io/settings]",
+        "to": "mustHitPaths:[/settings tolerate locale+version] + mustNotHitPaths:[/workspaces]",
+        "drift": "probe-0 live 2026-09-16: pnpm.io returned /settings plus /zh/ /it/ /10.x/ /11.x/ wrapped variants — locale/version wrappers dominate the byte-level path (probe-0 also returned /pnpm-vs-npm /migration /blog/releases families)",
+        "decidedAt": "2026-09-16"
+      }
+    },
+    {
+      "id": "docs-g0012",
+      "domain": "docs",
+      "question": "pnpm-workspace.yaml 的 onlyBuiltDependencies 白名单怎么放行 better-sqlite3 的 prebuild 又禁掉安装脚本？",
+      "questionLang": "zh",
+      "intent": "howto",
+      "expected": {
+        "verdict": "answer",
+        "mustHitHosts": [
+          "pnpm.io"
+        ]
+      },
+      "dimensions": [
+        "intent:howto",
+        "source-tier:settings",
+        "freshness:stable",
+        "lang:zh",
+        "attribution:domain",
+        "hops:single"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": ".scratch/grill-round-61/handoffs/next-round.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "判据2 域内 must-hit 成对锚——与 docs-g0007 同域同语言同 intent 家族的合法域内提问必须答出，防止 post-filter 过度拒答。"
+    },
+    {
+      "id": "docs-g0013",
+      "domain": "docs",
+      "question": "kubernetes pod eviction policy kubectl drain",
+      "questionLang": "en",
+      "intent": "troubleshoot",
+      "expected": {
+        "verdict": "abstain"
+      },
+      "dimensions": [
+        "intent:troubleshoot",
+        "freshness:stable",
+        "lang:en",
+        "hops:single",
+        "negative:abstain"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": "packages/kernel/test/domain-filter.test.ts",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "判据3 降级 stub-provider 臂——当 provider 无域过滤能力（domainFilterSupported=false）时权威 post-gate 仍拦全部域外到达；可执行臂见 kernel 域过滤测试 §5。"
+    },
+    {
+      "id": "docs-g0014",
+      "domain": "cold",
+      "question": "kubernetes pod eviction policy kubectl drain",
+      "questionLang": "en",
+      "intent": "factoid",
+      "expected": {
+        "verdict": "abstain"
+      },
+      "dimensions": [
+        "intent:factoid",
+        "freshness:stable",
+        "lang:en",
+        "hops:single",
+        "negative:abstain"
+      ],
+      "provenance": {
+        "type": "internal-dogfood",
+        "ref": ".scratch/grill-round-61/narrow-domains/cold.toml",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-14"
+      },
+      "notes": "判据4 冷门域 0 结果——cold.toml allowlist 仅 nonexistent.invalid，任何到达均被闸，零幸存者即拒答；端到端臂见 apps/cli/test/abstain.test.ts live arm。"
+    },
+    {
+      "id": "vert-f0001",
+      "domain": "default",
+      "question": "earnings call schedule for AAPL this quarter",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "finance",
+        "subDomain": "calendar",
+        "params": {
+          "type": "earnings"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 3,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "sub_domain": "calendar",
+          "paramsKeys": [
+            "type"
+          ],
+          "paramsSent": true,
+          "hit": true,
+          "degraded": [
+            "vincap"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/t1-semantics-legislation.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "R84 T1 契约钉：参数化垂域 spec 全键下发（domain+sub_domain+paramsKeys）+extra.vertical 标记 +degraded 臂名单（incapable stub 收 general 多源并发查找，不收 vertical）。"
+    },
+    {
+      "id": "vert-f0002",
+      "domain": "default",
+      "question": "latest macro print for CPI year over year",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "finance",
+        "params": {}
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 3,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "paramsKeys": [],
+          "paramsSent": false,
+          "hit": true,
+          "degraded": [
+            "vincap"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/t1-semantics-legislation.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "R84 T1 A-04 钉：params:{} ≡ 缺席——canonicalize 后 wire 键不下发、params_keys=[]、domain 仍路由。"
+    },
+    {
+      "id": "vert-f0003",
+      "domain": "default",
+      "question": "recent preprints on retrieval augmented generation evaluation",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "academic"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 3,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "paramsKeys": [],
+          "paramsSent": false,
+          "hit": true,
+          "degraded": [
+            "vincap"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/t1-semantics-legislation.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "R84 T1 契约钉：domain-only 垂域 spec（无 sub_domain/params）——wire 只发 domain，sub_domain 键缺席。"
+    },
+    {
+      "id": "ctrl-0001",
+      "domain": "default",
+      "question": "earnings call schedule for AAPL this quarter",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "bogus_domain_xx"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "hit": false,
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-83/evidence/t1-vertical-domain.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "对照钉：枚举外 domain——上游实测（2026-09-25）HTTP 200 静默退回 general（非 isError）。stub 复现静默回退面：垂域标记缺席+泛网结果在场=general-fallback。"
+    },
+    {
+      "id": "ctrl-0002",
+      "domain": "default",
+      "question": "earnings call schedule for AAPL this quarter",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "finance",
+        "subDomain": "bogus_sub_xyz"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "hit": false,
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-83/evidence/t1-vertical-domain.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "对照钉：枚举外 sub_domain——上游实测（2026-09-25）isError 'Invalid tag: finance.bogus_sub_xyz'。stub 复现拒收面：垂域臂 fail-first 入 providersFailed+泛网臂应答=general-fallback。"
+    },
+    {
+      "id": "vert-f1101",
+      "domain": "default",
+      "question": "NVDA next earnings date this quarter",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "finance",
+        "subDomain": "calendar",
+        "params": {
+          "type": "earnings"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "sub_domain": "calendar",
+          "paramsKeys": [
+            "type"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "financialmodelingprep.com",
+            "finance.yahoo.com",
+            "nasdaq.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "finance.calendar type=earnings（词表 required 参数齐）。"
+    },
+    {
+      "id": "vert-f1102",
+      "domain": "default",
+      "question": "US CPI year-over-year latest release",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "finance",
+        "subDomain": "macro",
+        "params": {
+          "type": "cpi"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "sub_domain": "macro",
+          "paramsKeys": [
+            "type"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "financialmodelingprep.com",
+            "tradingeconomics.com",
+            "bls.gov"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "finance.macro type=cpi。"
+    },
+    {
+      "id": "vert-f1103",
+      "domain": "default",
+      "question": "AAPL real-time stock price",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "finance",
+        "subDomain": "quote",
+        "params": {
+          "type": "stock",
+          "symbol": "AAPL"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "sub_domain": "quote",
+          "paramsKeys": [
+            "symbol",
+            "type"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "finance.yahoo.com",
+            "nasdaq.com",
+            "marketwatch.com",
+            "investing.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "finance.quote type=stock+symbol。"
+    },
+    {
+      "id": "vert-f1104",
+      "domain": "default",
+      "question": "贵州茅台最新股价",
+      "questionLang": "zh",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "finance",
+        "subDomain": "quote",
+        "params": {
+          "type": "stock",
+          "cn_code": "600519.SH"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "sub_domain": "quote",
+          "paramsKeys": [
+            "cn_code",
+            "type"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "eastmoney.com",
+            "10jqka.com.cn",
+            "sina.com.cn",
+            "xueqiu.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "finance.quote type=stock+cn_code（A 股通道）。"
+    },
+    {
+      "id": "vert-f1105",
+      "domain": "default",
+      "question": "MSFT analyst ratings and target price overview",
+      "questionLang": "en",
+      "intent": "factoid",
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "finance.fundamental type=overview+symbol——上游 validator 按 tag 级索 cn_code 与词表文档 per-type 规则不一致（2026-10-01 活查复放仍拒收）；原位降格为 unmeasured-by-design，墓碑理由码受控。",
+      "tombstone": {
+        "reason_code": "upstream-validator-vs-doc-mismatch",
+        "demoted_at": "2026-10-01",
+        "round": 95,
+        "decided_by": "round-96 eval-matrix-revision closeout (record removed with governance teardown)",
+        "prior_scope": "live",
+        "prior_spec": {
+          "domain": "finance",
+          "subDomain": "fundamental",
+          "params": {
+            "type": "overview",
+            "symbol": "MSFT"
+          }
+        },
+        "prior_expected_vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "sub_domain": "fundamental",
+          "paramsKeys": [
+            "symbol",
+            "type"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "financialmodelingprep.com",
+            "finance.yahoo.com",
+            "marketbeat.com"
+          ]
+        }
+      }
+    },
+    {
+      "id": "vert-f1106",
+      "domain": "default",
+      "question": "technology sector US stocks screening",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "finance",
+        "subDomain": "screen",
+        "params": {
+          "type": "stock",
+          "sector": "Technology",
+          "country": "US"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "sub_domain": "screen",
+          "paramsKeys": [
+            "country",
+            "sector",
+            "type"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "finance.yahoo.com",
+            "finviz.com",
+            "tradingview.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "finance.screen type=stock+sector+country。"
+    },
+    {
+      "id": "vert-f1201",
+      "domain": "default",
+      "question": "hedge fund positioning in mega-cap technology stocks",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "finance"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "hitHosts": [
+            "finance.yahoo.com",
+            "bloomberg.com",
+            "reuters.com",
+            "ft.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "finance domain-only 语义查询。"
+    },
+    {
+      "id": "vert-f1202",
+      "domain": "default",
+      "question": "央行降准对债券市场的影响",
+      "questionLang": "zh",
+      "intent": "reference",
+      "vertical": {
+        "domain": "finance"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "hitHosts": [
+            "eastmoney.com",
+            "cls.cn",
+            "yicai.com",
+            "sina.com.cn",
+            "pbc.gov.cn"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "中文财经语义查询。"
+    },
+    {
+      "id": "vert-f1203",
+      "domain": "default",
+      "question": "treasury yield curve inversion as recession signal",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "finance"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "hitHosts": [
+            "finance.yahoo.com",
+            "federalreserve.gov",
+            "tradingeconomics.com",
+            "treasury.gov"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "宏观语义查询。"
+    },
+    {
+      "id": "vert-f1204",
+      "domain": "default",
+      "question": "dividend yield versus buyback yield comparison",
+      "questionLang": "en",
+      "intent": "comparison",
+      "vertical": {
+        "domain": "finance"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "hitHosts": [
+            "finance.yahoo.com",
+            "investopedia.com",
+            "morningstar.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "对比型金融语义。"
+    },
+    {
+      "id": "vert-f1205",
+      "domain": "default",
+      "question": "美联储下次利率决议时间",
+      "questionLang": "zh",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "finance"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "finance",
+          "hit": true,
+          "hitHosts": [
+            "federalreserve.gov",
+            "cls.cn",
+            "finance.yahoo.com",
+            "reuters.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "中文时点查询。"
+    },
+    {
+      "id": "vert-a1101",
+      "domain": "default",
+      "question": "retrieval augmented generation evaluation benchmark",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "academic",
+        "subDomain": "preprint",
+        "params": {
+          "year_from": "2024",
+          "sort": "relevance"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "hit": true,
+          "sub_domain": "preprint",
+          "paramsKeys": [
+            "sort",
+            "year_from"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "arxiv.org",
+            "semanticscholar.org",
+            "openreview.net"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "academic.preprint year_from+sort。"
+    },
+    {
+      "id": "vert-a1102",
+      "domain": "default",
+      "question": "large language model survey papers",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "academic",
+        "subDomain": "search",
+        "params": {
+          "type": "review",
+          "year_from": "2023"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "hit": true,
+          "sub_domain": "search",
+          "paramsKeys": [
+            "type",
+            "year_from"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "arxiv.org",
+            "semanticscholar.org",
+            "doi.org",
+            "nature.com",
+            "openalex.org"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "academic.search type=review+year_from。"
+    },
+    {
+      "id": "vert-a1103",
+      "domain": "default",
+      "question": "CRISPR off-target effects clinical assessment",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "academic",
+        "subDomain": "biomedical",
+        "params": {
+          "source": "MED",
+          "field": "tiab"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "hit": true,
+          "sub_domain": "biomedical",
+          "paramsKeys": [
+            "field",
+            "source"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "pubmed.ncbi.nlm.nih.gov",
+            "ncbi.nlm.nih.gov",
+            "nih.gov"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "academic.biomedical source=MED。"
+    },
+    {
+      "id": "vert-a1104",
+      "domain": "default",
+      "question": "attention is all you need citation count",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "academic",
+        "subDomain": "citation",
+        "params": {
+          "id": "10.48550/arXiv.1706.03762",
+          "op": "citation-count"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "hit": true,
+          "sub_domain": "citation",
+          "paramsKeys": [
+            "id",
+            "op"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "api.crossref.org",
+            "crossref.org",
+            "semanticscholar.org",
+            "opencitations.net"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "academic.citation id+op=citation-count（required id 携带）。"
+    },
+    {
+      "id": "vert-a1105",
+      "domain": "default",
+      "question": "climate modeling open research datasets",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "academic",
+        "subDomain": "dataset",
+        "params": {
+          "resource_type": "Dataset"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "hit": true,
+          "sub_domain": "dataset",
+          "paramsKeys": [
+            "resource_type"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "zenodo.org",
+            "figshare.com",
+            "datadryad.org",
+            "dryad.org"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "academic.dataset resource_type=Dataset。"
+    },
+    {
+      "id": "vert-a1201",
+      "domain": "default",
+      "question": "recent advances in sparse mixture of experts architectures",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "academic"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "hit": true,
+          "hitHosts": [
+            "arxiv.org",
+            "semanticscholar.org",
+            "openreview.net"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-a1202",
+      "domain": "default",
+      "question": "蛋白质结构预测最新进展",
+      "questionLang": "zh",
+      "intent": "reference",
+      "vertical": {
+        "domain": "academic"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "hit": true,
+          "hitHosts": [
+            "nature.com",
+            "science.org",
+            "pubmed.ncbi.nlm.nih.gov",
+            "biorxiv.org"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-a1203",
+      "domain": "default",
+      "question": "reinforcement learning from human feedback methods survey",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "academic"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "hit": true,
+          "hitHosts": [
+            "arxiv.org",
+            "semanticscholar.org",
+            "openreview.net",
+            "proceedings.neurips.cc"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-a1204",
+      "domain": "default",
+      "question": "graph neural networks for drug discovery review",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "academic"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "hit": true,
+          "hitHosts": [
+            "arxiv.org",
+            "pubmed.ncbi.nlm.nih.gov",
+            "nature.com",
+            "sciencedirect.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-a1205",
+      "domain": "default",
+      "question": "量子纠错码容错阈值研究",
+      "questionLang": "zh",
+      "intent": "reference",
+      "vertical": {
+        "domain": "academic"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "academic",
+          "hit": true,
+          "hitHosts": [
+            "arxiv.org",
+            "nature.com",
+            "phys.org",
+            "aps.org"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-c1101",
+      "domain": "default",
+      "question": "react server components documentation",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "code",
+        "subDomain": "doc",
+        "params": {
+          "library": "react"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "code",
+          "hit": true,
+          "sub_domain": "doc",
+          "paramsKeys": [
+            "library"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "react.dev",
+            "npmjs.com",
+            "github.com"
+          ],
+          "hitPaths": [
+            "/reference",
+            "/learn"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "code.doc library=react（required）。"
+    },
+    {
+      "id": "vert-c1102",
+      "domain": "default",
+      "question": "express error handling middleware",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "code",
+        "subDomain": "doc",
+        "params": {
+          "library": "express"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "code",
+          "hit": true,
+          "sub_domain": "doc",
+          "paramsKeys": [
+            "library"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "expressjs.com",
+            "npmjs.com",
+            "github.com"
+          ],
+          "hitPaths": [
+            "/en/guide",
+            "/en/4x"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "code.doc library=express。"
+    },
+    {
+      "id": "vert-c1103",
+      "domain": "default",
+      "question": "tokio runtime spawn tutorial",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "code",
+        "subDomain": "doc",
+        "params": {
+          "library": "tokio"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "code",
+          "hit": true,
+          "sub_domain": "doc",
+          "paramsKeys": [
+            "library"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "tokio.rs",
+            "docs.rs",
+            "github.com"
+          ],
+          "hitPaths": [
+            "/tk/",
+            "/tokio/"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "code.doc library=tokio。"
+    },
+    {
+      "id": "vert-c1104",
+      "domain": "default",
+      "question": "useState custom hook implementation typescript",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "code",
+        "subDomain": "snippet",
+        "params": {
+          "lang": "TypeScript"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "code",
+          "hit": true,
+          "sub_domain": "snippet",
+          "paramsKeys": [
+            "lang"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "github.com"
+          ],
+          "hitPaths": [
+            "/blob/",
+            "/tree/"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "code.snippet lang=TypeScript。"
+    },
+    {
+      "id": "vert-c1105",
+      "domain": "default",
+      "question": "pandas dataframe merge operation",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "code",
+        "subDomain": "snippet",
+        "params": {
+          "lang": "Python",
+          "repo": "pandas-dev/pandas"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "code",
+          "hit": true,
+          "sub_domain": "snippet",
+          "paramsKeys": [
+            "lang",
+            "repo"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "github.com"
+          ],
+          "hitPaths": [
+            "/pandas-dev/pandas"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "code.snippet lang+repo 过滤。"
+    },
+    {
+      "id": "vert-c1201",
+      "domain": "default",
+      "question": "python asyncio versus threading performance",
+      "questionLang": "en",
+      "intent": "comparison",
+      "vertical": {
+        "domain": "code"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "code",
+          "hit": true,
+          "hitHosts": [
+            "docs.python.org",
+            "realpython.com",
+            "stackoverflow.com",
+            "github.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-c1202",
+      "domain": "default",
+      "question": "kubernetes pod eviction policy configuration",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "code"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "code",
+          "hit": true,
+          "hitHosts": [
+            "kubernetes.io",
+            "github.com",
+            "stackoverflow.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-c1203",
+      "domain": "default",
+      "question": "rust ownership and borrow checker guide",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "code"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "code",
+          "hit": true,
+          "hitHosts": [
+            "doc.rust-lang.org",
+            "rust-lang.org",
+            "github.com",
+            "stackoverflow.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-c1204",
+      "domain": "default",
+      "question": "typescript generics conditional types explained",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "code"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "code",
+          "hit": true,
+          "hitHosts": [
+            "typescriptlang.org",
+            "stackoverflow.com",
+            "github.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-c1205",
+      "domain": "default",
+      "question": "redis 缓存穿透解决方案",
+      "questionLang": "zh",
+      "intent": "howto",
+      "vertical": {
+        "domain": "code"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "code",
+          "hit": true,
+          "hitHosts": [
+            "redis.io",
+            "github.com",
+            "juejin.cn",
+            "csdn.net",
+            "cnblogs.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-h1101",
+      "domain": "default",
+      "question": "aspirin drug label adverse reactions",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "health",
+        "subDomain": "drug",
+        "params": {
+          "type": "name"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "health",
+          "hit": true,
+          "sub_domain": "drug",
+          "paramsKeys": [
+            "type"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "dailymed.nlm.nih.gov",
+            "fda.gov",
+            "drugs.com",
+            "nih.gov"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "health.drug type=name。"
+    },
+    {
+      "id": "vert-h1102",
+      "domain": "default",
+      "question": "metformin phase 3 clinical trials",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "health",
+        "subDomain": "trial"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "health",
+          "hit": true,
+          "sub_domain": "trial",
+          "paramsKeys": [],
+          "paramsSent": false,
+          "hitHosts": [
+            "clinicaltrials.gov",
+            "trialsearch.who.int"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "health.trial 无 params（词表未列参数）——paramsSent:false 钉 wire 缺席。"
+    },
+    {
+      "id": "vert-h1103",
+      "domain": "default",
+      "question": "diabetes prevalence statistics by country",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "health",
+        "subDomain": "stats"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "health",
+          "hit": true,
+          "sub_domain": "stats",
+          "paramsKeys": [],
+          "paramsSent": false,
+          "hitHosts": [
+            "who.int",
+            "ourworldindata.org",
+            "cdc.gov"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "health.stats 无 params。"
+    },
+    {
+      "id": "vert-h1104",
+      "domain": "default",
+      "question": "amoxicillin drug interactions warnings",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "health",
+        "subDomain": "drug",
+        "params": {
+          "type": "name"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "health",
+          "hit": true,
+          "sub_domain": "drug",
+          "paramsKeys": [
+            "type"
+          ],
+          "paramsSent": true,
+          "hitHosts": [
+            "dailymed.nlm.nih.gov",
+            "drugs.com",
+            "fda.gov",
+            "medlineplus.gov"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "health.drug 第二条目——子域内多样本。"
+    },
+    {
+      "id": "vert-h1105",
+      "domain": "default",
+      "question": "alzheimer disease clinical trial recruitment",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "health",
+        "subDomain": "trial"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "health",
+          "hit": true,
+          "sub_domain": "trial",
+          "paramsKeys": [],
+          "paramsSent": false,
+          "hitHosts": [
+            "clinicaltrials.gov",
+            "alzheimers.gov",
+            "nia.nih.gov"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/sub-domains-vocab.json",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "health.trial 第二条目。"
+    },
+    {
+      "id": "vert-h1201",
+      "domain": "default",
+      "question": "mRNA vaccine adverse event profile review",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "health"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "health",
+          "hit": true,
+          "hitHosts": [
+            "cdc.gov",
+            "fda.gov",
+            "who.int",
+            "pubmed.ncbi.nlm.nih.gov",
+            "nih.gov"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-h1202",
+      "domain": "default",
+      "question": "高血压用药相互作用注意事项",
+      "questionLang": "zh",
+      "intent": "howto",
+      "vertical": {
+        "domain": "health"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "health",
+          "hit": true,
+          "hitHosts": [
+            "dailymed.nlm.nih.gov",
+            "drugs.com",
+            "medlineplus.gov",
+            "nhs.uk"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-h1203",
+      "domain": "default",
+      "question": "childhood vaccination schedule comparison",
+      "questionLang": "en",
+      "intent": "comparison",
+      "vertical": {
+        "domain": "health"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "health",
+          "hit": true,
+          "hitHosts": [
+            "cdc.gov",
+            "who.int",
+            "nice.org.uk"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-h1204",
+      "domain": "default",
+      "question": "antibiotic resistance surveillance data",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "health"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "health",
+          "hit": true,
+          "hitHosts": [
+            "who.int",
+            "cdc.gov",
+            "ecdc.europa.eu",
+            "nih.gov"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-h1205",
+      "domain": "default",
+      "question": "GLP-1 受体激动剂副作用",
+      "questionLang": "zh",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "health"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "health",
+          "hit": true,
+          "hitHosts": [
+            "fda.gov",
+            "drugs.com",
+            "pubmed.ncbi.nlm.nih.gov",
+            "nejm.org"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": null
+    },
+    {
+      "id": "vert-i1101",
+      "domain": "default",
+      "question": "solar cell patents from leading manufacturers",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "ip",
+        "subDomain": "ip.global",
+        "params": {
+          "type": "GlobalPatent",
+          "keyword": "solar cell"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "ip",
+          "sub_domain": "ip.global",
+          "paramsKeys": [
+            "keyword",
+            "type"
+          ],
+          "paramsSent": true,
+          "hit": true,
+          "hitHosts": [
+            "espacenet.com",
+            "patsnap.com"
+          ],
+          "hitPaths": [
+            "/patent/"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "ip.global type=GlobalPatent+keyword（活词表 2026-11-07：type/keyword/applicant/ipc/date_start）。"
+    },
+    {
+      "id": "vert-i1102",
+      "domain": "default",
+      "question": "Huawei patent applications in the last five years",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "ip",
+        "subDomain": "ip.global",
+        "params": {
+          "type": "GlobalPatent",
+          "applicant": "Huawei"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "ip",
+          "sub_domain": "ip.global",
+          "paramsKeys": [
+            "applicant",
+            "type"
+          ],
+          "paramsSent": true,
+          "hit": true,
+          "hitHosts": [
+            "espacenet.com",
+            "patsnap.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "ip.global type=GlobalPatent+applicant（申请人过滤参数）。"
+    },
+    {
+      "id": "vert-i1103",
+      "domain": "default",
+      "question": "semiconductor layered device patents classified H01L",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "ip",
+        "subDomain": "ip.global",
+        "params": {
+          "type": "GlobalPatent",
+          "ipc": "H01L"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "ip",
+          "sub_domain": "ip.global",
+          "paramsKeys": [
+            "ipc",
+            "type"
+          ],
+          "paramsSent": true,
+          "hit": true,
+          "hitHosts": [
+            "espacenet.com",
+            "patsnap.com"
+          ],
+          "hitPaths": [
+            "/patent/"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "ip.global type=GlobalPatent+ipc（IPC/CPC 分类过滤参数）。"
+    },
+    {
+      "id": "vert-i1104",
+      "domain": "default",
+      "question": "quantum computing patents published since 2020",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "ip",
+        "subDomain": "ip.global",
+        "params": {
+          "type": "GlobalPatent",
+          "keyword": "quantum computing",
+          "date_start": "20200101"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "ip",
+          "sub_domain": "ip.global",
+          "paramsKeys": [
+            "date_start",
+            "keyword",
+            "type"
+          ],
+          "paramsSent": true,
+          "hit": true,
+          "hitHosts": [
+            "espacenet.com",
+            "patsnap.com"
+          ],
+          "hitPaths": [
+            "/patent/"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "ip.global type=GlobalPatent+keyword+date_start（公告/申请日下界）。"
+    },
+    {
+      "id": "vert-i1105",
+      "domain": "default",
+      "question": "比亚迪 固态电池专利布局",
+      "questionLang": "zh",
+      "intent": "reference",
+      "vertical": {
+        "domain": "ip",
+        "subDomain": "ip.global",
+        "params": {
+          "type": "GlobalPatent",
+          "applicant": "BYD",
+          "keyword": "solid-state battery",
+          "date_start": "20220101"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "ip",
+          "sub_domain": "ip.global",
+          "paramsKeys": [
+            "applicant",
+            "date_start",
+            "keyword",
+            "type"
+          ],
+          "paramsSent": true,
+          "hit": true,
+          "hitHosts": [
+            "espacenet.com",
+            "patsnap.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:parameterized",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "ip.global 四参数组合 type+applicant+keyword+date_start。"
+    },
+    {
+      "id": "vert-i1201",
+      "domain": "default",
+      "question": "patents assigned to TSMC since 2020",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "ip"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "ip",
+          "hit": true,
+          "hitHosts": [
+            "iam-media.com",
+            "mondaq.com",
+            "investor.tsmc.com",
+            "knowmade.com",
+            "cacm.acm.org"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "ip domain-only 语义条（沿用既有语义层模式）；上游回退泛网，vertical 标记由客户端盖章；hitHosts 为 2026-11-07 实测候选宿主（测量池，非硬性门禁）。"
+    },
+    {
+      "id": "vert-i1202",
+      "domain": "default",
+      "question": "华为 5G 标准必要专利 法律状态",
+      "questionLang": "zh",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "ip"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "ip",
+          "hit": true,
+          "hitHosts": [
+            "istis.sh.cn",
+            "court.gov.cn",
+            "stblog.com.cn",
+            "businesstimescn.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "ip domain-only 语义条；中文标准必要专利查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
+    },
+    {
+      "id": "vert-i1203",
+      "domain": "default",
+      "question": "battery recycling patent families and legal status",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "ip"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "ip",
+          "hit": true,
+          "hitHosts": [
+            "patents.google.com",
+            "patsnap.com",
+            "mdpi.com",
+            "knobbe.com",
+            "bardehle.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "ip domain-only 语义条；同族+法律状态查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
+    },
+    {
+      "id": "vert-i1204",
+      "domain": "default",
+      "question": "欧洲专利局 审查意见 答复期限",
+      "questionLang": "zh",
+      "intent": "howto",
+      "vertical": {
+        "domain": "ip"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "ip",
+          "hit": true,
+          "hitHosts": [
+            "mondaq.com",
+            "mewburn.com",
+            "hcipi.com",
+            "ifutureip.com",
+            "patents.qizhidao.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "ip domain-only 语义条；程序性 howto 查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
+    },
+    {
+      "id": "vert-i1205",
+      "domain": "default",
+      "question": "standard essential patent FRAND royalty determination",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "ip"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "subject",
+          "domain": "ip",
+          "hit": true,
+          "hitHosts": [
+            "iam-media.com",
+            "oxfirst.com",
+            "doi.org",
+            "sciencedirect.com",
+            "theiplawblog.com"
+          ]
+        }
+      },
+      "dimensions": [
+        "stratum:semantic",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "ip domain-only 语义条；FRAND 许可费查询，上游回退泛网；hitHosts 为 2026-11-07 实测候选宿主。"
+    },
+    {
+      "id": "ctrl-f101",
+      "domain": "default",
+      "question": "how to cook pasta carbonara properly",
+      "questionLang": "en",
+      "intent": "howto",
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "hit": false
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "域外对照：无 spec 下禁出现 vertical 标记（防误标钉）。"
+    },
+    {
+      "id": "ctrl-f102",
+      "domain": "default",
+      "question": "chocolate cake recipe ingredients",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "finance"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "错配 spec：finance spec + 烹饪问题——上游静默回退面存在性断言（对照臂失败走 degraded 名单）。"
+    },
+    {
+      "id": "ctrl-f103",
+      "domain": "default",
+      "question": "upcoming earnings calendar this week",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "finance",
+        "subDomain": "bogus_sched"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "bogus sub_domain：上游 isError 拒收面 live 钉（对照 2026-09-25 实测矩阵）。"
+    },
+    {
+      "id": "ctrl-f104",
+      "domain": "default",
+      "question": "apple price",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "finance",
+        "subDomain": "quote",
+        "params": {
+          "type": "stock"
+        }
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:finance"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "歧义查询：apple（水果/股票）+finance spec——消歧质量 delta 基线，存在性断言。"
+    },
+    {
+      "id": "ctrl-a101",
+      "domain": "default",
+      "question": "best coffee brewing temperature guide",
+      "questionLang": "en",
+      "intent": "howto",
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "hit": false
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "域外对照。"
+    },
+    {
+      "id": "ctrl-a102",
+      "domain": "default",
+      "question": "pizza dough hydration calculator",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "academic"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "错配 spec。"
+    },
+    {
+      "id": "ctrl-a103",
+      "domain": "default",
+      "question": "recent papers on neural network pruning",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "academic",
+        "subDomain": "bogus_papers"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "bogus sub_domain 拒收面。"
+    },
+    {
+      "id": "ctrl-a104",
+      "domain": "default",
+      "question": "mercury element facts",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "academic"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:academic"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "歧义查询（行星/元素/神祇）。"
+    },
+    {
+      "id": "ctrl-c101",
+      "domain": "default",
+      "question": "italian pasta sauce comparison",
+      "questionLang": "en",
+      "intent": "comparison",
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "hit": false
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "域外对照。"
+    },
+    {
+      "id": "ctrl-c102",
+      "domain": "default",
+      "question": "garden irrigation system setup guide",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "code"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "错配 spec。"
+    },
+    {
+      "id": "ctrl-c103",
+      "domain": "default",
+      "question": "python list comprehension examples",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "code",
+        "subDomain": "bogus_module"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "bogus sub_domain 拒收面。"
+    },
+    {
+      "id": "ctrl-c104",
+      "domain": "default",
+      "question": "java language basics",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "code"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:code"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "歧义查询（语言/岛屿/咖啡）。"
+    },
+    {
+      "id": "ctrl-h101",
+      "domain": "default",
+      "question": "how to change a car tire step by step",
+      "questionLang": "en",
+      "intent": "howto",
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "hit": false
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "域外对照。"
+    },
+    {
+      "id": "ctrl-h102",
+      "domain": "default",
+      "question": "chocolate chip cookie baking time",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "health"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "错配 spec。"
+    },
+    {
+      "id": "ctrl-h103",
+      "domain": "default",
+      "question": "vitamin D dosage guidelines",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "health",
+        "subDomain": "bogus_nutri"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "bogus sub_domain 拒收面。"
+    },
+    {
+      "id": "ctrl-h104",
+      "domain": "default",
+      "question": "cold or flu difference",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "health"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:health"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": ".scratch/grill-round-84/evidence/corpus-rationale.md",
+        "refStatus": "historical-local",
+        "harvestedAt": "2026-09-26",
+        "reviewer": "r84-fixer"
+      },
+      "notes": "歧义查询（温度/感冒）。"
+    },
+    {
+      "id": "ctrl-i101",
+      "domain": "default",
+      "question": "how to bake sourdough bread at home",
+      "questionLang": "en",
+      "intent": "howto",
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "hit": false
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "域外对照：无 spec 下禁出现 vertical 标记（防误标钉）。"
+    },
+    {
+      "id": "ctrl-i102",
+      "domain": "default",
+      "question": "best hiking trails near Chengdu",
+      "questionLang": "en",
+      "intent": "reference",
+      "vertical": {
+        "domain": "ip"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "错配 spec：ip domain + 徒步问题——上游静默回退泛网面存在性断言。"
+    },
+    {
+      "id": "ctrl-i103",
+      "domain": "default",
+      "question": "patent claim drafting examples",
+      "questionLang": "en",
+      "intent": "howto",
+      "vertical": {
+        "domain": "ip",
+        "subDomain": "bogus_claims"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "bogus sub_domain：2026-11-07 探针记录 ip.bogus_xyz 的 isError 'Invalid tag: ip.bogus_xyz.'；未记录 bogus_claims 的响应。"
+    },
+    {
+      "id": "ctrl-i104",
+      "domain": "default",
+      "question": "apple patent",
+      "questionLang": "en",
+      "intent": "factoid",
+      "vertical": {
+        "domain": "ip"
+      },
+      "expected": {
+        "verdict": "answer",
+        "minResults": 1,
+        "vertical": {
+          "role": "control",
+          "degraded": "general-fallback"
+        }
+      },
+      "dimensions": [
+        "stratum:control",
+        "vdomain:ip"
+      ],
+      "provenance": {
+        "type": "constructed",
+        "ref": "docs/eval/ip-corpus-probe-2026-11-07.md",
+        "harvestedAt": "2026-11-07",
+        "reviewer": "impl-24"
+      },
+      "notes": "歧义查询（水果/公司专利）。"
+    }
+  ]
+}

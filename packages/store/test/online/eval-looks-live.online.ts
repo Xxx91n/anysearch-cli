@@ -8,20 +8,17 @@
 // Skip policy: the bundled bin must exist and at least one provider key must be
 // set — a silent zero-provider run would fake a pass, so we skip loudly instead.
 //
-// additions:
-// - Quarantine classification consumes the ledger's single implementation
-// (readQuarantine + activeIds) — the previous inline copy ignored the
-// longterm flag (second-predicate drift).
-// - Evidence mode (ANS_EVAL_EVIDENCE=1): quarantined entries actually execute
-// (quarantined-but-runnable — a skipped case can never emit a gone-green
-// signal), each executed entry appends an EVIDENCE quadruple
-// (id / verdict / ISO timestamp / run ref) to ANS_EVAL_EVIDENCE_LOG
-// (default .scratch/eval-evidence.log), a run whose only failures are
-// quarantined exits 0, and an entry all-red in consecutive evidence runs
-// prints RETIRE_CANDIDATE for reviewDue().
-// -: mustHitPaths/mustNotHitPaths page-family layer — pathname
-// substring match, host-scoped to the entry's mustHitHosts when declared.
-// -: watch:true entries announce their post-promote observation mark.
+// Behavior notes:
+// - Quarantine classification uses the ledger's single implementation
+//   (readQuarantine + activeIds).
+// - Evidence mode (ANS_EVAL_EVIDENCE=1) executes quarantined entries instead of
+//   skipping them. Each executed entry appends id / verdict / ISO timestamp /
+//   run ref to ANS_EVAL_EVIDENCE_LOG (default .scratch/eval-evidence.log).
+//   A run whose only failures are quarantined exits 0. A quarantined entry that is
+//   red in two consecutive evidence runs prints RETIRE_CANDIDATE for reviewDue().
+// - mustHitPaths/mustNotHitPaths add a page-family check: pathname substring
+//   match, limited to the entry's mustHitHosts when declared.
+// - watch:true entries print their post-promote observation mark.
 //
 // NOTE for evidence runs: invoke this file directly
 // (`node --import tsx test/online/eval-looks-live.online.ts`) — under
@@ -33,6 +30,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { readQuarantine, activeIds } from "../../src/eval/quarantine-ledger";
+import { GOLDEN_FILE, isLiveScope, readGoldenFile } from "../../src/eval/golden-file";
 
 let passed = 0, failed = 0, skipped = 0;
 function assert(cond: boolean, msg: string) {
@@ -42,7 +40,6 @@ function assert(cond: boolean, msg: string) {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 const dist = join(root, "apps", "cli", "dist", "index.js");
-const looks = JSON.parse(readFileSync(join(root, "eval-looks.json"), "utf8"));
 
 const keyed = ["EXA_API_KEY", "TAVILY_API_KEY", "ANYSEARCH_API_KEY"].some((k) => !!process.env[k]);
 
@@ -139,13 +136,16 @@ function main() {
     return;
   }
 
-  const scopes: Record<string, string> = looks.golden.scopes ?? {};
-  const entries: any[] = looks.golden.entries.filter((e: any) => scopes[e.id] === "live" || scopes[e.id] === "both");
+  // Read the corpus only after both SKIP branches: a broken or missing
+  // eval-golden.json must not turn a lane that should skip into a red run.
+  const golden = readGoldenFile(join(root, GOLDEN_FILE));
+  const scopes = golden.scopes;
+  const entries = golden.entries.filter((e) => isLiveScope(scopes[e.id]));
   assert(entries.length > 0, "live slice non-empty (got " + entries.length + ")");
   // Baseline asserts can never be quarantine-attributable.
   let nonQuarFailed = failed;
 
-  // +: active-quarantined entries are reported, not
+  // active-quarantined entries are reported, not
   // silently skipped — the quarantine mark is policy, the TTL clock lives in
   // eval-quarantine.json. Classification = the ledger's single implementation.
   const qPath = join(root, "packages", "store", "eval-quarantine.json");

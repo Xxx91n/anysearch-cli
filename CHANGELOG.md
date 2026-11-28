@@ -94,6 +94,20 @@
 - **工具 `timeout` 规矩写进文档**：推代码时把工具 `timeout` 设成 `0` 或 `≥600` 秒，跑整套（`--full` 或 `ANS_PUSH_GATE=strict`）设成 `0` 或 `≥900` 秒；写明理由——光 `store` 一个包实测就要 4 分 15 秒（Windows 整套 6–9 分钟），默认 300 秒一定会把本来能绿的运行半路掐死。
 - **记下不设 required status checks 的决定，免得半年后重提**：明确记录考虑过把 `check-build`（ubuntu 和 windows）设成 `main` 的 required status checks（#671、#674）但决定不做——`scripts/ci-changes.mjs` 的 `LANES` 里 `check-build` 已经列全八个包，非纯文档改动本来就在跑整套，设必过不补漏洞，只防手快点合并，代价却是 CI 一抖就合不了；同时更新早年私有库阶段 #58/#59 的旧记述，说明仓库如今已公开、这项本来免费，依然主动不设。
 
+## Unreleased — #651: 被切掉的时候说真话
+
+一句话说清：**有源到点被切时，终端不再说「结果够了，没等它回来」——引擎从没看过结果够不够，那句话是假的，现在改成「到时限了，没等它回来」；结果那行补 `(partial)`，0 条也一样。`ans search --json` 和 MCP 的 `search_web` / `research_web` 都恒带 `partial`（有臂被切为 true）和 `deadlineMs`（这次实际用的预算，默认 4000）。`outcome` 五个取值、退出码、拒答规则一个没动。**
+
+### Changed
+
+- **被切的原因改成真的**（`apps/cli/src/commands/search-abstain.ts`）：`Providers cancelled: <源>（到时限了，没等它回来）`。旧话「结果够了」是宽限窗口年代留下的，引擎到点就切，0 条结果时也照说不误。
+- **结果行会说自己被截短**（同上）：`formatResultsLine` 输出 `Results: N (partial)`；没有臂被切时还是原来的 `Results: N`。
+- **`deadlineMs` 只走 `reportedDeadlineMs` 一处**：包装器自己报了预算（正整数毫秒，夹到引擎上限）就用它，否则用 `CompositionResult.requestTimeoutMs`，再不行回落 4s；CLI 和两个 MCP 工具都调它，不再往信封里另存一份。今天 CLI 的 retriever 就是引擎本身，两个来源同值；将来中间加一层包装器，报的就是实际执行那一层的钟。
+- **`partial` 只有一处判据**（`packages/retriever/src/outcome.ts` 的 `isPartialPool`）：单次并发查找由它判，CLI 和 `search_web` 直接调；`research_web` 的结果跨轮合并，自己累计，任何一轮被截短都为 true，`providersCancelled` 仍只报最后一轮。
+- **`ans search --json`**（`apps/cli/src/commands/search.ts`）：恒有 `partial` 和 `deadlineMs`，脚本不用拼三个字段才看得出池子被截短。`requestTimeoutMs` 原样保留，和 `deadlineMs` 同一个数：前者是评测读的钟，后者是这次新增的字段，两个数同源，不会打架。
+- **MCP 两个搜索工具**（`apps/mcp/src/tools/search-web.tool.ts`、`research-web.tool.ts`）：正文 JSON 和 `structuredContent` 都带这两个字段；没有完赛轮时 `partial=false`，`deadlineMs` 仍是每轮检索的预算（`research_web` 整次最多等到轮数倍）。
+- **文档**：`docs/mcp-server.md` 的「Result shape」和结果案例表补这两个字段。
+
 ## Unreleased — #608: 内部 agent 能读一页，正文进库
 
 一句话说清：**`ans chat` / `ans_chat` 多了一个内部 `fetch` 工具。模型只能拿本会话的句柄换页：搜索结果的 `m:<行号>` 或用户自己贴的网址；伪造、本会话没搜到过的句柄、正文里的链接和模型自拼网址都在工具里当场拒掉，不拦整轮、不进 HITL；搜索挂到别的会话已有的正文行时，本会话的票照样能读。Exa 有 key 走付费 `/contents`，没 key 走免费 `web_fetch_exa`；正文全文入库，模型只看截到 4000 字的副本。一次提问最多 10 页、单次最多 5 个网址，连续两批没有新页或两批全被拒就停。对外三扇门仍然没开。**
@@ -1356,7 +1370,7 @@ Resolve with `but resolve apply <path>[:<N>] --ours|--theirs` or pipe mixed cont
 
 ### Added
 
-- **`ip` 第五域评测语料**（`eval-looks.json`）：14 条能现场跑的条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表里 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的两参、三参和四参组合）、语义 5 条（`vert-i1201..i1205`，spec 只写 domain，沿用已有语义层的写法；参数化 `ip.global` 不带参数时多数回的是没有 URL 的文本，当前 adapter 会把这些丢掉，所以这一层不做断言）、对照 4 条（`ctrl-i101..i104`：没有 spec 时防止被误标、spec 配错时静默退回普通搜索、乱写的 sub_domain 被拒、问题本身有歧义）。5 条参数化条目都定义了 `hitHosts`（部分还带 `/patent/` 路径池）；语义条目按 2026-11-07 只给 domain 时实测到的宿主补上 `hitHosts` 测量池。
+- **`ip` 第五域评测语料**（当时写在 `eval-looks.json`，现为 `eval-golden.json`）：14 条能现场跑的条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表里 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的两参、三参和四参组合）、语义 5 条（`vert-i1201..i1205`，spec 只写 domain，沿用已有语义层的写法；参数化 `ip.global` 不带参数时多数回的是没有 URL 的文本，当前 adapter 会把这些丢掉，所以这一层不做断言）、对照 4 条（`ctrl-i101..i104`：没有 spec 时防止被误标、spec 配错时静默退回普通搜索、乱写的 sub_domain 被拒、问题本身有歧义）。5 条参数化条目都定义了 `hitHosts`（部分还带 `/patent/` 路径池）；语义条目按 2026-11-07 只给 domain 时实测到的宿主补上 `hitHosts` 测量池。
 - **`ip` 进垂域维度词表**（`packages/store/src/eval/docs-golden.ts`）：`VERTICAL_DIMENSION_VALUES.vdomain` 加 `ip`，新语料才能过 schema 校验；docs 那边八个维度的计数检查不受影响（垂域标签走的是另一份词表）。
 - **词表快照存档**（`docs/eval/ip-corpus-probe-2026-11-07.md` + `docs/vertical-domains.md`）：记下 2026-11-07 调 `get_sub_domains(domain="ip")` 的原文（只有一个子域 `ip.global`，参数 `type`/`keyword`/`applicant`/`ipc`/`date_start`）和搜索结果的各种形态（只给 domain 时静默退回普通搜索、乱写 sub_domain 时 `isError`、乱写 type 值时静默接受）。快照只用来建语料，运行时不读它。
 - **上游阻塞清单里补上 #24 的进展**（`docs/research/upstream-unblock-registry.md`）：#24 那条加上 2026-11-07 触发的事实和语料放在哪；原来的 `登记状态: absent` 不变（内部评测缺口不往 `docs/limitations.md` 补）。
@@ -1975,7 +1989,7 @@ Resolve with `but resolve apply <path>[:<N>] --ours|--theirs` or pipe mixed cont
 
 ### Added
 
-- 垂域评测双层扩展：`eval-looks.json` 的金标账册扩出 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不碰 docs 八维计数检查）；57 条能现场跑的垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；来源字段全带 + 建集时拉到的词表快照（get_sub_domains 只人工看，不进运行时）。
+- 垂域评测双层扩展：`eval-looks.json`（现为 `eval-golden.json`）的金标账册扩出 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不碰 docs 八维计数检查）；57 条能现场跑的垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；来源字段全带 + 建集时拉到的词表快照（get_sub_domains 只人工看，不进运行时）。
 - 配对 delta 的现场检查项 `packages/store/test/online/eval-looks-vertical.online.ts`（D-002 证据层/D-004/D-005）：同一个 query 同一批期望集，vertical-on/off 跑四趟（隔离 `ANS_PROVIDERS=anysearch` 做实验组级主证 + 全同时查多个源融合级副列），产出 `anysearch/vertical-delta@1` 证据件（datasetFingerprint + 实验组标识 + 显式 n + better/worse/tied/unknown + providersFailed 四面 + 实验组采样 URL）；测不了的格记 null/unknown，不记 0。
 - CLI eval 面的环境变量开关：`ANS_ARM_SNAPSHOT=1`（`--json` 透出 `metadata.fusion{labels,lists}`）+ `ANS_PROVIDERS=a,b`（provider 子集过滤走 `Query.providers`）。
 

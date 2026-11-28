@@ -5,10 +5,11 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./eval/corpus-files": "./src/eval/corpus-files.ts",
+    "./expand-limits": "./src/expand-limits.ts",
     "./local-service": "./src/local-service.ts",
     "./paths": "./src/ans-paths.ts",
-    "./process-liveness": "./src/process-liveness.ts",
-    "./expand-limits": "./src/expand-limits.ts"
+    "./process-liveness": "./src/process-liveness.ts"
   },
   "scripts": {
     "test": "node --import tsx --import ./test/helpers/exit-teardown.mjs --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\" --test-concurrency=1 --test-timeout=30000",

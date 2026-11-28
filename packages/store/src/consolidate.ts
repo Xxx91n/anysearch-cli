@@ -7,6 +7,7 @@
 // -> inserts use lastInsertRowid.
 
 import type Database from "better-sqlite3";
+import { isPositiveWholeInt } from "@anysearch-cli/retriever";
 import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
 import { suspendSummariesForCorrection, liveHeadOf } from "./summary-sources.js";
@@ -740,10 +741,6 @@ export class ConsolidateScopeError extends Error {
 export const CONSOLIDATE_SESSION_ID_MAX_CHARS = 128;
 const CONSOLIDATE_SESSION_ID_PATTERN = /^[\x21-\x7E]+$/;
 
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1;
-}
-
 /**
  * Decide what a consolidation run may read, from raw caller input.
  *
@@ -782,7 +779,7 @@ export function resolveConsolidateScope(raw: {
     : raw.memoryIds !== undefined && raw.memoryIds !== null;
 
   if (memoriesSupplied) {
-    const bad = rawMemories.filter((id) => !isPositiveInteger(id));
+    const bad = rawMemories.filter((id) => !isPositiveWholeInt(id));
     if (bad.length > 0 || rawMemories.length === 0) {
       throw new ConsolidateScopeError(
         "memoryIds must be a non-empty list of positive integer ids; got " + JSON.stringify(rawMemories),

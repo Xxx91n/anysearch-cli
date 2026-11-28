@@ -12,6 +12,16 @@ export const SEARCH_OUTCOMES = ["answer", "failed", "cancelled", "abstain", "emp
 export type SearchOutcome = (typeof SEARCH_OUTCOMES)[number];
 
 /**
+ * One fanout was cut short: at least one arm was asked but not waited for. The
+ * engine records only which arms were cut. This judges a single fanout; a tool
+ * that merges several rounds decides the call-level answer itself.
+ */
+export function isPartialPool(providersCancelled: readonly string[]): boolean {
+  // An arm was cut, so the pool is short.
+  return providersCancelled.length > 0;
+}
+
+/**
  * Everything the judgment needs. The arm lists, the result count and the answer
  * count are what the envelope will carry; `domainActive` and `gateDropped` are
  * the two facts only the engine has, because the gate runs there.
@@ -50,7 +60,7 @@ function allQueriedArmsFailed(e: SearchOutcomeEvidence): boolean {
  */
 export function shouldAbstain(e: SearchOutcomeEvidence): boolean {
   if (!e.domainActive || e.resultCount > 0 || e.answerCount > 0) return false;
-  if (e.providersCancelled.length > 0) return false;
+  if (isPartialPool(e.providersCancelled)) return false;
   // Same order as the classifier, so both give one answer: an outage is never
   // a refusal, even if the gate counters said arrivals were dropped.
   if (allQueriedArmsFailed(e)) return false;
@@ -62,7 +72,7 @@ export function shouldAbstain(e: SearchOutcomeEvidence): boolean {
 export function classifySearchOutcome(e: SearchOutcomeEvidence): SearchOutcome {
   if (e.resultCount > 0 || e.answerCount > 0) return "answer";
   if (allQueriedArmsFailed(e)) return "failed";
-  if (e.providersCancelled.length > 0) return "cancelled";
+  if (isPartialPool(e.providersCancelled)) return "cancelled";
   if (shouldAbstain(e)) return "abstain";
   return "empty";
 }

@@ -39,6 +39,7 @@ import {
   type BudgetConfig,
   type ConsolidateReport,
 } from "@anysearch-cli/store";
+import { isPositiveWholeInt } from "@anysearch-cli/retriever";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { parseLlmFlags, resolveLlmConfig } from "../config-llm";
 import { domainSearchDirs } from "../db";
@@ -152,7 +153,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     if (a === "--memory") {
       const raw = args[i + 1];
       const id = Number(raw);
-      if (raw === undefined || !Number.isInteger(id) || id < 1) {
+      if (raw === undefined || !isPositiveWholeInt(id)) {
         process.stderr.write("ans consolidate: --memory must be a positive integer id (got " + JSON.stringify(raw) + ")\n");
         return 2;
       }

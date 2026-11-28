@@ -6,7 +6,7 @@
 // decision 4A: loads domain from domains/<name>.toml convention directory.
 
 import { TavilyProvider, AnySearchProvider, createExaProvider, createExaFetchProvider } from "@anysearch-cli/retriever/providers";
-import { redactSecrets, type FetchProvider, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
+import { isPositiveWholeInt, redactSecrets, type FetchProvider, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
 import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
@@ -373,7 +373,7 @@ const EVAL_REQUEST_TIMEOUT_CAP_MS = 15000;
 // being truncated into a 1ms budget nobody asked for, and a cap above the
 // engine's ceiling is clamped rather than thrown from the constructor.
 function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_MS): number {
-  if (raw === undefined || !Number.isInteger(raw) || raw <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
+  if (!isPositiveWholeInt(raw)) return DEFAULT_REQUEST_TIMEOUT_MS;
   // A cap at or above 1ms is rounded down. Anything smaller is invalid and
   // falls back to the eval ceiling; it must not become a 1ms budget that
   // cancels every arm.
@@ -381,6 +381,19 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
     ? Math.min(Math.floor(capMs), MAX_REQUEST_TIMEOUT_MS)
     : EVAL_REQUEST_TIMEOUT_CAP_MS;
   return Math.min(raw, cap, MAX_REQUEST_TIMEOUT_MS);
+}
+
+/**
+ * The budget to report for one fanout: the wrapper's own value when it is a
+ * positive whole number, else the result's copy under the same rule, else 4s.
+ * The clamp here is setTimeout's ceiling, not the engine's budget cap: a wrapper
+ * that reports two hours is reported as two hours.
+ */
+export function reportedDeadlineMs(eng: Pick<CompositionResult, "requestTimeoutMs" | "retriever">): number {
+  const retrieverMs = eng.retriever.requestTimeoutMs;
+  if (isPositiveWholeInt(retrieverMs)) return Math.min(retrieverMs, MAX_REQUEST_TIMEOUT_MS);
+  if (isPositiveWholeInt(eng.requestTimeoutMs)) return Math.min(eng.requestTimeoutMs, MAX_REQUEST_TIMEOUT_MS);
+  return DEFAULT_REQUEST_TIMEOUT_MS;
 }
 
 export function createEngine(

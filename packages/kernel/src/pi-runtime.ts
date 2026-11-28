@@ -39,6 +39,7 @@ import { dirname, join } from "node:path";
 import {
   CONTENT_TRUST_SCHEMA_VERSION,
   RETRIEVAL_CONTENT_SCHEMA_URL,
+  isPositiveWholeInt,
   shouldAllowUrl,
   wrapRetrieved,
   type NormalizedResult,
@@ -241,7 +242,7 @@ async function writeSearchTickets(
   sessionId: string,
   ids: ReadonlyArray<number | null>,
 ): Promise<boolean> {
-  const values = ids.filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+  const values = ids.filter(isPositiveWholeInt);
   if (values.length === 0) return true;
   if (typeof store.saveFetchTickets !== "function") return false;
   try {
@@ -303,7 +304,7 @@ function stampArchiveRowIds(envelope: any, ids: Array<number | null> | undefined
     ...envelope,
     results: results.map((r: any, i: number) => {
       const id = ids[i];
-      return typeof id === "number" && Number.isInteger(id) && id > 0
+      return isPositiveWholeInt(id)
         ? { ...(r ?? {}), archiveRowId: id, ...(withHandle ? { handle: searchHandle(id) } : {}) }
         : r;
     }),
@@ -880,13 +881,13 @@ export class PiAgentRuntime {
     const items = results as Array<{ handle?: string; archiveRowId?: number }>;
     // Row ids are unconditional; only a usable fetch ticket adds the handle.
     ids.forEach((id, index) => {
-      if (typeof id === "number" && id > 0 && items[index]) items[index].archiveRowId = id;
+      if (isPositiveWholeInt(id) && items[index]) items[index].archiveRowId = id;
     });
     if (!this.fetchEligible()) return;
     const store = this.archive!.store as FetchStorePort;
     if (!await writeSearchTickets(store, this.archive!.sessionId, ids)) return;
     ids.forEach((id, index) => {
-      if (typeof id === "number" && id > 0 && items[index]) items[index].handle = searchHandle(id);
+      if (isPositiveWholeInt(id) && items[index]) items[index].handle = searchHandle(id);
     });
   }
 

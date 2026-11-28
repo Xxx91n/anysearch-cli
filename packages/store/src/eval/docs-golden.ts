@@ -1,10 +1,16 @@
-// the docs-domain golden batch lives as a `golden` top-level
-// collection inside eval-looks.json — the same file as the OF look ledger.
-// This module owns the entry schema, the eight-dimension slice vocabulary
-// (first committed definition site), and the eval-looks.coverage.json contract.
+// The docs-domain golden corpus lives in its own repo-root file,
+// eval-golden.json. This module owns the entry schema, the eight-dimension
+// slice vocabulary, the scope values, and the eval-looks.coverage.json contract.
+//
+// It takes no imports at all: scripts/badcase-backfill.mjs loads this file with
+// plain node, and an import without a file extension fails to resolve there.
 
 export const DOCS_GOLDEN_SCHEMA = "anysearch/docs-golden@1";
 export const DOCS_GOLDEN_COVERAGE_SCHEMA = "anysearch/eval-looks-coverage@1";
+
+// The only values `scopes` may use; readGoldenFile rejects anything else.
+export const GOLDEN_SCOPE_VALUES = ["stub", "live", "both"] as const;
+export type GoldenScope = (typeof GOLDEN_SCOPE_VALUES)[number];
 
 export const DOCS_GOLDEN_INTENTS = ["factoid", "howto", "troubleshoot", "comparison", "reference"] as const;
 export type DocsGoldenIntent = (typeof DOCS_GOLDEN_INTENTS)[number];
@@ -87,20 +93,22 @@ export interface DocsGoldenVerticalSpec {
   params?: Record<string, unknown>;
 }
 
-// four optional fixture fields + eval-looks root schema_version
-// sentinel (additive — no breaking change, hence no schema v2 migration).
+// Closed vocabularies: DOCS_GOLDEN_TOLERATED_SEGMENTS gates
+// expected.mustHitPaths.tolerate; DOCS_GOLDEN_STABILITY_CLASSES gates
+// entry.stability_class. A new value in either list rides with the corpus row
+// that uses it and a counterexample in the validator's own tests.
 export const DOCS_GOLDEN_TOLERATED_SEGMENTS = ["locale", "version", "dated"] as const;
 export type DocsGoldenToleratedSegment = (typeof DOCS_GOLDEN_TOLERATED_SEGMENTS)[number];
 export const DOCS_GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "external"] as const;
 export type DocsGoldenStabilityClass = (typeof DOCS_GOLDEN_STABILITY_CLASSES)[number];
-export const EVAL_LOOKS_SCHEMA_VERSION = 1;
 
 // controlled vocabulary for cell tombstones (the `tombstone`
 // block on a demoted entry). Demotion is an explicit declaration, never a
 // silent removal — the reason code names WHY the cell left the measurable set,
 // and the list is closed so free text cannot drift (spelling drift is the
 // failure mode the closed list exists to stop). Extending the list is a
-// corpus-governance act (ADR + registry), not an inline edit.
+// corpus-governance act, not an inline edit: a new code must arrive with the
+// corpus row that uses it and with this validator's negative case.
 export const TOMBSTONE_REASON_CODES = ["upstream-validator-vs-doc-mismatch"] as const;
 export type TombstoneReasonCode = (typeof TOMBSTONE_REASON_CODES)[number];
 
@@ -153,7 +161,7 @@ export interface DocsGoldenMigration {
 // cell tombstone — a cell demoted in place (same id, per the
 // data-version governance rule: a semantic rewrite needs a NEW id plus old-cell
 // deprecation, never an in-place re-chip). A tombstoned entry carries no live
-// route: no scope in golden.scopes, no expected.vertical, no injected spec.
+// route: no scope in the root scopes map, no expected.vertical, no injected spec.
 // The prior payload is preserved here verbatim for the historical record.
 export interface DocsGoldenTombstone {
   reason_code: TombstoneReasonCode; // controlled vocabulary (TOMBSTONE_REASON_CODES)
@@ -449,11 +457,11 @@ export function validateDocsGoldenEntry(raw: unknown): string[] {
 }
 
 export function validateDocsGoldenSet(raw: unknown): string[] {
-  if (!raw || typeof raw !== "object") return ["golden must be an object"];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return ["root must be an object"];
   const g = raw as Partial<DocsGoldenSet>;
   const p: string[] = [];
-  if (g.schema !== DOCS_GOLDEN_SCHEMA) p.push("golden.schema must be " + DOCS_GOLDEN_SCHEMA);
-  if (!Array.isArray(g.entries)) return [...p, "golden.entries must be an array"];
+  if (g.schema !== DOCS_GOLDEN_SCHEMA) p.push("schema must be " + DOCS_GOLDEN_SCHEMA);
+  if (!Array.isArray(g.entries)) return [...p, "entries must be an array"];
   const ids = new Set<string>();
   for (const e of g.entries) {
     const id = (e as DocsGoldenEntry | undefined)?.id;

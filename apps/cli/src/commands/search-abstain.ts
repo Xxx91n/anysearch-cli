@@ -144,12 +144,23 @@ function sourceNote(id: string, sources: Extract<CredentialSources, { status: "r
 }
 
 /**
- * Providers cancelled 那一行：引擎真问了、只是没等回来的臂。不是失败，也不是
+ * Providers cancelled 那一行：引擎真问了、到点没等回来的臂。不是失败，也不是
  * 没问。空表返回 undefined，所以健康路径一个字都不多。
+ *
+ * 文案只写「到时限了」：`ans search` 不传 caller signal，所以这条命令里被切只
+ * 会来自到时限（引擎另有一条 caller signal 的路，这条命令不走）。
  */
 export function formatProvidersCancelledLine(providersCancelled: readonly string[]): string | undefined {
   if (providersCancelled.length === 0) return undefined;
-  return "Providers cancelled: " + providersCancelled.join(", ") + "（结果够了，没等它回来）";
+  return "Providers cancelled: " + providersCancelled.join(", ") + "（到时限了，没等它回来）";
+}
+
+/**
+ * 结果那一行。有臂被切时补一个 `(partial)`：同一屏上的数字和「这次池子被截短
+ * 了」永远一起出现，不用读者自己拼 cancelled 行。
+ */
+export function formatResultsLine(count: number, partial: boolean): string {
+  return "Results: " + count + (partial ? " (partial)" : "");
 }
 
 export function formatProvidersFailedLine(

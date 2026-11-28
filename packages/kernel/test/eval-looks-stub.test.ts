@@ -15,6 +15,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RetroaererdEngine } from "../src/engine";
 import { loadDomainByNameIn, resolvePolicyFromSchema, defaultDomainsDirs } from "@anysearch-cli/store";
+import { isLiveScope, isStubScope } from "@anysearch-cli/store/eval/corpus-files";
 import type { SearchProvider, SearchRequest, ProviderEnvelope, NormalizedResult } from "@anysearch-cli/retriever";
 import type { RetrievalObservationSink } from "../src/ports";
 
@@ -25,7 +26,16 @@ function assert(cond: boolean, msg: string) {
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const looks = JSON.parse(readFileSync(join(root, "eval-looks.json"), "utf8"));
+// The corpus lives in its own file. This executor parses it directly on
+// purpose: the assertion is about the file itself, so it must not lean on
+// readGoldenFile (the reader under test in store).
+const golden = JSON.parse(readFileSync(join(root, "eval-golden.json"), "utf8"));
+assert(golden.schema === "anysearch/docs-golden@1", "eval-golden.json schema is anysearch/docs-golden@1");
+assert(Array.isArray(golden.entries) && golden.entries.length > 0, "eval-golden.json entries is a non-empty array");
+assert(
+  golden.scopes && typeof golden.scopes === "object" && !Array.isArray(golden.scopes) && Object.keys(golden.scopes).length > 0,
+  "eval-golden.json scopes is a non-empty object"
+);
 const badcases = JSON.parse(readFileSync(join(root, "eval-badcases.json"), "utf8"));
 
 function stubProvider(id: string, urls: string[], capable: boolean): SearchProvider {
@@ -159,7 +169,7 @@ function scenarioFor(e: any): Scenario | null {
 }
 
 async function main() {
-  const entries: any[] = looks.golden.entries;
+  const entries: any[] = golden.entries;
 
   // Schema: explicit scope on every entry — no default fallback.
   // golden.scopes is a sidecar map (entry-id -> scope): explicit per-entry scope
@@ -167,23 +177,24 @@ async function main() {
   // tombstoned cell left the measurable set by design — it holds NO scope (the
   // stable "out of the measurable set" marker is scope absence + the tombstone
   // block; a stale scope would silently keep the cell selectable).
-  const scopes: Record<string, string> = looks.golden.scopes ?? {};
-  const SCOPES = new Set(["stub", "live", "both"]);
+  const scopes: Record<string, string> = golden.scopes;
+  // The predicates are the vocabulary; a second literal here would drift.
+  const knownScope = (scope: string) => isLiveScope(scope) || isStubScope(scope);
   for (const e of entries) {
     if (e.tombstone !== undefined) {
       assert(scopes[e.id] === undefined, e.id + " tombstoned entry must not carry a scope (out of the measurable set by design)");
       continue;
     }
-    assert(SCOPES.has(scopes[e.id]), e.id + " scope must be explicit stub|live|both in golden.scopes (got " + scopes[e.id] + ")");
+    assert(knownScope(scopes[e.id]), e.id + " scope must be explicit stub|live|both in golden.scopes (got " + scopes[e.id] + ")");
   }
   const mustHit = (e: any) => (e.expected?.mustHitHosts?.length ?? 0) > 0 || (e.expected?.mustHitUrls?.length ?? 0) > 0;
   for (const e of entries) {
     if (e.expected?.verdict === "answer" && mustHit(e))
-      assert(scopes[e.id] === "live" || scopes[e.id] === "both", e.id + " answer+mustHit* needs live-capable scope (explicit, not defaulted)");
+      assert(isLiveScope(scopes[e.id]), e.id + " answer+mustHit* needs live-capable scope (explicit, not defaulted)");
   }
 
   // Execute the stub slice.
-  const stubEntries = entries.filter((e) => scopes[e.id] === "stub" || scopes[e.id] === "both");
+  const stubEntries = entries.filter((e) => isStubScope(scopes[e.id]));
   assert(stubEntries.length >= 3, "stub slice covers the three abstain entries (got " + stubEntries.length + ")");
   for (const e of stubEntries) {
     const sc = scenarioFor(e);

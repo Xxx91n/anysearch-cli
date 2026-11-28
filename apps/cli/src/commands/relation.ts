@@ -1,6 +1,7 @@
 // ans relation: entity-relation edge inspection + idempotent backfill.
 // Subcommands: list [--entity N] [--limit N] | backfill-relations [--apply] [--batch N] [--from-id N] [--limit N] [--reprocess]
 
+import { isPositiveWholeInt } from "@anysearch-cli/retriever";
 import { createEngineForActiveDomain } from "../db";
 import type { RelationRow, BackfillRelationsResult } from "@anysearch-cli/store";
 
@@ -34,7 +35,7 @@ function intOpt(args: string[], flag: string, usage: string): { value?: number; 
   if (i < 0) return {};
   const raw = args[i + 1];
   const n = Number(raw);
-  if (raw === undefined || !Number.isInteger(n) || n <= 0) return { error: flag + " must be a positive integer (" + usage + ")" };
+  if (raw === undefined || !isPositiveWholeInt(n)) return { error: flag + " must be a positive integer (" + usage + ")" };
   return { value: n };
 }
 

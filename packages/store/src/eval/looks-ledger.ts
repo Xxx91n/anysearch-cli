@@ -11,6 +11,10 @@
 // rows are dropped and the SHA-256 of the pre-compaction row set is preserved in `compaction`.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { writeStderr } from "../stderr";
+import { GOLDEN_FILE } from "./corpus-files";
+import { readGoldenFile } from "./golden-file";
 
 export const LOOKS_LEDGER_SCHEMA = "anysearch/eval-looks@2";
 export const LOOKS_LEDGER_LEGACY_SCHEMA = "anysearch/eval-looks@1";
@@ -36,9 +40,6 @@ export interface LooksLedger {
   schema: string;
   looks: LooksLedgerEntry[];
   compaction?: LooksLedgerCompaction;
-  // the docs-domain golden batch shares this file as a top-level
-  // collection. Writers must round-trip it — dropping it is silent data loss.
-  golden?: import("./docs-golden").DocsGoldenSet;
   // Tolerant Reader — unknown root fields ride on the object
   // verbatim so a read->modify->write cycle never strips fields the writer does
   // not model (the schema_version:1 sentinel was lost exactly this way).
@@ -47,6 +48,30 @@ export interface LooksLedger {
 
 export function emptyLooksLedger(): LooksLedger {
   return { schema: LOOKS_LEDGER_SCHEMA, looks: [] };
+}
+
+type CorpusCheck =
+  | { ok: true; entryIds: Set<string> }
+  | { ok: false; reason: string };
+
+// The corpus's entry ids when readGoldenFile accepts the file, else its reason.
+function checkCorpus(file: string): CorpusCheck {
+  try {
+    return { ok: true, entryIds: new Set(readGoldenFile(file).entries.map((e) => e.id)) };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// The row ids a ledger's `golden` block still claims. Anything the corpus beside
+// the ledger lacks would be lost when that block is dropped.
+function goldenBlockIds(value: unknown): string[] {
+  const entries = (value as { entries?: unknown } | undefined)?.entries;
+  if (!Array.isArray(entries)) return [];
+  return entries.flatMap((entry) => {
+    const id = (entry as { id?: unknown } | undefined)?.id;
+    return typeof id === "string" ? [id] : [];
+  });
 }
 
 function hashRows(rows: LooksLedgerEntry[]): string {
@@ -62,8 +87,30 @@ export function readLooksLedger(file: string): LooksLedger {
   } catch {
     return emptyLooksLedger();
   }
-  const j = parsed as Record<string, unknown>;
-  if (!j || typeof j !== "object" || !Array.isArray(j.looks)) return emptyLooksLedger();
+  const parsedRoot = parsed as Record<string, unknown>;
+  if (!parsedRoot || typeof parsedRoot !== "object" || !Array.isArray(parsedRoot.looks)) return emptyLooksLedger();
+  // An old checkout or a merge conflict can leave a `golden` block in the
+  // ledger. The next write drops it for good, so drop it here only when the
+  // corpus beside it holds every row the block claims. The input object is left
+  // untouched either way.
+  let j = parsedRoot;
+  if (parsedRoot.golden !== undefined) {
+    const corpus = join(dirname(file), GOLDEN_FILE);
+    const check = checkCorpus(corpus);
+    if (!check.ok) {
+      writeStderr("[eval] keeping the golden block in " + file + " — " + corpus + ": " + check.reason + "\n");
+    } else {
+      const known = check.entryIds;
+      const lost = goldenBlockIds(parsedRoot.golden).filter((id) => !known.has(id));
+      if (lost.length > 0) {
+        writeStderr("[eval] keeping the golden block in " + file + " — " + corpus + " has no row for " + lost.join(", ") + "\n");
+      } else {
+        const { golden: _stale, ...rest } = parsedRoot;
+        j = rest;
+        writeStderr("[eval] ignoring the stale golden block in " + file + " — the corpus lives in " + corpus + "\n");
+      }
+    }
+  }
   const looks: LooksLedgerEntry[] = [];
   for (const raw of j.looks as Array<Record<string, unknown>>) {
     if (!raw || typeof raw.key !== "string" || typeof raw.at !== "string") continue;
@@ -85,7 +132,6 @@ export function readLooksLedger(file: string): LooksLedger {
     schema: typeof j.schema === "string" ? j.schema : LOOKS_LEDGER_LEGACY_SCHEMA,
     looks,
     ...(j.compaction && typeof j.compaction === "object" ? { compaction: j.compaction as LooksLedgerCompaction } : {}),
-    ...(j.golden && typeof j.golden === "object" ? { golden: j.golden as import("./docs-golden").DocsGoldenSet } : {}),
   } as LooksLedger;
 }
 
@@ -96,9 +142,9 @@ export function nextLook(ledger: LooksLedger, key: string): number {
 // Append one peek row; compact when the cap is exceeded, preserving the pre-compaction hash.
 export function appendLook(ledger: LooksLedger, entry: LooksLedgerEntry, now: string): LooksLedger {
   const rows = [...ledger.looks, entry];
-  // +: the spread carries the golden batch AND every
-  // unknown root field through the write — rebuilding the object field-by-field
-  // is how the schema_version:1 sentinel got stripped.
+  // The spread carries every unknown root field through the write —
+  // rebuilding the object field-by-field is how the schema_version:1 sentinel
+  // got stripped.
   if (rows.length <= LOOKS_LEDGER_MAX_ROWS) {
     return { ...ledger, schema: LOOKS_LEDGER_SCHEMA, looks: rows };
   }

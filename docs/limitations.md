@@ -362,7 +362,7 @@
   but the live validator demands `cn_code` at the tag level. So e.g.
   `{type:"overview", symbol:"MSFT"}` returns `isError`. Pass `cn_code` where
   the doc implies `symbol` suffices (eval cell `vert-f1105` is disabled and
-  marked `tombstoned` on this; see `eval-looks.json`).
+  marked `tombstoned` on this; see `eval-golden.json`).
 - **Tavily's result package always has `usage` set to `undefined`** — `@tavily/core` returns
   credits only per-call (`response.usage.credits`), so `usage()` is
   unimplemented (the contract field is optional). Endpoints:

@@ -6,12 +6,16 @@
 // fused-level numbers are a secondary observational column only — never a
 // prefer-capable promotion argument.
 //
-// Emits .scratch/grill-round-84/evidence/vertical-delta.json (env
+// Emits .scratch/vertical-eval/delta.json (env
 // ANS_VERTICAL_DELTA_OUT overrides) with dataset fingerprint, arm identity,
 // explicit n, per-stratum rates, and honest nulls for unmeasurable cells.
 // Control entries (role:"control") record existence facts — their failures
 // walk the degraded list, never the red gate (iii).
 // ANS_VERTICAL_DELTA_LIMIT=N caps the corpus slice for smoke runs.
+// Only an unset variable runs the full corpus; any set value must be decimal
+// digits (a positive integer) and anything else fails the run. A missing dist
+// SKIPs the lane, before any of these checks; an invalid limit or an empty live
+// slice FAILs it (exit 1).
 
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
@@ -19,15 +23,22 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { GOLDEN_FILE, isLiveScope, readGoldenFile } from "../../src/eval/golden-file";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..", "..", "..", "..");
 const dist = join(root, "apps", "cli", "dist", "index.js");
-// Round-neutral default path (the artifact is a durable evidence channel, not
-// an scratch file); CI/devs override via env for dated snapshots.
+// Defaults under .scratch, which Git ignores; point ANS_VERTICAL_DELTA_OUT
+// somewhere else when the artifact needs to outlive the workspace.
 const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
   ?? join(root, ".scratch", "vertical-eval", "delta.json");
-const LIMIT = Number(process.env.ANS_VERTICAL_DELTA_LIMIT ?? "0") || 0;
+const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT;
+// Only an unset variable means "no cap". A set value is decimal digits or a
+// failure: Number("") is 0, and Number("1e3")/Number("0x10") are integers that a
+// plain isInteger check would accept as a smaller cap than the one written.
+const limitSet = rawLimit !== undefined;
+const limitDigits = /^[0-9]+$/.test((rawLimit ?? "").trim());
+const limitNum = limitSet ? (limitDigits ? Number((rawLimit ?? "").trim()) : NaN) : 0;
 const CONCURRENCY = 4;
 
 function hostOf(url: string): string {
@@ -109,13 +120,17 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
 
 (async () => {
   if (!existsSync(dist)) { console.log("SKIP: dist/index.js missing — run pnpm -C apps/cli build first"); process.exit(0); }
-  const ledger = JSON.parse(readFileSync(join(root, "eval-looks.json"), "utf8"));
-  const scopes: Record<string, string> = ledger.golden?.scopes ?? {};
-  const all = (ledger.golden?.entries ?? []).filter(
-    (e: any) => (scopes[e.id] === "live" || scopes[e.id] === "both") && e.expected?.vertical !== undefined,
+  if (limitSet && (!Number.isInteger(limitNum) || limitNum <= 0)) {
+    console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be decimal digits (a positive integer); only an unset variable means a full run (got " + JSON.stringify(rawLimit) + ")");
+    process.exit(1);
+  }
+  const golden = readGoldenFile(join(root, GOLDEN_FILE));
+  const scopes = golden.scopes;
+  const all = golden.entries.filter(
+    (e) => isLiveScope(scopes[e.id]) && e.expected?.vertical !== undefined,
   );
-  const entries = LIMIT > 0 ? all.slice(0, LIMIT) : all;
-  if (entries.length === 0) { console.log("SKIP: no live-scoped vertical entries"); process.exit(0); }
+  if (all.length === 0) { console.error("FAIL: the corpus has no live-scoped vertical entries — restore one (scope live|both with expected.vertical) or the runner has nothing to measure"); process.exit(1); }
+  const entries = limitNum > 0 ? all.slice(0, limitNum) : all;
 
   // + (1): instrument-health ordering, no sampling-
   // protocol change — same entries, same legs per entry, only the schedule
@@ -356,7 +371,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
   assert(rows.every((r) => r.arm === "anysearch"), "every row carries arm identity");
   assert(rows.every((r) => Object.hasOwn(r.delta, "verdict")), "every row carries a verdict field");
   assert(controlDegraded <= rows.filter((r) => r.role === "control").length, "control degraded count consistent");
-  if (LIMIT === 0) assert(byStratum.control !== undefined, "control stratum aggregated (full-corpus run)");
+  if (limitNum === 0) assert(byStratum.control !== undefined, "control stratum aggregated (full-corpus run)");
   console.log("PASS: vertical-delta artifact emitted -> " + DELTA_OUT);
   function fmt(v: number | null): string { return v === null ? "null" : String(Math.round(v * 100) / 100); }
 })().catch((e) => { console.error(e); process.exit(1); });

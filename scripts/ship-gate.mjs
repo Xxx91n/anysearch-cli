@@ -28,6 +28,7 @@ import { verifyInstalledProduct } from "./verify-installed-product.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
+import { GOLDEN_FILE, goldenShapeProblems, isLiveScope } from "./golden-shape.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import { discoverAllLocalActions, classifyLocalUsesRef, resolveYaml } from "./check-workflows.mjs";
 import { LANES } from "./ci-changes.mjs";
@@ -502,10 +503,10 @@ function stepStaticAssertions() {
   }
 
   // 1n.: domain filter + abstain marker must exist
-  // as source-level contracts, and the eval-looks golden ledger must carry
-  // the three anchors this block asserts (c1 must-abstain / c2 paired must-
-  // hit / c4 cold-domain zero-result); c3 stub-provider degradation lives in
-  // packages/store/test/eval-docs-golden.test.ts.
+  // as source-level contracts, and the golden corpus (eval-golden.json) must
+  // carry the three anchors this block asserts (c1 must-abstain / c2 paired
+  // must-hit / c4 cold-domain zero-result); c3 stub-provider degradation lives
+  // in packages/store/test/eval-docs-golden.test.ts.
   {
     const contractSrc = fs.readFileSync(path.join(ROOT, "packages/retriever/src/contract.ts"), "utf8");
     for (const tok of ["includeDomains", "domainFilterSupported", "domain_filter_empty"])
@@ -518,8 +519,29 @@ function stepStaticAssertions() {
       if (!cliSrc.includes(tok)) fail("CLI abstain surface missing" + tok);
     const mcpSrc = fs.readFileSync(path.join(ROOT, "apps/mcp/src/tools/search-web.tool.ts"), "utf8");
     if (!mcpSrc.includes("abstain")) fail("MCP search_web missing abstain structuredContent");
-    const evalLooks = JSON.parse(fs.readFileSync(path.join(ROOT, "eval-looks.json"), "utf8"));
-    const ge = evalLooks.golden?.entries ?? [];
+    let evalGoldenText;
+    try {
+      evalGoldenText = fs.readFileSync(path.join(ROOT, GOLDEN_FILE), "utf8");
+    } catch (err) {
+      fail(GOLDEN_FILE + ": cannot read: " + (err.code ?? err.message));
+    }
+    let evalGolden;
+    try {
+      evalGolden = JSON.parse(evalGoldenText);
+    } catch (err) {
+      fail(GOLDEN_FILE + ": invalid JSON: " + err.message);
+    }
+    // Shape checks live in scripts/golden-shape.mjs, shared with the backfill.
+    // fail() exits, so report every problem in one call instead of stopping at
+    // the first one.
+    const shapeProblems = goldenShapeProblems(evalGolden);
+    if (shapeProblems.length > 0) fail(GOLDEN_FILE + " " + shapeProblems.join("; "));
+    // Vocabulary mirroring is pinned by value in
+    // packages/store/test/eval-golden-vocab-parity.test.ts, which runs in step 3;
+    // --quick skips that step, so a quick gate does not check it.
+    // Anchor lookup covers every entry, not only the live slice: the c1 abstain
+    // anchor lives in the stub lane.
+    const ge = evalGolden.entries;
     if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "abstain"))
       fail("c1: no docs-domain abstain golden entry");
     if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "answer" && (e.expected?.mustHitHosts?.length ?? 0) > 0))
@@ -539,7 +561,7 @@ function stepStaticAssertions() {
     // (d) every migrated case keeps its migration provenance block
     // (promote physically deletes ledger entries — the golden entry is
     // the only durable carrier).
-    const liveIds = new Set(Object.entries(evalLooks.golden?.scopes ?? {}).filter(([, sc]) => sc === "live" || sc === "both").map(([id]) => id));
+    const liveIds = new Set(Object.entries(evalGolden.scopes).filter(([, sc]) => isLiveScope(sc)).map(([id]) => id));
     const liveEntries = ge.filter((e) => liveIds.has(e.id));
     const exactHolders = liveEntries.filter((e) => (e.expected?.mustHitUrls?.length ?? 0) > 0);
     if (exactHolders.length < 2)
@@ -935,7 +957,11 @@ function stepDocClaims() {
   if (!/Promise\.race\([\s\S]{0,200}?\bdeadline\b[\s\S]{0,80}?\bcallerAborted\b/.test(code)) fail("engine fanout race no longer waits on the deadline and the caller abort");
   if (!/const abortAllUnsettled = \([\s\S]{0,120}=>\s*\{[\s\S]{0,120}for \([^)]*<\s*controllers\.length\s*;[^)]*i\+\+[^)]*\)[\s\S]{0,200}abortArm\([^)]*reason/.test(code)) fail("engine.ts helper must abort every unsettled arm and pass the reason");
   if (!/setTimeout\(\(\) => \{[\s\S]{0,80}abortAllUnsettled\([\s\S]{0,40}?\)[\s\S]{0,40}deadlineResolve\(\)[\s\S]{0,40}\}, this\.requestTimeoutMs\)/.test(code)) fail("engine deadline no longer aborts unsettled arms with this.requestTimeoutMs");
-  if (!/this\.requestTimeoutMs = opts\?\.requestTimeoutMs \?\? DEFAULT_REQUEST_TIMEOUT_MS;/.test(code)) fail("engine request deadline no longer defaults from DEFAULT_REQUEST_TIMEOUT_MS");
+  // the assignment must go through the local that the range check validates:
+  // matching opts?.requestTimeoutMs here would let a bad value skip that check.
+  if (!/this\.requestTimeoutMs = requestedTimeout \?\? DEFAULT_REQUEST_TIMEOUT_MS;/.test(code)) fail("engine request deadline no longer defaults from DEFAULT_REQUEST_TIMEOUT_MS");
+  if (!/const requestedTimeout = opts\?\.requestTimeoutMs;/.test(code)) fail("engine requestedTimeout must come from opts.requestTimeoutMs");
+  if (!/if \(requestedTimeout !== undefined[\s\S]{0,80}!isPositiveWholeInt\(requestedTimeout\)\s*\|\|\s*requestedTimeout > MAX_REQUEST_TIMEOUT_MS[\s\S]{0,200}throw new RangeError\(/.test(code)) fail("engine requestTimeoutMs range check (whole positive + upper bound) is gone");
   if ((code.match(/abortedArms\.has\(i\)\)\s*return;/g) ?? []).length < 2) fail("engine.ts lost the cancelled-vs-failed guard in one of its settle handlers");
   const limits = fs.readFileSync(path.join(ROOT, "docs", "limitations.md"), "utf8");
   if (!/request-level deadline \(4s counted\s+from the moment the request fans out\)/.test(limits)) fail("docs/limitations.md no longer states the 4s deadline and its start point");

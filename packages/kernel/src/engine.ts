@@ -5,7 +5,7 @@
 // JS adaptation: Promise.all + Promise.race + AbortController; the deadline runs from fan-out.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope, ProviderErrorClass } from "@anysearch-cli/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorClassOf, providerErrorText, retryAfterSeconds, classifySearchOutcome, normalizeUrlIdentity } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorClassOf, providerErrorText, retryAfterSeconds, classifySearchOutcome, isPositiveWholeInt, normalizeUrlIdentity } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
 import type { Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort, ResumeAnchorsPort } from "./ports";
@@ -225,12 +225,12 @@ export class RetroaererdEngine {
   // TOML sources.vertical), consulted per request like urlPolicy. Query-level
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
-  // constructor-time knobs. `gate` used to ride on a per-search config object
-  // no caller could pass; it lives here now. `requestTimeoutMs` is the caller's
-  // per-request cap: tests shrink it, eval raises it, and `ans search --deadline`
-  // passes the terminal's choice; absent is 4s.
-  private gate: SufficiencyGate;
-  private requestTimeoutMs: number;
+  // The sufficiency gate is fixed at construction and consulted per request.
+  private readonly gate: SufficiencyGate;
+  // The per-fanout budget the caller picked: tests shrink it, eval raises it,
+  // and `ans search --deadline` passes the terminal's choice; absent is 4s.
+  // Public and readonly only because RetrieverPort declares the same field.
+  readonly requestTimeoutMs: number;
 
   // decision 1C: constructor accepts providers array.
   // decision 2A: optional BudgetLedger + sessionId for per-call billing.
@@ -244,10 +244,10 @@ export class RetroaererdEngine {
     const requestedTimeout = opts?.requestTimeoutMs;
     // setTimeout truncates fractions and clamps values above 2^31-1 ms to 1ms;
     // both would cut a search off at once, so reject them here.
-    if (requestedTimeout !== undefined && (!Number.isInteger(requestedTimeout) || requestedTimeout <= 0 || requestedTimeout > MAX_REQUEST_TIMEOUT_MS)) {
+    if (requestedTimeout !== undefined && (!isPositiveWholeInt(requestedTimeout) || requestedTimeout > MAX_REQUEST_TIMEOUT_MS)) {
       throw new RangeError("requestTimeoutMs must be a positive whole number of milliseconds no greater than " + MAX_REQUEST_TIMEOUT_MS);
     }
-    this.requestTimeoutMs = opts?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.requestTimeoutMs = requestedTimeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
     // immutable at the injection seam, even when the caller
     // bypasses the wiring.
     const cal = opts?.attributionCalibration;

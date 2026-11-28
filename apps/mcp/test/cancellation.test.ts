@@ -19,7 +19,7 @@ import { createHttpApp } from "../src/http.js";
 import { registerSearchWeb } from "../src/tools/search-web.tool.js";
 import { registerResearchWeb } from "../src/tools/research-web.tool.js";
 import { stdioRpc } from "./helpers/mcp-harness.js";
-import { RetroaererdEngine } from "@anysearch-cli/kernel";
+import { DEFAULT_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "@anysearch-cli/kernel";
 import type { CompositionResult } from "@anysearch-cli/kernel";
 import type { SearchProvider, SearchRequest, ProviderEnvelope, FusedEnvelope } from "@anysearch-cli/retriever";
 import type { SessionStore } from "@anysearch-cli/store";
@@ -285,10 +285,19 @@ async function main() {
     // own classifier, so a cancelled search reads as `cancelled`, never as an
     // abstain with a policy reason.
     assert(res?.structuredContent?.outcome === "cancelled", "4: structuredContent says outcome=cancelled");
+    // #651: a cut arm is also reported as a shortened pool, with the budget the
+    // real engine ran on — not a number this surface guessed at.
+    assert(res?.structuredContent?.partial === true, "4: structuredContent says the pool was cut");
+    assert(
+      res?.structuredContent?.deadlineMs === DEFAULT_REQUEST_TIMEOUT_MS,
+      "4: structuredContent carries the engine's budget; got: " + res?.structuredContent?.deadlineMs,
+    );
     const doc = JSON.parse(String(res?.content?.[0]?.text));
     assert(JSON.stringify(doc.providersQueried) === JSON.stringify(["slow"]), "4: content names the arm that was asked");
     assert(JSON.stringify(doc.providersCancelled) === JSON.stringify(["slow"]), "4: content names the arm that was cut off");
     assert(doc.outcome === "cancelled", "4: content says outcome=cancelled");
+    assert(doc.partial === true, "4: content says the pool was cut");
+    assert(doc.deadlineMs === DEFAULT_REQUEST_TIMEOUT_MS, "4: content carries the same budget");
     assert(doc.abstain === null, "4: a cancelled search carries no abstain marker");
 
     // The same abort on research_web: a round the cancellation cut short
@@ -313,6 +322,13 @@ async function main() {
     // null on both surfaces, never a missing key a host has to interpret.
     assert(research?.structuredContent?.outcome === null, "4: no completed round, so the round verdict is null");
     assert(researchDoc.outcome === null, "4: content agrees with structuredContent");
+    // #651: the shape stays stable with no completed round either — no cut is
+    // claimed. The budget is the call's own clock, known before any round runs.
+    assert(research?.structuredContent?.partial === false, "4: no completed round, so no cut is claimed");
+    assert(
+      research?.structuredContent?.deadlineMs === DEFAULT_REQUEST_TIMEOUT_MS,
+      "4: the call's budget is reported even with no completed round",
+    );
   }
 
   // ---- 5. An arm that resolves after the caller's abort is still cancelled (#481) ----

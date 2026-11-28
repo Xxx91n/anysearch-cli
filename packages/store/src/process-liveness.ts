@@ -18,6 +18,8 @@
  */
 export type PidLiveness = "alive" | "dead" | "unknown";
 
+// Same shape as retriever's isPositiveWholeInt, spelled here because this module
+// imports nothing (see above).
 export function probePid(pid: number): PidLiveness {
   // Only one positive pid can be answered; anything else is unknown, not a guess.
   if (!Number.isInteger(pid) || pid <= 0) return "unknown";

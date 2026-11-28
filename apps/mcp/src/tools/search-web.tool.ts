@@ -7,8 +7,8 @@
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, type CompositionResult } from "@anysearch-cli/kernel";
-import { buildVerticalSpec } from "@anysearch-cli/retriever";
+import { KernelJsonSchemas, KernelToolDescriptions, envelopeArmLists, isDomainConstraintError, isTaskBudgetRejectedError, reportedDeadlineMs, type CompositionResult } from "@anysearch-cli/kernel";
+import { buildVerticalSpec, isPartialPool } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
 import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.js";
@@ -70,10 +70,8 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // verdicts are successes with their value named in the output; the
           // engine decides which, this surface never re-judges.
           const outcome = outcomeOf(envelope);
-          const queriedProviders = envelope.metadata?.providersQueried ?? [];
-          const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
+          const { queried: queriedProviders, cancelled: cancelledProviders, failed: failedProviders } = envelopeArmLists(envelope.metadata);
           const providerElapsedMs = envelope.metadata?.providerElapsedMs ?? {};
-          const failedProviders = envelope.metadata?.providersFailed ?? [];
           const providerErrorClasses = envelope.metadata?.providerErrorClasses;
           const providerErrorRetryAfter = envelope.metadata?.providerErrorRetryAfterSeconds;
           if (outcome === "failed") {
@@ -82,7 +80,11 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // Partial success: at least one arm answered, so isError stays false
           // while these fields name the degraded arms.
           const providerFailures = providerFailureMetadata(eng, failedProviders, providerErrorClasses, providerErrorRetryAfter);
+          const partial = isPartialPool(cancelledProviders);
           const topResults = envelope.results.slice(0, 10);
+          // One read for both halves: the same budget in the text JSON and in
+          // structuredContent, so the two copies cannot drift.
+          const deadlineMs = reportedDeadlineMs(eng);
 
           // provider answers pass through as first-class fields.
           // attribution attached to envelope by engine.attachAttribution.
@@ -93,21 +95,19 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
               showing: topResults.length,
               results: topResults,
               // first-class answers marked providerGenerated+unverified.
-              // stable output shape — answers / answersAvailable / providerAnswers /
-              // providersQueried / providersCancelled / providerElapsedMs /
-              // credentialSources are unconditional here; structuredContent is a
-              // different shape (the two arm lists, the per-arm timing and the
-              // credential record always, sufficiency / attribution / abstain /
-              // interrupted / failures when present).
+              // Stable output shape; the field list lives in docs/mcp-server.md.
               // verified:false is locked at contract layer (ProviderAnswer); do not re-stamp here.
               answers: envelope.answers ?? [],
               answersAvailable: envelope.metadata?.answersAvailable ?? false,
               providerAnswers: envelope.metadata?.providerAnswers ?? [],
               providersQueried: queriedProviders,
-              // Arms we cut off ourselves: enough results were already in, or the
-              // caller went away. Paired with providersQueried, so neither case
-              // reads as an arm that never ran.
+              // Arms we cut off ourselves: the deadline ran out, or the caller
+              // went away. Paired with providersQueried, so neither case reads as
+              // an arm that never ran.
               providersCancelled: cancelledProviders,
+              partial,
+              // The budget the engine gave this fanout.
+              deadlineMs,
               // What each answered arm said it took. Cut and failed arms have no
               // key, so this map never reads as a 0ms answer.
               providerElapsedMs,
@@ -150,8 +150,9 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           const abstain = envelope.metadata?.abstain;
           // 拒答标记放在 structuredContent.abstain，isError 仍为 false。成功
           // 结果一定带 structuredContent：outcome、credentialSources、
-          // providersQueried、providersCancelled、providerElapsedMs 恒有值；sufficiency /
-          // attribution / provider failures 有值时才加。
+          // providersQueried、providersCancelled、partial、deadlineMs、
+          // providerElapsedMs 恒有值；sufficiency / attribution / provider failures
+          // 有值时才加。
           const structuredContent = {
             ...(isInterrupted(outcome, signal) ? { interrupted: true } : {}),
             ...(envelope.metadata?.sufficiency ? { sufficiency: envelope.metadata.sufficiency } : {}),
@@ -164,6 +165,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
             // inferred from which other fields are missing.
             providersQueried: queriedProviders,
             providersCancelled: cancelledProviders,
+            // Both always present so a host never confuses "complete" with
+            // "field missing".
+            partial,
+            deadlineMs,
             // 答完的臂各自花了多久；被掐、失败的臂没有键。
             providerElapsedMs,
             // credentialSources 由引擎给出、原样透出；没接凭据时是 null。

@@ -56,7 +56,7 @@ import {
   isTimeSensitive, isEvergreen, renderSummaryBlock, removeExactBlocks, RECALL_INJECT_MAX_CHARS,
   type LegacySummaryState, type CompactionConfig,
 } from "@anysearch-cli/store"; // no inline regex copies
-import { assertJudgmentInput, combineLabels, unwrapRetrieved, type SourceTraceLabel } from "@anysearch-cli/retriever";
+import { assertJudgmentInput, combineLabels, isPositiveWholeInt, unwrapRetrieved, type SourceTraceLabel } from "@anysearch-cli/retriever";
 import type { LlmRewriteFn } from "./query-rewrite";
 
 export interface TaggedGapResult {
@@ -178,7 +178,7 @@ export function readSummarySourcesForWrite(
   const inheritIds = [
     ...(req.previousAnchorIds ?? []),
     ...(req.previousAnchorId !== undefined ? [req.previousAnchorId] : []),
-  ].filter((id): id is number => typeof id === "number" && Number.isInteger(id) && id > 0);
+  ].filter(isPositiveWholeInt);
   if (!hasResolve && !hasReads && !(hasInherit && inheritIds.length > 0)) {
     return { ok: true, sources: [] };
   }
@@ -200,10 +200,10 @@ export function readSummarySourcesForWrite(
     for (const r of req.gapReads ?? []) {
       if (!r) continue;
       const rowId = (r as { rowId?: unknown }).rowId;
-      const hasRowId = typeof rowId === "number" && Number.isInteger(rowId) && rowId > 0;
+      const hasRowId = isPositiveWholeInt(rowId);
       const url = typeof r.url === "string" ? r.url : "";
       if (!hasRowId && url.length === 0) continue;
-      reads.push({ url, rowId: hasRowId ? (rowId as number) : null });
+      reads.push({ url, rowId: hasRowId ? rowId : null });
     }
     if (hasReads && reads.length > 0) {
       sources.push(...((s.resolveSummarySourcesFromReads!(reads) ?? []) as typeof sources));
@@ -392,7 +392,7 @@ export function summaryAnchorsToInherit(
 ): number[] {
   const ids: number[] = [];
   const add = (id: unknown): void => {
-    if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return;
+    if (!isPositiveWholeInt(id)) return;
     if (!ids.includes(id)) ids.push(id);
   };
   add(previousSummaryAnchorId);
@@ -447,7 +447,7 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
         // #263: carried through when the search path recorded it. Absent on an
         // older transcript or a store without the seam — the URL bridge then
         // applies, which is why this stays optional rather than defaulted.
-        ...(Number.isInteger(rowId) && rowId > 0 ? { archiveRowId: rowId } : {}),
+        ...(isPositiveWholeInt(rowId) ? { archiveRowId: rowId } : {}),
       });
       label = combineLabels(label, itemLabel);
     }

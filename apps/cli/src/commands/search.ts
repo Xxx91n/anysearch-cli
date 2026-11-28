@@ -2,8 +2,8 @@
 // decision 3A: uses createEngine factory, not inline wiring.
 
 import type { Mode, ProviderErrorClass } from "@anysearch-cli/retriever";
-import { buildVerticalSpec, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, DEFAULT_REQUEST_TIMEOUT_MS, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
+import { buildVerticalSpec, isPartialPool, verticalSpecReject } from "@anysearch-cli/retriever";
+import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, DEFAULT_REQUEST_TIMEOUT_MS, reportedDeadlineMs, envelopeArmLists, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
@@ -14,6 +14,7 @@ import {
   formatFailedArmLines,
   formatProviderAbsentLine,
   formatProvidersCancelledLine,
+  formatResultsLine,
 } from "./search-abstain";
 
 // #649: the terminal's own wait budget. Absent keeps the engine's 4s default;
@@ -25,19 +26,19 @@ export const SEARCH_DEADLINE_MAX_MS = 60000;
 // Both render paths print "Providers failed" and the remedy beside it, or an
 // abstain hides why the arm died. One helper, so neither branch can drop half.
 function printFailedArms(
+  failed: readonly string[],
   metadata: {
-    providersFailed: string[];
     providerErrorClasses?: Record<string, ProviderErrorClass>;
     providerErrorRetryAfterSeconds?: Record<string, number>;
   },
   credentialSources?: CredentialSources,
 ): void {
   const hints = providerErrorHints(
-    metadata.providersFailed,
+    failed,
     metadata.providerErrorClasses,
     metadata.providerErrorRetryAfterSeconds,
   );
-  for (const line of formatFailedArmLines({ providersFailed: metadata.providersFailed, credentialSources, hints })) {
+  for (const line of formatFailedArmLines({ providersFailed: failed, credentialSources, hints })) {
     console.log(line);
   }
 }
@@ -191,14 +192,13 @@ export async function runSearch(args: string[]): Promise<number> {
     );
   }
   // 写错的值会静默回落成 4 秒，这一轮评测就白跑了；说清原值和这次实际用的。
-  if (
-    requestTimeoutMs === undefined &&
-    evalTimeoutRaw !== undefined &&
-    Number(evalTimeoutRaw) !== engine.requestTimeoutMs
-  ) {
+  // reportedDeadlineMs is the same read the --json document uses, so the hint
+  // cannot name a different budget than the run reports.
+  const armedDeadlineMs = reportedDeadlineMs(engine);
+  if (requestTimeoutMs === undefined && evalTimeoutRaw !== undefined && Number(evalTimeoutRaw) !== armedDeadlineMs) {
     process.stderr.write(
       "[ans search] ANS_EVAL_REQUEST_TIMEOUT_MS=" + JSON.stringify(evalTimeoutRaw) +
-        " 没有原样生效，这次按 " + engine.requestTimeoutMs + " ms 跑\n",
+        " 没有原样生效，这次按 " + armedDeadlineMs + " ms 跑\n",
     );
   }
   const { retriever, observation, providerBuildErrors, store, config, credentialSources } = engine;
@@ -269,24 +269,38 @@ export async function runSearch(args: string[]): Promise<number> {
       (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), ...(providersSel?.length ? { providers: providersSel } : {}), ...(taskBudget ? { taskBudget } : {}), span }),
     );
 
+    // Same guard the MCP tools use: a missing arm list fails the call here
+    // instead of leaving the key out of --json.
+    const arms = envelopeArmLists(envelope.metadata);
+    // Read once: the --json document and the human lines below all use it.
+    const cancelledProviders = arms.cancelled;
+    // A cut arm means the pool is shorter than the fanout that was asked.
+    const partial = isPartialPool(cancelledProviders);
+
     // --json pure — single JSON document on stdout, nothing else.
     if (isJson) {
+      // 这次跑用的预算。评测是另起一个进程跑 --json 的，看不到内存里的
+      // CompositionResult，钟只能跟着这份输出走，否则量出来的数说不清是几秒。
+      const deadlineMs = reportedDeadlineMs(engine);
       const out = {
         query: queryClean,
         mode,
-        // 这次跑用的预算。评测是另起一个进程跑 --json 的，看不到内存里的
-        // CompositionResult，钟只能跟着这份输出走，否则量出来的数说不清是几秒。
-        requestTimeoutMs: engine.requestTimeoutMs,
+        requestTimeoutMs: deadlineMs,
+        // 两个键同一个数：评测报告认准上面那个，`deadlineMs` 是给脚本新加的键。
+        deadlineMs,
         results: envelope.results,
         // providersFailed exposed so install-smoke's fault leg names the failed
         // arm from a structured field, not a string match on human output.
-        providersFailed: envelope.metadata?.providersFailed ?? [],
+        providersFailed: arms.failed,
         // Who was asked, and who we cut off — with providersFailed above, these
         // three answer "what happened to each arm". A source the domain config
         // never enabled, or ANS_PROVIDERS filtered out, is in none of them: it
         // never joins the fanout.
-        providersQueried: envelope.metadata?.providersQueried ?? [],
-        providersCancelled: envelope.metadata?.providersCancelled ?? [],
+        providersQueried: arms.queried,
+        providersCancelled: cancelledProviders,
+        // True when at least one arm was cut, so a script does not have to read
+        // three fields to notice the pool was shortened. Always present.
+        partial,
         // 每条答完的臂自己报的耗时（毫秒），键是服务商 id。被掐、失败的臂
         // 没有键——它们没有真实耗时，那是 cancelled / failed 两张表的事。
         providerElapsedMs: envelope.metadata?.providerElapsedMs ?? {},
@@ -330,10 +344,10 @@ export async function runSearch(args: string[]): Promise<number> {
     if (abstain) {
       console.log(formatAbstainLine(abstain));
       console.log("---");
-      console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
+      console.log("Providers queried: " + arms.queried.join(", "));
       // Reachable: the gate dropped arrivals while another arm failed, which is
       // still a refusal — and the failed arm's remedy belongs beside it.
-      printFailedArms(envelope.metadata, credentialSources);
+      printFailedArms(arms.failed, envelope.metadata, credentialSources);
       // 这条分支不打 cancelled：拒答本身就要求没有臂被掐断（有一条被掐，
       // 再说「这个域里没有」就说得太满），所以这里的 cancelled 恒为空表。
       if (providerAbsentLine) console.log(providerAbsentLine);
@@ -375,12 +389,12 @@ export async function runSearch(args: string[]): Promise<number> {
       console.log(renderAttributionText(envelope.attribution));
     }
 
-    console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
-    printFailedArms(envelope.metadata, credentialSources);
-    const cancelledLine = formatProvidersCancelledLine(envelope.metadata.providersCancelled);
+    console.log("Providers queried: " + arms.queried.join(", "));
+    printFailedArms(arms.failed, envelope.metadata, credentialSources);
+    const cancelledLine = formatProvidersCancelledLine(cancelledProviders);
     if (cancelledLine) console.log(cancelledLine);
     if (providerAbsentLine) console.log(providerAbsentLine);
-    console.log("Results: " + envelope.results.length);
+    console.log(formatResultsLine(envelope.results.length, partial));
     console.log("Elapsed: " + envelope.metadata.elapsedMs + "ms");
 
     return searchExitCode({ outcome: envelope.metadata.outcome, failOnAbstain });

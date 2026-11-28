@@ -5,7 +5,7 @@
 // precedence is the point of the table, so every row that could be read two
 // ways sits next to the row it must not be confused with.
 
-import { classifySearchOutcome, shouldAbstain, SEARCH_OUTCOMES, type SearchOutcomeEvidence } from "../src/outcome";
+import { classifySearchOutcome, isPartialPool, shouldAbstain, SEARCH_OUTCOMES, type SearchOutcomeEvidence } from "../src/outcome";
 
 let passed = 0;
 let failed = 0;
@@ -34,6 +34,8 @@ function row(label: string, e: Partial<SearchOutcomeEvidence>, want: ReturnType<
 
 // The union the audit attribute, the CLI field and the MCP field all carry.
 check("five values, no sixth", SEARCH_OUTCOMES.join(",") === "answer,failed,cancelled,abstain,empty");
+check("isPartialPool: no arms cut", !isPartialPool([]));
+check("isPartialPool: one arm cut", isPartialPool(["anysearch"]));
 
 // 1. answer wins outright: a result is an answer even when an arm failed.
 row("results beat a failed arm", { resultCount: 2, providersFailed: ["anysearch"] }, "answer");

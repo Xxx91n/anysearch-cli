@@ -27,7 +27,7 @@ ANS_EVAL_REQUEST_TIMEOUT_MS=15000 ans search "查一下这家公司的财报" --
 
 - 人工搜索想等更久，直接用 `ans search "..." --deadline 15000`，不用碰这个变量。
 - 这一跑的数归到 `extended` 那一栏，永远不进覆盖表的「每次提交跑过 / 每周跑过」两栏。
-- 引擎真正拿到的是多少，看 `ans search --json` 里的 `requestTimeoutMs`（同一进程里就是 `CompositionResult.requestTimeoutMs`）——报告直接拿它盖章，别自己再按环境变量算一遍，那会算出两个数。
+- 引擎真正拿到的是多少，看 `ans search --json` 里的 `requestTimeoutMs`（由 `reportedDeadlineMs` 取值：包装器报了自己的预算就用包装器的，否则用 `CompositionResult.requestTimeoutMs`；今天 CLI 的 retriever 就是引擎本身，两者同值）——报告直接拿它盖章，别自己再按环境变量算一遍，那会算出两个数。`--json` 里还有一个 `deadlineMs`，和它是同一个数（#651 加的，给脚本读），报告仍用 `requestTimeoutMs`。
 - 值没有原样生效时（写错、太小、超过上限），`ans search` 会在 stderr 说一行：原值是什么、这次按多少毫秒跑。这一行是给跑评测的人看的，别当噪音过滤掉。两个都传时也会说一行：这次 `--deadline` 赢，环境变量不生效。
 - 频率是每月一次校准。周任务和每次提交的任务都保持 4 秒主口径。
 
