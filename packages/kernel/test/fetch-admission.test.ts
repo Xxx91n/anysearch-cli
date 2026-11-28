@@ -184,6 +184,10 @@ assert(fetchRejectMessage("trust_prompt_limit").includes("换个主机名也一�
   "the prompt-limit refusal does not invite a different host instead");
 assert(fetchRejectMessage("trust_prompt_limit").includes("问够了") && fetchRejectMessage("trust_prompt_limit").includes("一直在空问"),
   "the prompt-limit refusal covers both an answered allowance and a spinning one");
+assert(fetchRejectMessage("trust_request_invalid").includes("只收一个主机名")
+  && fetchRejectMessage("trust_request_invalid").includes("m: 句柄")
+  && !fetchRejectMessage("trust_request_invalid").includes("去掉"),
+  "a malformed trust request says what is allowed, not how to drop the parameter");
 
 assert(makeRequestUrl("example.com/a") === "https://example.com/a", "a stored identity gains https on the wire");
 assert(makeRequestUrl("https://example.com/a") === "https://example.com/a", "an explicit scheme is left alone");

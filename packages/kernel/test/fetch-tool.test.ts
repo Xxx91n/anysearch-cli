@@ -706,33 +706,44 @@ async function main() {
     }
 
     {
+      // Each malformed request is its own run: one costs a trust spin, so two in
+      // the same run would close the path before the next case could be checked.
+      const badTrust = async (id: string, params: Record<string, unknown>, expected: string) => {
+        const provider = new FakeProvider((urls) => pageEnvelope(urls));
+        let asked = 0;
+        const tool = makeTool(provider, [], [], undefined, async () => { asked++; return true; });
+        const result = await tool.execute(id, params);
+        assert(rawText(result).includes(expected), expected);
+        assert(asked === 0 && provider.calls.length === 0, "a parameter mistake neither prompts nor reads");
+      };
+      await badTrust("t25f", {
+        handles: ["https://other.example/page"], requestTrustFor: "tofu2.example",
+      }, "只能有同一个主机下的网址");
+      await badTrust("t25f2", {
+        handles: ["https://docs.tofu2.example/page"], requestTrustFor: "tofu2.example",
+      }, "只能有同一个主机下的网址");
+      await badTrust("t25f3", {
+        handles: ["https://docs.example.co.uk/page"], requestTrustFor: "co.uk",
+      }, "只能有同一个主机下的网址");
+      await badTrust("t25g", {
+        handles: ["https://docs.tofu2.example/page"], requestTrustFor: "https://tofu2.example",
+      }, "只收一个主机名");
+      await badTrust("t25h", {
+        handles: ["m:1"], requestTrustFor: "tofu2.example",
+      }, "不能有 m: 句柄");
+
+      // Two malformed requests in one run close the trust path: retrying a wrong
+      // host name forever must reach a stop somewhere.
       const provider = new FakeProvider((urls) => pageEnvelope(urls));
       let asked = 0;
       const tool = makeTool(provider, [], [], undefined, async () => { asked++; return true; });
-      const outside = await tool.execute("t25f", {
-        handles: ["https://other.example/page"], requestTrustFor: "tofu2.example",
-      });
-      assert(rawText(outside).includes("只能配合同一个主机"),
-        "a handle outside the requested host is refused");
-      const parent = await tool.execute("t25f2", {
-        handles: ["https://docs.tofu2.example/page"], requestTrustFor: "tofu2.example",
-      });
-      assert(rawText(parent).includes("只能配合同一个主机"),
-        "a parent domain does not cover a subdomain host");
-      const publicSuffix = await tool.execute("t25f3", {
-        handles: ["https://docs.example.co.uk/page"], requestTrustFor: "co.uk",
-      });
-      assert(rawText(publicSuffix).includes("只能配合同一个主机"),
-        "a shared public suffix cannot be trusted for a host under it");
-      const bad = await tool.execute("t25g", {
-        handles: ["https://docs.tofu2.example/page"], requestTrustFor: "https://tofu2.example",
-      });
-      assert(rawText(bad).includes("只收一个主机名"), "requestTrustFor rejects a URL");
-      const mHandle = await tool.execute("t25h", {
-        handles: ["m:1"], requestTrustFor: "tofu2.example",
-      });
-      assert(rawText(mHandle).includes("不能有 m: 句柄"), "requestTrustFor rejects an m: handle");
-      assert(asked === 0 && provider.calls.length === 0, "parameter mistakes neither prompt nor read");
+      await tool.execute("t25h2", { handles: ["m:1"], requestTrustFor: "tofu2.example" });
+      const secondBad = await tool.execute("t25h3", { handles: ["https://other.example/p"], requestTrustFor: "tofu2.example" });
+      assert(rawText(secondBad).includes("不再受理 requestTrustFor"),
+        "a second malformed trust request closes the trust path");
+      const ignored = await tool.execute("t25h4", { handles: ["https://docs.tofu2.example/page"], requestTrustFor: "tofu2.example" });
+      assert(asked === 0 && rawText(ignored).includes("别再带 requestTrustFor"),
+        "once closed, a well-formed request is ignored and the handle is judged normally");
     }
 
     {
@@ -875,7 +886,7 @@ async function main() {
       });
       assert(!rawText(spin).includes("整批网址都没被放行") && asked === 3,
         "an over-limit trust request is refused without touching the page budget");
-      assert(rawText(spin).includes("不再接受 requestTrustFor"),
+      assert(rawText(spin).includes("不再受理 requestTrustFor"),
         "the second refused trust request closes the trust path for the run");
 
       // Closed means the parameter is ignored, not that the whole call dies: a
@@ -899,10 +910,10 @@ async function main() {
       const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
       await tool.execute("t25u1", { handles: ["https://docs.settled.example/a"], requestTrustFor: "docs.settled.example" });
       const repeat1 = await tool.execute("t25u2", { handles: ["https://docs.settled.example/b"], requestTrustFor: "docs.settled.example" });
-      assert(rawText(repeat1).includes("没有同意") && !rawText(repeat1).includes("不再接受 requestTrustFor"),
+      assert(rawText(repeat1).includes("没有同意") && !rawText(repeat1).includes("不再受理 requestTrustFor"),
         "the first repeat of a declined host is refused in-band");
       const repeat2 = await tool.execute("t25u2b", { handles: ["https://docs.settled.example/b2"], requestTrustFor: "docs.settled.example" });
-      assert(rawText(repeat2).includes("不再接受 requestTrustFor"),
+      assert(rawText(repeat2).includes("不再受理 requestTrustFor"),
         "asking a settled host over and over closes the trust path");
       const repeat3 = await tool.execute("t25u3", { handles: ["https://docs.settled.example/c"], requestTrustFor: "docs.settled.example" });
       assert(rawText(repeat3).includes("别再带 requestTrustFor"),

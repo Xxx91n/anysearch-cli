@@ -35,7 +35,8 @@ export type FetchRejectReason =
   | "trust_unavailable"
   | "trust_declined"
   | "trust_write_failed"
-  | "trust_prompt_limit";
+  | "trust_prompt_limit"
+  | "trust_request_invalid";
 
 /** Extra facts a refusal sentence may use, so the model gets a concrete next move. */
 export interface FetchRejectContext {
@@ -86,6 +87,8 @@ export function fetchRejectMessage(reason: FetchRejectReason, context: FetchReje
         "信任票没写进本会话，别再问了。这次没读页；先用已有材料回答，或者让用户把网页正文贴进来。";
     case "trust_prompt_limit":
       return "这次提问的信任确认已经用完了（问够了，或者一直在空问），不再弹确认，换个主机名也一样。先用已有材料回答；要读别的网页，让用户把正文贴进来。";
+    case "trust_request_invalid":
+      return "requestTrustFor 只收一个主机名（比如 example.com），不要带 http://、端口、路径或空格；handles 里只能有同一个主机下的网址，不能有 m: 句柄，也不能有别的网站的网址。";
     default:
       return assertNever(reason);
   }

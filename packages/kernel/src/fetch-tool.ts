@@ -51,12 +51,10 @@ export const BUILTIN_FETCH_TOOL = "fetch";
 const BUDGET_STOP_MESSAGE = "这轮抓页额度用完了，先用已有结果作答。";
 const SOFT_STOP_MESSAGE = `这轮抓页已经停了：连续 ${FETCH_LIMITS.maxEmptyBatches} 次没拿到新内容。先用已有结果回答，或者让用户把链接贴进来。`;
 const REJECTED_STOP_MESSAGE = `这轮抓页已经停了：连续 ${FETCH_LIMITS.maxRejectedBatches} 次整批网址都没被放行。先用已有材料回答；如果确实要读，让用户确认域名规则，不要换写法重试。`;
-const TRUST_CLOSED_MESSAGE = `这轮不再接受 requestTrustFor 了：连续 ${FETCH_LIMITS.maxTrustSpins} 次信任请求都没真的问过用户。把 requestTrustFor 去掉再调一次，已经能读的网址照常能读；要读新的网站，让用户把网页正文贴进来。`;
+const TRUST_CLOSED_MESSAGE = `这轮不再受理 requestTrustFor 了：连续 ${FETCH_LIMITS.maxTrustSpins} 次信任请求都没真的问到人。带上这个参数也一样被忽略；手里有票的网址照读，要读新的网站，让用户把网页正文贴进来。`;
 const PAGE_BUDGET_MESSAGE = `这轮读页到上限了（一次提问最多 ${FETCH_LIMITS.maxPages} 页），先用已有结果作答。`;
 const PROVIDER_NO_REPLY_MESSAGE = "抓页信息源这次没有回包；先别断定页面没内容，稍后再试。";
 const PARAMETER_ERROR = `handles 要给 1–${FETCH_LIMITS.maxUrlsPerCall} 个（m:<行号> 或用户贴过的网址），不能有空串；maxCharacters 在 1–${FETCH_LIMITS.maxCharacters} 之间。`;
-const TRUST_DOMAIN_FORMAT = "requestTrustFor 只收一个主机名，比如 example.com；不要带 http://、端口、路径或空格。把要读的网址放在 handles 里重试。";
-const TRUST_HANDLE_MISMATCH = "requestTrustFor 只能配合同一个主机下的网址：handles 里不能有 m: 句柄，也不能有别的网站的网址。这个不行：";
 const TRUST_GRANTED = "已信任这个主机，本会话内有效。现在重新调用 fetch，handles 用同样的网址，就能读了；这次请求没有读页。";
 const NO_FETCH_SOURCE_MESSAGE = "没有可用的抓取信息源";
 const EMPTY_BODY_MESSAGE = "页面正文是空的";
@@ -122,14 +120,10 @@ interface Target {
 /**
  * Per-question page reads: cached URLs, new pages, and the stop streaks.
  *
- * Page reading stops on its own two counters: a batch with no new page, and a
- * batch nothing was admitted from (gate refusals, `no_ticket`, `stale_handle`,
- * `invalid_handle`). A gate that refuses a host from the trust entry point counts
- * too — address, deny, allowlist and credential judged that host exactly as a
- * read would. What does not count is a trust request nobody answered (allowance
- * gone, host answered already, headless cannot prompt): those close the trust
- * path on their own counter instead, and the pages this session can read stay
- * readable.
+ * The page counters count a batch with no new page and a batch nothing was
+ * admitted from; a gate refusal counts wherever it came from. A trust request
+ * nobody answered counts on `trustSpins` instead, and the one a human answered
+ * closes nothing — `rejectTrust` and `rejectTrustSettled` say which is which.
  */
 class FetchRunState {
   pagesRead = 0;
@@ -445,29 +439,39 @@ async function handleTrustRequest(
   state: FetchRunState,
   signal?: AbortSignal,
 ): Promise<ReturnType<typeof textResult> | undefined> {
-  if (typeof raw !== "string") return textResult(TRUST_DOMAIN_FORMAT);
-  const domain = normalizeTrustDomain(raw);
-  if (!domain) return textResult(TRUST_DOMAIN_FORMAT);
+  const domain = typeof raw === "string" ? normalizeTrustDomain(raw) : undefined;
 
   // The trust path is closed for this run: stop asking, and read whatever this
   // call's handles are entitled to. Refusing the whole call here would drop
-  // handles the user already pasted or trusted, and the model cannot tell that
-  // dropping `requestTrustFor` is the way back in.
+  // handles the user already pasted or trusted.
   if (state.trustClosed) {
-    options.span?.addEvent("fetch.trust", { "fetch.trust": "closed", "fetch.host": domain });
+    options.span?.addEvent("fetch.trust", { "fetch.trust": "closed", "fetch.host": domain ?? "" });
     return undefined;
+  }
+
+  // A shape error asks nobody anything, so it closes the trust path like the other
+  // spins instead of leaving a wrong host name to be retried forever.
+  if (!domain) {
+    return rejectTrust(options, state, "spin", fetchRejectMessage("trust_request_invalid"), "trust_request_invalid", String(raw ?? ""));
   }
 
   const urls: string[] = [];
   for (const handle of handles) {
-    if (/^m:/i.test(handle.trim())) return textResult(TRUST_HANDLE_MISMATCH + handle);
+    // A malformed request asks nobody anything, so it counts as a trust spin, not
+    // as a page that was refused: a wrong host name retried forever must still
+    // reach a stop somewhere.
+    if (/^m:/i.test(handle.trim())) {
+      return rejectTrust(options, state, "spin", fetchRejectMessage("trust_request_invalid") + " 这个不行：" + handle, "trust_request_invalid", handle);
+    }
     const { identity, requestUrl } = effectiveRequestUrl(options.store, options.sessionId, handle);
     const address = checkFetchAddress(requestUrl, identity);
     if (!address.ok) return rejectTrust(options, state, "page-gate", fetchRejectMessage(address.reason), address.reason, handle);
     if (fetchCredentialHit(handle, identity)) {
       return rejectTrust(options, state, "page-gate", fetchRejectMessage("credential"), "credential", handle, address.host, address.port);
     }
-    if (address.host !== domain) return textResult(TRUST_HANDLE_MISMATCH + handle);
+    if (address.host !== domain) {
+      return rejectTrust(options, state, "spin", fetchRejectMessage("trust_request_invalid") + " 这个不行：" + handle, "trust_request_invalid", handle);
+    }
     urls.push(requestUrl);
   }
 
