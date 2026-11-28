@@ -12,6 +12,8 @@ export const FETCH_LIMITS = {
   maxUrlsPerCall: FETCH_MAX_URLS_PER_CALL,
   maxEmptyBatches: 2,
   maxRejectedBatches: 2,
+  /** Trust questions one run may show a human; later requests are refused in-band. */
+  maxTrustPrompts: 3,
   maxCharacters: 4000,
 } as const;
 
@@ -30,7 +32,8 @@ export type FetchRejectReason =
   | "credential"
   | "trust_unavailable"
   | "trust_declined"
-  | "trust_write_failed";
+  | "trust_write_failed"
+  | "trust_prompt_limit";
 
 /** Extra facts a refusal sentence may use, so the model gets a concrete next move. */
 export interface FetchRejectContext {
@@ -50,11 +53,14 @@ export function fetchRejectMessage(reason: FetchRejectReason, context: FetchReje
       const site = context.host
         ? "先做站点限定搜索：在 search 的查询里写 `site:" + context.host + " 关键词`，"
         : "先按标题或站点搜索，";
-      const trust = context.trustRefused
-        ? "这个主机的信任已经问过了，别再带 requestTrustFor；让用户把网页正文贴进来，或者换一个站点。"
-        : context.trustAvailable
-          ? "还搜不到的话，带 requestTrustFor: \"" + (context.host ?? "域名") + "\" 再调一次，用户会看清网址后决定信不信任这个网站；"
-          : "当前是非交互模式，不能弹确认；让用户把链接贴进对话，";
+      let trust: string;
+      if (context.trustRefused) {
+        trust = "这个主机的信任已经问过了，别再带 requestTrustFor；让用户把网页正文贴进来，或者换一个站点。";
+      } else if (context.trustAvailable) {
+        trust = "还搜不到的话，带 requestTrustFor: \"" + (context.host ?? "域名") + "\" 再调一次，用户会看清网址后决定信不信任这个网站；";
+      } else {
+        trust = "当前是非交互模式，不能弹确认；让用户把链接贴进对话，";
+      }
       return "这个网址不在本会话的搜索结果或用户消息里，抓不了。" + site + "搜到了用 m: 句柄读。" + trust + "不要换 URL 写法重试。";
     }
     case "stale_handle":
@@ -76,6 +82,8 @@ export function fetchRejectMessage(reason: FetchRejectReason, context: FetchReje
     case "trust_write_failed":
       return "用户同意了，但" + (context.host ? " " + context.host + " 的" : "这个主机的") +
         "信任票没写进本会话，别再问了。这次没读页；先用已有材料回答，或者让用户把网页正文贴进来。";
+    case "trust_prompt_limit":
+      return "这次提问已经问过 " + FETCH_LIMITS.maxTrustPrompts + " 次信任了，不再弹确认。先用已有材料回答；要读别的主机，让用户把网页正文贴进来。";
     default:
       return assertNever(reason);
   }

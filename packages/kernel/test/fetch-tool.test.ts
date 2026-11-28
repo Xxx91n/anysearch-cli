@@ -840,6 +840,26 @@ async function main() {
       assert(provider.calls.length === 0, "an aborted prompt reads no page");
     }
 
+    {
+      // One run may only show so many trust questions: a model steered by page
+      // text must not turn the user into a y/N machine.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
+      for (const host of ["one", "two", "three"]) {
+        await tool.execute("t25t-" + host, {
+          handles: ["https://docs." + host + ".example/a"], requestTrustFor: "docs." + host + ".example",
+        });
+      }
+      assert(asked === 3, "the run shows the allowed number of trust questions");
+      const overLimit = await tool.execute("t25t-over", {
+        handles: ["https://docs.four.example/a"], requestTrustFor: "docs.four.example",
+      });
+      assert(rawText(overLimit).includes("不再弹确认") && asked === 3,
+        "a trust question past the allowance is refused without prompting");
+      assert(!store.hasFetchTicket(session.id, "tofu", "docs.four.example"), "the refusal writes no ticket");
+    }
+
     store.close();
   } finally {
     try { rmSync(workDir, { recursive: true, force: true }); } catch {}

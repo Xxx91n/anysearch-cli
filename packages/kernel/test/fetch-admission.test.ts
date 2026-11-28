@@ -2,6 +2,7 @@
 // user-URL ticket extraction, and trust refusal text.
 
 import {
+  FETCH_LIMITS,
   checkFetchAddress,
   checkFetchDomain,
   extractUserUrlTickets,
@@ -178,6 +179,10 @@ assert(fetchRejectMessage("trust_declined", { host: "docs.example.com" }).includ
 assert(fetchRejectMessage("trust_write_failed", { host: "docs.example.com" }).includes("docs.example.com")
   && fetchRejectMessage("trust_write_failed", { host: "docs.example.com" }).includes("别再问了"),
   "a failed ticket write tells the model not to ask again");
+assert(fetchRejectMessage("trust_prompt_limit").includes("不再弹确认"),
+  "a trust prompt over the run allowance says no more prompts");
+assert(fetchRejectMessage("trust_prompt_limit").includes(String(FETCH_LIMITS.maxTrustPrompts)),
+  "the prompt-limit refusal names how many questions the run allowed");
 
 assert(makeRequestUrl("example.com/a") === "https://example.com/a", "a stored identity gains https on the wire");
 assert(makeRequestUrl("https://example.com/a") === "https://example.com/a", "an explicit scheme is left alone");

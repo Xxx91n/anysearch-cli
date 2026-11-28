@@ -68,11 +68,21 @@ async function askYesNo(question: string, signal?: AbortSignal): Promise<boolean
   if (signal?.aborted) return false;
   try {
     const readline = await import("node:readline");
+    // Re-check after the await: an abort landing during the import would
+    // otherwise have no listener registered when the question starts.
+    if (signal?.aborted) return false;
     const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    let onAbort: (() => void) | undefined;
     const answer = await new Promise<string | null>((resolve) => {
       rl.question(question, (text) => resolve(text));
-      signal?.addEventListener("abort", () => resolve(null), { once: true });
-    }).finally(() => rl.close());
+      if (signal) {
+        onAbort = () => resolve(null);
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+    }).finally(() => {
+      rl.close();
+      if (signal && onAbort) signal.removeEventListener("abort", onAbort);
+    });
     return answer === null ? false : /^y(es)?$/i.test(answer.trim());
   } catch {
     return false;

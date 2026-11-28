@@ -119,18 +119,19 @@ interface Target {
 }
 
 /**
- * Per-question page reads: cached URLs, new pages, and the two stop streaks.
+ * Per-question page reads: cached URLs, new pages, and the stop streaks.
  *
- * A trust question is not a rejected batch: the model followed the documented
- * escape hatch and a human decided. Counting it would stop the run after
- * "no_ticket, then ask, user says no", which also blocks reading ordinary
- * search handles the user still wants. So trust refusals never touch
- * `rejectedStreak`, and asking clears the earlier no_ticket.
+ * `emptyStreak` counts batches that returned no new page. `rejectedStreak`
+ * counts batches a gate refused (address, deny, allowlist, credential) and the
+ * trust requests the tool answered itself (headless refusal, prompt limit).
+ * A trust question a human actually answered does not count — see
+ * rejectTrustSettled. `trustPrompts` caps how many questions one run may ask.
  */
 class FetchRunState {
   pagesRead = 0;
   emptyStreak = 0;
   rejectedStreak = 0;
+  trustPrompts = 0;
   stopped = false;
   stopKind: "empty" | "rejected" | undefined;
   readonly cache = new Map<string, CachedRead>();
@@ -171,6 +172,13 @@ class FetchRunState {
 
   resetRejectedStreak(): void {
     this.rejectedStreak = 0;
+  }
+
+  /** Note one trust question about to be shown; true means the run has used up its allowance. */
+  trustPromptsExhausted(): boolean {
+    if (this.trustPrompts >= FETCH_LIMITS.maxTrustPrompts) return true;
+    this.trustPrompts++;
+    return false;
   }
 
   stopMessage(): string {
@@ -342,12 +350,21 @@ function resolveTicket(
   return { ok: true, target: { identity, requestUrl, ...(title ? { title } : {}) } };
 }
 
-/**
- * One refusal shape for the trust path: log the denial and return the message.
- * `counts` decides whether this failure also feeds the two-rejected-batches stop.
- * A trust question the user already answered does not (see rejectTrustSettled).
- */
-function rejectTrust(
+/** Log a trust-path denial and return the refusal text; the caller decides if a counter moves. */
+function trustRefusal(
+  options: FetchToolOptions,
+  message: string,
+  reason: FetchRejectReason,
+  handle: string,
+  host?: string,
+  port?: string,
+): ReturnType<typeof textResult> {
+  reportDenial(options.span, { handle, source: "tofu", reason, ...(host ? { host } : {}), ...(port ? { port } : {}) });
+  return textResult(message, { rejected: [{ handle, reason }], softStopped: false });
+}
+
+/** A trust-path refusal that counts toward the two-rejected-batches stop. */
+function rejectTrustGate(
   options: FetchToolOptions,
   state: FetchRunState,
   message: string,
@@ -355,14 +372,11 @@ function rejectTrust(
   handle: string,
   host?: string,
   port?: string,
-  counts = true,
 ): ReturnType<typeof textResult> {
   reportDenial(options.span, { handle, source: "tofu", reason, ...(host ? { host } : {}), ...(port ? { port } : {}) });
-  const stoppedNow = counts ? state.noteRejectedBatch() : false;
-  return textResult(stoppedNow ? message + "\n" + REJECTED_STOP_MESSAGE : message, {
-    rejected: [{ handle, reason }],
-    softStopped: stoppedNow,
-  });
+  const stoppedNow = state.noteRejectedBatch();
+  const text = stoppedNow ? message + "\n" + REJECTED_STOP_MESSAGE : message;
+  return textResult(text, { rejected: [{ handle, reason }], softStopped: stoppedNow });
 }
 
 /**
@@ -378,11 +392,7 @@ function rejectTrustSettled(
   host: string,
 ): ReturnType<typeof textResult> {
   (reason === "trust_declined" ? state.declinedTrust : state.failedTrust).add(host);
-  return rejectTrust(
-    options, state,
-    fetchRejectMessage(reason, { host }),
-    reason, domain, host, undefined, false,
-  );
+  return trustRefusal(options, fetchRejectMessage(reason, { host }), reason, domain, host);
 }
 
 /**
@@ -409,9 +419,9 @@ async function handleTrustRequest(
     if (/^m:/i.test(handle.trim())) return textResult(TRUST_HANDLE_MISMATCH + handle);
     const { identity, requestUrl } = effectiveRequestUrl(options.store, options.sessionId, handle);
     const address = checkFetchAddress(requestUrl, identity);
-    if (!address.ok) return rejectTrust(options, state, fetchRejectMessage(address.reason), address.reason, handle);
+    if (!address.ok) return rejectTrustGate(options, state, fetchRejectMessage(address.reason), address.reason, handle);
     if (fetchCredentialHit(handle, identity)) {
-      return rejectTrust(options, state, fetchRejectMessage("credential"), "credential", handle, address.host, address.port);
+      return rejectTrustGate(options, state, fetchRejectMessage("credential"), "credential", handle, address.host, address.port);
     }
     if (address.host !== domain) return textResult(TRUST_HANDLE_MISMATCH + handle);
     urls.push(requestUrl);
@@ -419,20 +429,27 @@ async function handleTrustRequest(
 
   // The host itself gets the same address and domain gates a read would.
   const address = checkFetchAddress("https://" + domain + "/", domain + "/");
-  if (!address.ok) return rejectTrust(options, state, fetchRejectMessage(address.reason), address.reason, domain);
+  if (!address.ok) return rejectTrustGate(options, state, fetchRejectMessage(address.reason), address.reason, domain);
   const gate = checkFetchDomain(address.host, options.policy());
   if (!gate.ok) {
-    return rejectTrust(options, state, fetchRejectMessage(gate.reason), gate.reason, domain, address.host, address.port);
+    return rejectTrustGate(options, state, fetchRejectMessage(gate.reason), gate.reason, domain, address.host, address.port);
   }
   if (hasTofuTrust(options.store, options.sessionId, address.host)) return undefined;
   if (!options.confirmTrust) {
-    return rejectTrust(options, state, fetchRejectMessage("trust_unavailable"), "trust_unavailable", domain, address.host);
+    return rejectTrustGate(options, state, fetchRejectMessage("trust_unavailable"), "trust_unavailable", domain, address.host);
   }
   if (state.failedTrust.has(address.host)) {
     return rejectTrustSettled(options, state, "trust_write_failed", domain, address.host);
   }
   if (state.declinedTrust.has(address.host)) {
     return rejectTrustSettled(options, state, "trust_declined", domain, address.host);
+  }
+  if (state.trustPromptsExhausted()) {
+    return rejectTrustGate(
+      options, state,
+      fetchRejectMessage("trust_prompt_limit"),
+      "trust_prompt_limit", domain, address.host, undefined,
+    );
   }
   // The model followed the documented escape hatch and a human is about to
   // decide. The earlier no_ticket is answered, not repeated.
