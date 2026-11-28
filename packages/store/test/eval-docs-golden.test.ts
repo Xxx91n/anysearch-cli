@@ -28,6 +28,7 @@ import {
   type CoverageManifest,
 } from "../src/eval/docs-golden";
 import { loadDomain, loadDomainByNameIn } from "../src/domain-loader";
+import { goldenShapeProblems } from "../../../scripts/golden-shape.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, "..", "..", "..");
@@ -125,6 +126,25 @@ assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.lengt
     throws(() => readGoldenFile(write("orphan-scope.json", JSON.stringify({ ...base, scopes: { ...base.scopes, "docs-g9999": "live" } })))),
     "scope for an entry that is not in entries throws"
   );
+  // scripts/golden-shape.mjs is the plain-node copy of these outer rules, and the
+  // vocabulary parity test only pins its words, not its rules. Feed it the same
+  // documents the reader just refused: a rule the reader grows without the gate
+  // grows lets `ship-gate --quick` pass and the executor fail on the file.
+  for (const [label, doc] of [
+    ["a null root", null],
+    ["an array root", []],
+    ["a wrong schema", { ...base, schema: "anysearch/docs-golden@9" }],
+    ["entries that are not an array", { ...base, entries: {} }],
+    ["empty entries", { ...base, entries: [] }],
+    ["scopes that are not an object", { ...base, scopes: [] }],
+    ["empty scopes", { ...base, scopes: {} }],
+    ["an unknown scope value", { ...base, scopes: { "docs-g0001": "Live" } }],
+    ["an entry without a scope", { ...base, scopes: withoutFirst }],
+    ["a tombstone carrying a scope", { ...base, scopes: { ...base.scopes, [tomb.id]: "live" } }],
+    ["a scope for an unknown entry", { ...base, scopes: { ...base.scopes, "docs-g9999": "live" } }],
+  ] as Array<[string, unknown]>) {
+    assert(goldenShapeProblems(doc).length > 0, "the shape gate must refuse " + label + " as the reader does");
+  }
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
