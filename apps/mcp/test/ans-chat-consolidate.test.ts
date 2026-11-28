@@ -349,6 +349,19 @@ async function callConsolidate(args: Record<string, unknown>) {
   const trimmedText = trimmed.content[0]!.text;
   assert(trimmedText.includes("material (cluster 1"), "one material got nothing: it is listed");
   assert(/\(1 of 2 materials shown/.test(trimmedText), "one material got nothing: the count line says 1 of 2");
+
+  // The counters are per cluster and independent: the note appears only when
+  // two of them are non-zero, because one cluster can land under both.
+  const oneCounter = buildAnsChatConsolidateResult(
+    { ...base, materialsFed: [feed], quotesMissing: 1 } as never, usage as never, {},
+  );
+  assert(!/do not add them up/.test(oneCounter.content[0]!.text),
+    "one counter: no overlap note");
+  const twoCounters = buildAnsChatConsolidateResult(
+    { ...base, materialsFed: [feed], quotesMissing: 1, noConclusion: 1 } as never, usage as never, {},
+  );
+  assert(/do not add them up/.test(twoCounters.content[0]!.text),
+    "two counters: the overlap note says they are independent");
 }
 
 await server.close();
