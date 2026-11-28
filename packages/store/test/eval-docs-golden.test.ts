@@ -304,7 +304,9 @@ assert(
 // --- 7. the ledger no longer carries the corpus; unknown fields survive ------
 const ledger = readLooksLedger(path.join(root, "eval-looks.json"));
 assert(!Object.hasOwn(ledger, "golden"), "readLooksLedger does not surface a corpus (it lives in eval-golden.json)");
-const staleTmp = path.join(os.tmpdir(), "ans-stale-golden-" + process.pid + ".json");
+const staleDir = fs.mkdtempSync(path.join(os.tmpdir(), "ans-stale-"));
+const staleTmp = path.join(staleDir, "eval-looks.json");
+const staleCorpus = path.join(staleDir, "eval-golden.json");
 fs.writeFileSync(staleTmp, JSON.stringify({ schema: "anysearch/eval-looks@2", schema_version: 1, golden: { scopes: {}, entries: [] }, looks: [] }), "utf8");
 const readStale = () => {
   const lines: string[] = [];
@@ -316,11 +318,20 @@ const readStale = () => {
     process.stderr.write = realWrite;
   }
 };
+// No corpus beside the ledger: the block is the only copy left, so it stays.
+{
+  const { ledger: kept, lines: keptErr } = readStale();
+  assert.deepEqual((kept as Record<string, unknown>).golden, { scopes: {}, entries: [] }, "a golden block stays when no corpus sits beside the ledger");
+  assert(keptErr.some((line) => line.includes(staleTmp) && line.includes("keeping")), "keeping it is reported on stderr, naming the file");
+  assert((kept as Record<string, unknown>).schema_version === 1, "keeping golden keeps schema_version");
+}
+// With the corpus beside it the block is a stale copy: dropped and reported.
+fs.writeFileSync(staleCorpus, JSON.stringify({ schema: "anysearch/docs-golden@1", scopes: { probe: "stub" }, entries: [] }), "utf8");
 const { ledger: stale, lines: staleErr } = readStale();
-assert(!Object.hasOwn(stale, "golden"), "a stale golden block is dropped on read");
+assert(!Object.hasOwn(stale, "golden"), "a stale golden block is dropped when the corpus is on disk");
 assert(staleErr.some((line) => line.includes(staleTmp)), "dropping a stale golden block is reported on stderr, naming the file");
 assert((stale as Record<string, unknown>).schema_version === 1, "dropping golden keeps schema_version");
-fs.rmSync(staleTmp, { force: true });
+fs.rmSync(staleDir, { recursive: true, force: true });
 const appended = appendLook(
   ledger,
   { key: "t:t", at: "2026-09-14T00:00:00.000Z", look: 1, verdict: "pass", exitCode: 0, reviewerNote: "keep-me" } as LooksLedgerEntry,
