@@ -22,7 +22,11 @@ import {
   loadDomainFromString,
   preMigrationBackupPath,
   preMigrationRecordPath,
+  readChunkVectorBacklogFile,
+  embeddingModelId,
+  EMBEDDING_MODEL_UNAVAILABLE,
   readMigrationStatus,
+  type ChunkVectorBacklog,
   type MigrationLayoutStatus,
   resolveSearchCredentials,
 } from "@anysearch-cli/store";
@@ -92,6 +96,45 @@ export interface DoctorOptions {
    * 探针走各家的公开端点（anysearch 例外：它本来就有 ANYSEARCH_ENDPOINT）。
    */
   endpoints?: Partial<Record<SearchProviderId, string>>;
+}
+
+const BACKFILL_COMMAND = "ans memory backfill-vectors";
+
+/** 正文块向量这一行的状态和说明。积压判定只在这里算一次，state 和 detail 不会走散。 */
+function chunkBacklogReport(backlog: ChunkVectorBacklog, chunkModel: string): { state: "ready" | "unconfigured"; detail: string } {
+  const facts = [`已补 ${backlog.embedded} 块 / 待补 ${backlog.pending} 块`];
+  if (chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {
+    facts.push("按任意模型统计（embedding 包用不了：没装或加载失败）");
+  }
+  if (backlog.pagesWithoutChunks > 0) {
+    facts.push(`${backlog.pagesWithoutChunks} 页有正文但节或块缺失，关键词也搜不到`);
+  }
+  // 只按当前模型的向量数判断截断，别的模型留下的旧行不算。
+  if (chunkModel !== EMBEDDING_MODEL_UNAVAILABLE && backlog.embedded > backlog.vectorScanLimit) {
+    facts.push(`当前模型的块向量 ${backlog.embedded} 条，检索只扫最近 ${backlog.vectorScanLimit} 条（更老的正文只剩关键词那条）`);
+  }
+  const needsBlocks = backlog.pagesWithoutChunks > 0;
+  const needsVectors = backlog.pending > 0;
+  let repair: string;
+  if (chunkModel === EMBEDDING_MODEL_UNAVAILABLE) {
+    if (needsBlocks || needsVectors) {
+      repair = needsBlocks
+        ? "跑 " + BACKFILL_COMMAND + " 可重建缺块；块向量要等 embedding 包可用后才能补"
+        : "块向量现在补不了（embedding 包用不了）";
+    } else {
+      repair = "现在没东西要补；包没装只影响块向量这条路，关键词照常";
+    }
+  } else if (needsBlocks || needsVectors) {
+    const actions: string[] = [];
+    if (needsBlocks) actions.push("重建缺块");
+    if (needsVectors) actions.push("补块向量");
+    repair = "跑 " + BACKFILL_COMMAND + " " + actions.join("、");
+  } else {
+    repair = "没有积压";
+  }
+  // 缺块、待补块或缺 embedding 包都是待补能力，不是坏掉。
+  const state = needsBlocks || needsVectors || chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? "unconfigured" : "ready";
+  return { state, detail: facts.join("；") + "。" + repair };
 }
 
 function errorText(error: unknown): string {
@@ -1116,6 +1159,44 @@ export async function runDoctor(args: string[] = [], opts: DoctorOptions = {}): 
               : "当前布局本来就不需要迁移前备份",
           });
         }
+      }
+    }
+    // 块向量补到哪了。有积压不是坏，关键词那条照常能搜；读真库时只读打开，
+    // 不用构造器，免得 doctor 顺手迁移或做备份。
+    if (dbPath !== ":memory:" && existsSync(dbPath)) {
+      try {
+        // 按当前模型统计；没装包时按任意模型统计，保留真实已补数。
+        const chunkModel = await embeddingModelId();
+        const backlog = readChunkVectorBacklogFile(
+          dbPath,
+          chunkModel === EMBEDDING_MODEL_UNAVAILABLE ? undefined : chunkModel,
+        );
+        if (!backlog) {
+          report.add({
+            layer: "data",
+            name: "正文块向量",
+            state: "unconfigured",
+            mode: "offline",
+            detail: "库里还没有可读的块表或正文列（新库还没被会话库补全，或是旧库）；下次 ans 打开时建表，老正文跑 ans memory backfill-vectors 补块",
+          });
+        } else {
+          const chunk = chunkBacklogReport(backlog, chunkModel);
+          report.add({
+            layer: "data",
+            name: "正文块向量",
+            state: chunk.state,
+            mode: "offline",
+            detail: chunk.detail,
+          });
+        }
+      } catch (error) {
+        report.add({
+          layer: "data",
+          name: "正文块向量",
+          state: "failed",
+          mode: "offline",
+          detail: errorText(error).slice(0, 160),
+        });
       }
     }
   }

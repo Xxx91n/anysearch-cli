@@ -47,6 +47,16 @@ export function toolError(toolName: string, detail: string): CallToolResult {
   return toolFailure(toolName + " error: " + detail);
 }
 
+/**
+ * Structured execution failure for a tool whose error contract is a JSON
+ * payload the caller can act on (expand's rowid/section correction). Still an
+ * isError result, still no structuredContent, so the error channel stays
+ * separate from the output schema.
+ */
+export function toolJsonError(payload: unknown): CallToolResult {
+  return toolFailure(JSON.stringify(payload, null, 2));
+}
+
 export interface ProviderFailureMetadata {
   providersFailed: string[];
   providerErrorClasses: Record<string, ProviderErrorClass>;

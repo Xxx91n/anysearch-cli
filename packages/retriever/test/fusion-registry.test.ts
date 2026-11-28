@@ -12,18 +12,18 @@ function assert(label: string, cond: boolean) {
 
 // Pinned expected value — full 64-hex SHA-256 of the canonical payload (style).
 // Any registry edit without a deliberate re-pin flips this test (registry drift detection).
-const EXPECTED_FUSION_REGISTRY_SHA256 = "33caa6f52f64c156d6029dc9d4650ae92f4c0b8313e4beb97f0502d25081dbce";
+const EXPECTED_FUSION_REGISTRY_SHA256 = "24e43e4f39c4a83000b51a6dcec4e3e4b256d496405bea15056d832d4718a00a";
 
 // Shape: schema + all six registered fields + read-only algorithm enum.
 assert("schema marker", FUSION_REGISTRY.schema === FUSION_REGISTRY_SCHEMA && FUSION_REGISTRY.schema === "anysearch/fusion-registry@1");
 assert("k_fusion memory/web split", FUSION_REGISTRY.k_fusion.memory === 60 && FUSION_REGISTRY.k_fusion.web === 60);
 assert("rank_window registered (was implicit default)", FUSION_REGISTRY.rank_window === 60);
 assert("ror_window registered (was runner const)", FUSION_REGISTRY.ror_window === 60);
-assert("weights.memory exact", JSON.stringify(FUSION_REGISTRY.weights.memory) === JSON.stringify({ fts: 1.0, entity: 0.5, vector: 0.5, relation: 0.5, semantic: 0.5 }));
+assert("weights.memory exact", JSON.stringify(FUSION_REGISTRY.weights.memory) === JSON.stringify({ fts: 1.0, content: 1.0, entity: 0.5, vector: 0.5, relation: 0.5, semantic: 0.5 }));
 assert("weights.web exact (equal-weight null model)", JSON.stringify(FUSION_REGISTRY.weights.web) === JSON.stringify({ exa: 1.0, tavily: 1.0, anysearch: 1.0 }));
 assert("armAbsentSemantics registered", FUSION_REGISTRY.armAbsentSemantics === "conditional-activation-absent-arm-adds-no-list");
 assert("algorithm read-only enum", FUSION_REGISTRY.algorithm.memory === "weighted-rrf" && FUSION_REGISTRY.algorithm.web === "rrf");
-assert("provider/arm closed sets", REGISTERED_WEB_PROVIDERS.join(",") === "exa,tavily,anysearch" && REGISTERED_MEMORY_ARMS.join(",") === "fts,entity,vector,relation,semantic");
+assert("provider/arm closed sets", REGISTERED_WEB_PROVIDERS.join(",") === "exa,tavily,anysearch" && REGISTERED_MEMORY_ARMS.join(",") === "fts,content,entity,vector,relation,semantic");
 
 // Registry drift pair — positive: pin holds; negative: a tampered copy mismatches.
 assert("pin hash matches (64-hex)", /^[0-9a-f]{64}$/.test(fusionRegistryHash(FUSION_REGISTRY)) && fusionRegistryHash(FUSION_REGISTRY) === EXPECTED_FUSION_REGISTRY_SHA256);

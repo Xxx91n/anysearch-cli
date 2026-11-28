@@ -1,3 +1,47 @@
+## Unreleased — #611: 展开整节：recall_memory 的 expand
+
+一句话说清：**`recall_memory` 多了 `expand`：拿召回命中的正 rowid 加节 id，就能把那一节正文读回来。默认整节；一节超过 8000 字时在空白处切开，给 `hasMore` / `nextOffset` 续读；正文重过一遍净化，标 `untrusted_web`；本地读库，不记 `calls`。**
+
+### Changed
+
+- **入参**（`packages/kernel/src/tool-schemas.ts`）：闭对象 `expand` 只把正 `rowid` 当页读，负数留给 handler 回 `knowledge_row`（schema 不先拒，调用方才能拿到可纠正的错误）；`sectionId` 可以给一个或一组；`offset` / `limitChars` 兜底。工具描述写明整页是网上抓来的原文，当资料看，别当指令。`packages/kernel/src/tool-json-schemas.ts` 照旧自动派生。
+- **读库**（`packages/store/src/retrieval-expand.ts`、`session-store.ts`、`sqlite-time.ts`）：按命中节在 `retrieval_chunks` 里的码点偏移，用 SQL `substr` 从 `retrieval_results.content` 切正文，不走 JS `slice`，emoji 不会错位。单节不带标题前缀，`role` 报标题路径；多节按请求顺序拼，每节前写标题路径，`role` 用 ` | ` 连起来。整节放得下就整节给；超过 8000 字或调用方 `limitChars` 更小时，切口尽量回退到 200 字内的空白，补 `…`，并给 `hasMore`、`nextOffset`、`truncatedBy`（`limit_chars` / `oversized_section`）。`offset` / `nextOffset` 都是页面级码点偏移。只读仍然有效的行：归档、隔离、过期、被取代的页按 `not_found`，和召回看到的范围一致。`limitChars: 1` 时至少回一个正文字符（不带省略号），保证 `nextOffset` 真的前进；正好落在节边界时 `hasMore` 为真但 `truncatedBy` 为 `null`。读出的切片再过一遍 `sanitizeText`。错误放在结果里：`no_content`、`offset_out_of_range`、`knowledge_row`，另加 `not_found`（含已归档/被取代）和 `section_not_found`（空数组也拒，不退化成第一节）。`fetchedAt` 的格式化搬进 `sqlite-time.ts`，召回和展开用同一份。
+- **出口**（`apps/mcp/src/tools/recall-memory.tool.ts`）：成功结果带 `rowid`、`role`、`url`、`fetchedAt`、`trust: "untrusted_web"`、`totalChars`、`offset`、`returnedChars`、`hasMore`、`nextOffset`、`truncatedBy`、`text`；失败是 `isError: true`，JSON 里给 `error`、`rowid`、能纠正的上下文和一句下一步提示。每次展开在 observation 记一条 `memory.expand`，带行号、请求的节、实际 `role`、偏移、返回字数和是否还有下一段。不调供应商、不建预算行，`calls` 不动。
+- **文档**（`docs/mcp-server.md`）：工具表补 `expand` 参数，正文补返回字段、续读方式、两条截断来源和错误码。
+
+### Tests
+
+- `packages/store/test/retrieval-expand.test.ts`：默认整节且不加标题前缀、多节顺序与标题分隔、9000 个 emoji 的单节在 8000 字切开后按码点续读不错位、`limit_chars` 与 `oversized_section` 的区分、`limitChars: 1` 也推进一个码点、节边界不算截断、归档行读不到、只有摘要 / 负 rowid / 越界 offset / 空或不存在的节。
+- `apps/mcp/test/recall-memory-expand.test.ts`：真 handler 的 JSON 契约（`trust`、`url`、`fetchedAt`、字段齐全）、`isError` 的错误形状、`memory.expand` 事件、超过 8000 字时 `hasMore` + `nextOffset` 续读。
+
+## Unreleased — #609: 整页正文能被搜到：块表、中文 bigram、召回节清单
+
+一句话说清：**以前抓回来的整页只有开头 4000 字进了 `snippet`，中文查询在主表 FTS 上命中 0 行，召回也看不出这页有哪些节。现在正文按 Markdown 标题切成「节 + 小块」：块表只存偏移和标题路径，全文仍只存主表 `content`；小块进 contentless FTS，中文连续段切重叠 bigram，英文走前缀，单字中文走页面级 `LIKE`；关键词和向量两路按节去重后融合，正文命中以权重 1.0 并进记忆召回；召回命中多带 url、抓取时间、有没有正文、节清单；块向量后台补，`ans doctor` 能看出还剩多少没补。**
+
+### Changed
+
+- **三张新表**（`packages/store/src/schema.sql`）：`retrieval_chunks`（节 level 0 / 小块 level 1，只存码点偏移和标题路径）、`retrieval_chunks_fts`（contentless + `contentless_delete=1`，默认 detail，FTS 行由块服务写入，块行被删时由 `retrieval_chunks` 上的 AFTER DELETE 触发器顺手清掉——级联删页走同一条路；块行只增删不改，原地改会被 `BEFORE UPDATE` 触发器挡下，正文或标题路径变了就整页重建）、`retrieval_chunk_vectors`（一小块一条 384 维向量）。开库的幂等 DDL 会补表；老正文不回填。治理列不复制到块表，查询时 join 主表过滤；主表 `retrieval_results_fts` 仍然只索引 title/snippet。
+- **切块**（`packages/store/src/chunk-text.ts`）：按 ATX 标题切节，标题路径以页面标题为根；节超过 1000 字在空行处再切，单个段落切不开就保留成一个节。节内小块目标 400 字、200–800、硬顶 1200：长段落按目标均分（不把尾巴剩成一个 100 字小块），过短的尾巴并进前一块；代码围栏和表格整块保留，超过 2000 字才按行拆，切节也绝不从围栏中间下刀。偏移一律按码点算，写侧用码点遍历，读侧走 SQL `substr`。`ensureChunksForPage` 可重入：正文后来才补进旧行时重建块，重复调用不叠行。
+- **分词与查询**（同文件）：索引侧中文连续段切重叠 bigram，单字独立段保留单字 token，中英边界、标点、换行都是分隔符；查询侧同一套规则，中文变成 bigram 短语，英文用 `word*` 前缀，整段题面里没有分隔符时拼成一条短语。整条查询只有一个汉字时 FTS 帮不上忙，走页面级 `LIKE`，命中后按码点偏移映射到所在的节。
+- **内容臂**（`packages/store/src/retrieval-chunks.ts`、`session-store.ts`）：关键词和块向量两路各自先按父节去重，再 RRF（k=60）融合；同一个节被多个小块命中只出现一次，同一页也只进融合一次。没有块的行不激活这条臂。内容臂以权重 1.0 并进记忆融合；融合排序里分数相同（量化到 1e-12）时有正文的行排在只有片段的行前面，单查询和多查询两条召回路径都走同一个比较器。
+- **召回字段**（`MemoryHit` / `recall_memory`）：命中多带 `url`（存库时的身份串）、`fetchedAt`（ISO-8601 UTC）、`hasContent`、`sections`（只列 level 0：`sectionId` / `headingPath` / `chars` / `startOffset`）。一直是批量读，不做 N+1；知识行始终是负 rowid，仍然不带这些字段。召回每条 200 字、RAG 每条 600、L2 块 1500、单块 4000 这四处截断一个没动。
+- **块向量后台补**（`session-store.ts`）：`savePage` 写完正文同步建块，再把页号放进有界队列（最多 64 页）后台用现有 384 维 embedding 补；搜索不等它，队列满了丢掉的新页会留在库里的待补数里，可用 `backfillChunkVectors()` 补。`ans doctor` 的数据层新增一行「正文块向量」，只读打开真库，报「已补 N 块 / 待补 M 块」；有积压不是失败。
+- **融合注册表**（`packages/retriever/src/fusion-registry.ts`）：`weights.memory` 新增 `content: 1.0`（正文命中按全文证据算，不当侧信号），冻结哈希跟着重新钉。
+- **`rrfRankWithPreferred`**（`packages/retriever/src/rrf.ts`）：RRF 排序的显式平手裁决；分数本身不改，只决定同分时谁在前。
+
+### Tests
+
+- `packages/store/test/chunk-text.test.ts`：bigram 索引/查询规则、CRLF 正文仍认标题、标题路径、码点偏移（含 emoji）、长节按段落切、围栏不被切节/切块切断、200–800 与 1200 上限、均分不留短尾、零重叠。
+- `packages/store/test/retrieval-chunks.test.ts`：2/3/4 字中文命中、单字 LIKE、英文前缀、正文-only 词不进主表 FTS 但被内容臂找到、同一节多块只出一次、召回四字段与节清单、向量未补时仍可搜、后台/补齐全流程、可重入重建、片段行后来补正文能补块、知识行始终是负 rowid，不带页面字段。
+- `apps/mcp/test/recall-memory-sections.test.ts`：真 handler 的 JSON 契约（节清单字段、snippet-only 的空清单、200 字预览不变）。
+- `apps/cli/test/doctor.test.ts`：真库只读读出「待补块数」，积压不抬退出码。
+- `packages/store/test/fusion-registry-memory.test.ts`、`packages/retriever/test/fusion-registry.test.ts`、`rrf.test.ts`：每臂按注册表取权重、冻结哈希重钉、平手裁决不改分数。
+
+- `packages/store/test/retrieval-chunks.test.ts` 另加：同一分下「有正文的页」在单查询和多查询两条路径都排在只有片段的页前面，并带 `content` 臂。
+
+### Known limits
+
+- 这版只把索引和召回接好；仓库里还没有生产代码调用 `savePage` 的抓取入口，所以真实安装里的 `content` 列暂时是空的，正文臂要等抓取工具注册后才对现有档案生效。
 ## Unreleased — #653: 记下每条臂花了多久
 
 一句话说清：**引擎在每次检索的 metadata 里多写一张 `providerElapsedMs` 表：答完的臂各有自己的毫秒数，键是服务商 id；被掐断、失败的臂没有键——它们没有真实耗时，那件事已经由 `providersCancelled` / `providersFailed` 说了。`ans search --json` 和 MCP 两个搜索工具的 `structuredContent` 原样透出，评测不用直调服务商也能画到达分布。**

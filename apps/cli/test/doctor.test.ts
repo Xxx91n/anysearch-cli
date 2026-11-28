@@ -16,6 +16,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DiagReport, type DiagJson } from "../src/diagnostics.js";
+import { openDatabase, SqliteSessionStore } from "@anysearch-cli/store";
 import { runDoctor } from "../src/commands/doctor.js";
 
 const STATES = ["ready", "unconfigured", "unchecked", "failed"];
@@ -1223,4 +1224,86 @@ test("ans doctor：凭据文件读不出来时，建议只解决读的问题，�
   assert.match(row.detail ?? "", /move the directory at that path aside/, row.detail);
   assert.doesNotMatch(row.detail ?? "", /ans auth repair/, "repair reads the same file：" + row.detail);
   assert.doesNotMatch(row.detail ?? "", /fix or remove/i, "on a read fault the file is fine：" + row.detail);
+});
+
+test("ans doctor：有正文没块报 unconfigured，不抬退出码", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-doctor-noblocks-"));
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, ANS_DB_PATH: process.env.ANS_DB_PATH };
+  const dbPath = join(home, "anysearch.db");
+  try {
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    process.env.ANS_DB_PATH = dbPath;
+    const store = new SqliteSessionStore(dbPath);
+    store.close();
+    const raw = openDatabase(dbPath);
+    try {
+      raw.prepare("INSERT OR IGNORE INTO sessions (id, domain) VALUES (?, ?)").run("doctor", "research");
+      raw.prepare(
+        "INSERT INTO retrieval_results (session_id, url, title, snippet, content, fetched) VALUES (?, ?, ?, ?, ?, 1)",
+      ).run("doctor", "example.com/body-only", "正文页", "摘要", "## 安装\n\n这里是安装说明。");
+    } finally {
+      raw.close();
+    }
+    const lines: string[] = [];
+    const code = await runDoctor(["--json"], { stdout: (line) => lines.push(line) });
+    const payload = JSON.parse(lines.join("\n")) as DiagJson;
+    const entry = payload.layers.flatMap((layer) => layer.entries).find((e) => e.name === "正文块向量");
+    assert.ok(entry, "数据层要报一条「正文块向量」");
+    assert.equal(entry.state, "unconfigured", "缺块是待补能力，不是坏掉");
+    assert.match(entry.detail ?? "", /跑 ans memory backfill-vectors/, "detail 要给修法");
+    assert.equal(code, 0, "缺块不该让 doctor 退出码变 1");
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("ans doctor：正文块向量的补齐进度与积压看得见（#609）", async () => {
+  const home = mkdtempSync(join(tmpdir(), "ans-doctor-chunks-"));
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, ANS_DB_PATH: process.env.ANS_DB_PATH };
+  const dbPath = join(home, "anysearch.db");
+  try {
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    process.env.ANS_DB_PATH = dbPath;
+    // Build the schema through the store, then seed a page + blocks without
+    // vectors directly: what doctor must report is the durable backlog, not
+    // whether this process managed to load an embedding model.
+    const store = new SqliteSessionStore(dbPath);
+    store.close();
+    const raw = openDatabase(dbPath);
+    try {
+      raw.prepare("INSERT OR IGNORE INTO sessions (id, domain) VALUES (?, ?)").run("doctor", "research");
+      const page = raw.prepare(
+        "INSERT INTO retrieval_results (session_id, url, title, snippet, content, fetched) VALUES (?, ?, ?, ?, ?, 1) RETURNING id",
+      ).get("doctor", "example.com/guide", "指南", "这里是安装说明。", "## 安装\n\n这里是安装说明。") as { id: number };
+      const insertChunk = raw.prepare(
+        "INSERT INTO retrieval_chunks (page_id, parent_id, level, ord, start_offset, end_offset, heading_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      );
+      const section = insertChunk.run(page.id, null, 0, 0, 14, 22, "指南 > 安装") as { lastInsertRowid: number };
+      insertChunk.run(page.id, section.lastInsertRowid, 1, 0, 14, 22, "指南 > 安装");
+      insertChunk.run(page.id, section.lastInsertRowid, 1, 1, 24, 32, "指南 > 安装");
+    } finally {
+      raw.close();
+    }
+
+    const lines: string[] = [];
+    const code = await runDoctor(["--json"], { stdout: (line) => lines.push(line) });
+    const payload = JSON.parse(lines.join("\n")) as DiagJson;
+    const entry = payload.layers.flatMap((layer) => layer.entries).find((e) => e.name === "正文块向量");
+    assert.ok(entry, "数据层要报一条「正文块向量」");
+    assert(["ready", "unconfigured"].includes(entry.state), "积压/缺包都不是故障");
+    assert.match(entry.detail ?? "", /已补 \d+ 块 \/ 待补 [1-9]\d* 块/, "detail 里必须能看出还剩多少没补");
+    assert.equal(code, 0, "有积压也不该让 doctor 退出码变 1");
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
 });

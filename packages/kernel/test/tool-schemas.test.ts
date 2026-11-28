@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { Value } from "@sinclair/typebox/value";
 import {
   KernelJsonSchemas
@@ -19,6 +20,17 @@ import {
   ResearchWebInput,
   SearchWebInput,
 } from "../src/tool-schemas";
+
+// 1b. The schema leaf must not import the store barrel: dsh-plugin bundles
+// tool-json-schemas with esbuild and no runtime deps, so a barrel import would
+// drag better-sqlite3 into that bundle even though it compiles and tests fine.
+for (const name of ["tool-schemas.ts", "tool-json-schemas.ts"]) {
+  const source = readFileSync(new URL(`../src/${name}`, import.meta.url), "utf8");
+  const storeSpecs = [...source.matchAll(/from\s+["'](@anysearch-cli\/store(?:\/[^"']*)?)["']/g)].map((m) => m[1]);
+  for (const spec of storeSpecs) {
+    assert.equal(spec, "@anysearch-cli/store/expand-limits", `${name} may only import the native-free store subpath, not ${spec}`);
+  }
+}
 
 // 1. Registry shape: exactly the 5 ans_* tool names.
 assert.deepEqual(
@@ -113,6 +125,19 @@ assert.equal(rm.limit, 5);
 assert.equal(qk.query, "q");
 assert.equal(ac.message, "m");
 assert.equal(acThreaded.sessionId, "abc-123");
+
+// 8b. #611: a negative rowid is a domain answer (knowledge_row), not a wire
+// validation error, so the handler — not AJV — draws the material-row line.
+assert.equal(
+  Value.Check(RecallMemoryInput, { query: "q", expand: { rowid: -1 } }),
+  true,
+  "expand passes a negative rowid through to the handler",
+);
+assert.equal(
+  Value.Check(RecallMemoryInput, { query: "q", expand: { rowid: 3, sectionId: [1, 2], offset: 10, limitChars: 500 } }),
+  true,
+  "expand accepts a positive rowid with sections and paging args",
+);
 
 // 9.: maxResults contract rejection — the key is not
 // in the schema and additionalProperties:false makes the check hard-fail.

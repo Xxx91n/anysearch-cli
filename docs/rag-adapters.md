@@ -73,7 +73,7 @@ note = "内部 wiki：https://wiki.intra/ ；代理端口 8080"
 `fts` 读数据的范围是 **store**，不是某段会话，也不是某个域：
 
 - `fts` 走 `SessionStore.searchMemory`：先用 FTS 主路查 `retrieval_results_fts`，再和
-  entity / vector / relation / semantic 几路结果合在一起；**不带 `session_id` 或 `domain` 过滤** ——
+  content（页正文的节与块）、entity、vector、relation、semantic 几路结果合在一起；**不带 `session_id` 或 `domain` 过滤** ——
   同一个 store 里所有还有效（没归档、没隔离、没失效）的调研资料都能被查出来。这和
   `recall_memory` 一样，`fts` 只是在它外面包了一层。
 - 真正隔开数据的单位是 store 自己：默认 `~/.ans/anysearch.db`，MCP HTTP

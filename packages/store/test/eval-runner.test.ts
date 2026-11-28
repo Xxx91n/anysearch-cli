@@ -1,7 +1,7 @@
 // impl plan step 7: runner self-check (path 1/3).
 // Verifies: golden set shape, runCase pass on golden spec, stage attribution on failure, metrics, fingerprint stability.
 import { GOLDEN_CASES, OFFLINE_EXCLUDED_GROUPS, offlineCases } from "../src/eval/golden-cases";
-import { computeMetrics, datasetFingerprint, runCase, runAll } from "../src/eval/runner";
+import { computeMetrics, datasetFingerprint, runCase, runAll, NON_ANCHOR_MEMORY_ARMS, MEMORY_ARM_ROLES } from "../src/eval/runner";
 
 let passed = 0, failed = 0;
 function assert(cond: boolean, msg: string) {
@@ -14,6 +14,10 @@ async function main() {
   assert(GOLDEN_CASES.length === 128, "128 golden cases (got " + GOLDEN_CASES.length + ")");
   const groups = new Set(GOLDEN_CASES.map((c) => c.group));
   assert(groups.size === 15, "15 groups (got " + groups.size + ")");
+  // Every measured side arm gates; adding a non-gating label (e.g. content)
+  // to the measured set must fail here rather than silently becoming WARN-only.
+  assert(NON_ANCHOR_MEMORY_ARMS.every((a) => MEMORY_ARM_ROLES[a] === "critical"),
+    "every NON_ANCHOR arm has a critical role");
   assert(GOLDEN_CASES.every((c) => c.ops.every((o) => typeof o.stage === "string")), "every op carries a stage");
 
   // Fingerprint stable across calls, changes when dataset changes.

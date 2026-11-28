@@ -5,6 +5,7 @@
 
 import type { Database as SqliteDatabase } from "better-sqlite3";
 import { NO_PAGE_BODY_SQL } from "./retrieval-content.js";
+import { parseSqliteUtc } from "./sqlite-time.js";
 
 // Tiered half-life (tau) in days: news decays fast, evergreen decays slow.
 export const TAU_TIER = {
@@ -62,7 +63,7 @@ export function decayMultiplier(ageInDays: number, tier: ContentTier, taus: TauT
 
 function sqliteTsToMs(ts: string | null): number | null {
   if (!ts || typeof ts !== "string") return null;
-  const ms = new Date(ts.replace(" ", "T") + "Z").getTime();
+  const ms = parseSqliteUtc(ts);
   return Number.isFinite(ms) ? ms : null;
 }
 
@@ -147,8 +148,8 @@ export function invalidateOldRecords(
   // body writers leave it off because a new version should win.
   const protect = opts.protectContent ? NO_PAGE_BODY_SQL : "";
   db.prepare(
-    "UPDATE retrieval_results SET valid_until = datetime('now') " +
-    "WHERE url = ? AND id != ? AND valid_until IS NULL " +
-    "AND archived = 0 AND quarantine IS NULL" + protect
+    "UPDATE retrieval_results AS r SET valid_until = datetime('now') " +
+    "WHERE r.url = ? AND r.id != ? AND r.valid_until IS NULL " +
+    "AND r.archived = 0 AND r.quarantine IS NULL" + protect
   ).run(entityKey, newRecordId);
 }

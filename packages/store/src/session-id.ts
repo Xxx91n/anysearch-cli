@@ -14,11 +14,11 @@
 // gracefully to empty string so core CLI/Hook/MCP paths stay fail-open.
 //
 // Precedent: systemd machine-id(5), K8s Lease/leader election, OPA decision log.
+import { writeStderr } from "./stderr.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { ansSessionPath } from "./ans-paths.js";
-import { writeStderr } from "./stderr.js";
 
 export const ENV_SESSION_ID = "ANS_SESSION_ID";
 
@@ -41,7 +41,7 @@ function generateSessionId(): string {
 }
 
 // Process-local cache of temporary IDs for unreadable anchors.
-// CodeRabbit #129 review: without this, each readSessionId() call returns a
+// Without this, each readSessionId() call returns a
 // different ID when the anchor is unreadable, so events from one process
 // can receive different session IDs. Keyed by anchor path so different
 // ANS_SESSION_ID / HOME combinations don't collide.
@@ -51,9 +51,9 @@ const tempIdByAnchor = new Map<string, string>();
 // 1. ANS_SESSION_ID env (if non-empty) wins and is NOT written back.
 // 2. file content (if non-empty) is returned as-is.
 // 3. otherwise generate + atomically persist a new id.
-// Atomic-write is shared with url-policy.ts atomicWriteFile; re-implemented here
-// to keep this module dependency-free (the plugin hook bundle esbuild config
-// forbids importing @anysearch-cli/store, so hook callers must inline or copy).
+// Atomic-write mirrors url-policy.ts atomicWriteFile instead of importing it:
+// url-policy imports this module's readSessionId, so sharing it would create a
+// cycle.
 export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
   const envId = env[ENV_SESSION_ID];
   if (typeof envId === "string" && envId.trim().length > 0) return envId.trim();
@@ -68,7 +68,7 @@ export function readSessionId(env: NodeJS.ProcessEnv = process.env): string {
         return v;
       }
     } catch {
-      // CodeRabbit #129 review: do NOT fall through to fresh generate + write.
+      // Do NOT fall through to fresh generate + write.
       // renameSync does not require write permission on the file itself, only
       // on its directory, so overwriting would silently destroy the anchor.
       // The previous session ID may still be recoverable once permissions are

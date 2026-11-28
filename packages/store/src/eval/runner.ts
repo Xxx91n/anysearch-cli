@@ -9,6 +9,7 @@ import Database from "better-sqlite3";
 import { openDatabase } from "../db";
 import { SqliteSessionStore } from "../session-store";
 import { normalizeEntityName } from "../entity";
+import { parseSqliteUtc } from "../sqlite-time";
 import type { AdjudicationResultItem } from "../session-store";
 import { rrfRank, FUSION_REGISTRY } from "@anysearch-cli/retriever";
 import { ABSTAIN_CASES, assertParaphraseSlice, PARAPHRASE_MAX_LEXICAL_OVERLAP, type CaseSpec, type EvalStage, type EvalGroup } from "./golden-cases";
@@ -33,7 +34,7 @@ export interface OpRecord {
   ndcg?: Record<string, number>;
   rank?: number;
   hitCount?: number;
-  // count of non-weak (FTS-armed) hits, for weak-evidence semantics.
+  // count of non-weak hits (FTS or content arm), for weak-evidence semantics.
   strongCount?: number;
   // relation observational flags (never flip case pass/fail).
   hopHit?: boolean;
@@ -45,22 +46,32 @@ export interface OpRecord {
   rorRankOn?: number;
   rorRankOff?: number;
   rorExcluded?: boolean; // expected memory never identified in any arm list
-  // Phase-2: semantic-arm counterfactual (six-arm list vs five-arm baseline).
+  // Phase-2: semantic-arm counterfactual (the full arm list vs its baseline).
   semRankOn?: number;
   semRankOff?: number;
   // uniform drop-arm counterfactual for every non-anchor memory arm.
   armDeltas?: Record<string, ArmDeltaRecord>;
 }
 
-export type MemoryArmLabel = "fts" | "entity" | "vector" | "relation" | "semantic";
-export const MEMORY_ARM_ROLES: Record<MemoryArmLabel, "anchor" | "critical" | "observational"> = {
+export type MemoryArmLabel = "fts" | "content" | "entity" | "vector" | "relation" | "semantic";
+/**
+ * Arms this evaluation measures. content is outside because no case writes a
+ * page body: an n=0 arm would trip the weakest-link warning and shift the beta
+ * correction for the other four. Add it here, with a critical role in
+ * MEMORY_ARM_ROLES, once a case writes a body; the pin test fails until then.
+ */
+export type MeasuredMemoryArm = Exclude<MemoryArmLabel, "content">;
+export const MEMORY_ARM_ROLES: Record<MeasuredMemoryArm, "anchor" | "critical" | "observational"> = {
   fts: "anchor",
   entity: "critical",
   vector: "critical",
   relation: "critical",
   semantic: "critical",
 };
-export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts">[] = [
+/**
+ * The measured non-anchor arms; see MeasuredMemoryArm for why content is absent.
+ */
+export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MeasuredMemoryArm, "fts">[] = [
   "entity",
   "vector",
   "relation",
@@ -68,7 +79,7 @@ export const NON_ANCHOR_MEMORY_ARMS: readonly Exclude<MemoryArmLabel, "fts">[] =
 ];
 
 export interface ArmDeltaRecord {
-  label: Exclude<MemoryArmLabel, "fts">;
+  label: Exclude<MeasuredMemoryArm, "fts">;
   role: "critical" | "observational";
   rankOn: number;
   rankOff: number;
@@ -268,17 +279,18 @@ export function computeArmDeltas(
   const rankOn = onIdx >= 0 ? onIdx + 1 : ROR_CLIP;
   const out: Record<string, ArmDeltaRecord> = {};
   for (const label of NON_ANCHOR_MEMORY_ARMS) {
-    const drop = prov.labels.indexOf(label);
+    const present = prov.labels.includes(label);
     const role = MEMORY_ARM_ROLES[label];
     if (role !== "critical" && role !== "observational") continue;
-    if (drop < 0) {
+    if (!present) {
       out[label] = { label, role, rankOn, rankOff: ROR_CLIP, excluded: true };
       continue;
     }
     const lists: string[][] = [];
     const weights: number[] = [];
     for (let i = 0; i < prov.labels.length; i++) {
-      if (i === drop) continue;
+      // A label may cover several lists (two vector lanes); drop all of them.
+      if (prov.labels[i] === label) continue;
       lists.push(prov.lists[i]!);
       weights.push(prov.weights[i]!);
     }
@@ -348,9 +360,9 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
           case "search": {
             const hits = await store.searchMemory(op.query, op.limit ?? 20);
             const texts = hits.map((h) => hitText(h));
-            // weak = hit without the FTS arm (vector/entity-only recall). Weak hits are
-            // answer-layer abstain evidence: they don't count toward precision budgets.
-            const isWeak = (h: unknown): boolean => { const a = (h as { arms?: string[] }).arms; return Array.isArray(a) && a.length > 0 && !a.includes("fts"); };
+            // weak = hit with neither the FTS nor the content arm (vector/entity-only
+            // recall); see MeasuredMemoryArm for why content is not measured.
+            const isWeak = (h: unknown): boolean => { const a = (h as { arms?: string[] }).arms; return Array.isArray(a) && a.length > 0 && !a.includes("fts") && !a.includes("content"); };
             const strongHits = hits.filter((h) => !isWeak(h));
             const fails: string[] = [];
             if (op.expectIncludesTitle && !texts.some((t) => t.includes(op.expectIncludesTitle!))) fails.push(`missing "${op.expectIncludesTitle}"`);
@@ -601,8 +613,8 @@ export async function runCase(spec: CaseSpec, makeStore: StoreFactory = defaultF
       let firstAt: number | null = null;
       let lastAt: number | null = null;
       for (const e of ev) {
-        const a = Date.parse(String(e.accessed_at).replace(" ", "T") + "Z");
-        const c = Date.parse(String(e.created_at).replace(" ", "T") + "Z");
+        const a = parseSqliteUtc(String(e.accessed_at));
+        const c = parseSqliteUtc(String(e.created_at));
         ages.push(Number.isFinite(a) && Number.isFinite(c) ? (a - c) / 86_400_000 : NaN);
         perUnit.set(String(e.mid), (perUnit.get(String(e.mid)) ?? 0) + 1);
         if (Number.isFinite(a)) {

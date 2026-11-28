@@ -7,8 +7,26 @@ import type { CompositionResult } from "@anysearch-cli/kernel";
 import { KernelJsonSchemas, KernelToolDescriptions } from "@anysearch-cli/kernel";
 import { observeTool } from "./observation.js";
 import { withMcpTask } from "../mcp-task.js";
-import { toolError } from "./failure.js";
+import { toolError, toolJsonError } from "./failure.js";
 import { recallProjectIndex } from "../project-index.js";
+import type { MemoryExpandErrorCode, MemoryExpandRequest } from "@anysearch-cli/store";
+
+const MAX_SECTIONS_PER_HIT = 20;
+
+/** Observation-friendly form of the requested section ids. */
+function sectionIdsFor(sectionId: MemoryExpandRequest["sectionId"]): string {
+  if (sectionId === undefined) return "";
+  return Array.isArray(sectionId) ? sectionId.join(",") : String(sectionId);
+}
+
+/** What the model should do about an expansion it cannot complete. */
+const EXPAND_ERROR_HINT: Record<MemoryExpandErrorCode, string> = {
+  knowledge_row: "a negative rowid names a long-term knowledge row and has no page body; expand only a positive material rowid from a recall hit",
+  offset_out_of_range: "offset is outside this page's body; use an offset below totalChars",
+  no_content: "this row has only a snippet and no page body; search or fetch the page first",
+  section_not_found: "one of the sectionIds is not a section of this page; use the section list on the recall hit",
+  not_found: "no material row has this rowid",
+};
 
 export function registerRecallMemory(server: McpServer, eng: CompositionResult): void {
   server.registerTool(
@@ -21,9 +39,56 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
       // #304: every MCP tool call is one task. This tool bills no model call,
       // but the task id in its closeout is what lets the hook's post-work
       // (index writes) say which request caused it (#307).
-      return withMcpTask(eng, "recall_memory", () => observeTool(eng, "recall_memory", ctx, async () => {
+      return withMcpTask(eng, "recall_memory", () => observeTool(eng, "recall_memory", ctx, async (span) => {
       try {
-        const { query, limit, projectPaths } = args as { query: string; limit?: number; projectPaths?: string[] };
+        const { query, limit, projectPaths, expand } = args as {
+          query: string; limit?: number; projectPaths?: string[]; expand?: MemoryExpandRequest;
+        };
+        if (expand) {
+          const read = eng.store.expandMemory;
+          if (typeof read !== "function") {
+            return toolError("recall_memory", "this store cannot read page sections");
+          }
+          const result = read.call(eng.store, expand);
+          span.addEvent("memory.expand", {
+            "memory.rowid": expand.rowid,
+            "memory.sectionIds": sectionIdsFor(expand.sectionId),
+            "memory.role": result.ok ? result.role : "",
+            "memory.offset": expand.offset ?? 0,
+            "memory.returnedChars": result.ok ? result.returnedChars : 0,
+            "memory.hasMore": result.ok ? result.hasMore : false,
+            "memory.error": result.ok ? "" : result.error,
+          });
+          if (!result.ok) {
+            // A correction the model can act on, not a protocol fault (#204).
+            return toolJsonError({
+              rowid: result.rowid,
+              error: result.error,
+              ...(result.totalChars === undefined ? {} : { totalChars: result.totalChars }),
+              ...(result.sectionIds === undefined ? {} : { sectionIds: result.sectionIds }),
+              message: EXPAND_ERROR_HINT[result.error],
+            });
+          }
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                rowid: result.rowid,
+                role: result.role,
+                url: result.url,
+                fetchedAt: result.fetchedAt,
+                trust: "untrusted_web",
+                totalChars: result.totalChars,
+                offset: result.offset,
+                returnedChars: result.returnedChars,
+                hasMore: result.hasMore,
+                nextOffset: result.nextOffset,
+                truncatedBy: result.truncatedBy,
+                text: result.text,
+              }, null, 2),
+            }],
+          };
+        }
         const lim = limit ?? 5;
         // FTS5 memory recall with time decay.
         const { isTimeSensitive, isEvergreen } = await import("@anysearch-cli/store");
@@ -81,15 +146,25 @@ export function registerRecallMemory(server: McpServer, eng: CompositionResult):
           internal: hits.map((h) => ({
             role: h.role,
             content: h.content.slice(0, 200),
-            rank: h.rank,
+            rank: h.rank ?? null,
             sessionId: h.sessionId,
-            // #263 (D9): the archive row this hit came from. A summary records
-            // its dependencies by id, and a recall result carries no URL, so
-            // without this the material the model actually read could never be
-            // bound to the summary that used it. Positive rowid = archive
+            // The archive row this hit came from. A summary records
+            // its dependencies by id, so the material the model actually read
+            // can be bound to the summary that used it. Positive rowid = archive
             // material, negative = knowledge row (SessionStore's semantic arm).
             rowid: h.rowid,
             provenance: "internal",
+            // Every hit carries the same fields: url/fetchedAt are null when
+            // absent, rank is null when the arm has no score (a page found only
+            // by its body, or an entity/relation hit), hasContent is false and
+            // sections is []. sectionsTotal is the full count before the
+            // 20-section cut — the list itself is cut from the top. Field
+            // meanings live in docs/mcp-server.md.
+            url: h.url ?? null,
+            fetchedAt: h.fetchedAt ?? null,
+            hasContent: h.hasContent === true,
+            sections: (h.sections ?? []).slice(0, MAX_SECTIONS_PER_HIT),
+            sectionsTotal: h.sections?.length ?? 0,
           })),
           projectIndex: projectHits.map((h) => ({
             title: h.title,
