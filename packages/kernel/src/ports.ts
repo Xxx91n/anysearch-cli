@@ -46,8 +46,10 @@ export type Query = SearchRequest & {
 // RetrieverPort: the kernel calls this to search.
 export interface RetrieverPort {
   search(q: Query): Promise<FusedEnvelope>;
-  // The clock this wrapper runs on, when it runs one; omit it otherwise. The
-  // clamp and fallback rules live in reportedDeadlineMs, in one place.
+  // The clock this wrapper runs on, when it runs one; omit it otherwise. A
+  // wrapper that starts its own timer must fill this in: reportedDeadlineMs
+  // falls back to the orchestration default (4000ms), so an unreported clock
+  // reports a budget the run never enforced.
   readonly requestTimeoutMs?: number;
 }
 
