@@ -126,35 +126,23 @@ test("windows separators name the same package", () => {
 test("a root file runs the packages whose tests read it, and stops there", () => {
   // kernel depends on store, and this file is read by store's tests alone: a
   // dependent cannot see it through the reader's tests, so it does not run.
-  const coverage = planPreflight(root, ["eval-looks.coverage.json"]);
-  assert.equal(coverage.mode, "readers");
-  assert.deepEqual(coverage.packages, ["@anysearch-cli/store"]);
-
-  for (const [files, rows] of [
-    [["domains/docs.toml"], ["domains"]],
-    [["domains/research.toml", "domains/default.toml"], ["domains"]],
-    [["eval-looks.json"], ["eval-looks.json"]],
-    [["eval-badcases.json"], ["eval-badcases.json"]],
-    [["eval-golden.json"], ["eval-golden.json"]],
-    [["eval-golden.json", "eval-looks.coverage.json"], ["eval-golden.json", "eval-looks.coverage.json"]],
+  for (const [files, readers] of [
+    // Store is the one reader here; kernel depends on store but its tests do
+    // not read this file, so the dependent does not run.
+    [["eval-looks.coverage.json"], ["@anysearch-cli/store"]],
+    [["domains/docs.toml"], ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"]],
+    [["domains/research.toml", "domains/default.toml"], ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"]],
+    [["eval-looks.json"], ["@anysearch-cli/store"]],
+    [["eval-badcases.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
+    [["eval-golden.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
+    [["eval-golden.json", "eval-looks.coverage.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
     // Store's docs-golden test asserts this one resolves on disk; nothing reads
     // the prose, so store is the whole run.
-    [["AGENTS.md"], ["AGENTS.md"]],
+    [["AGENTS.md"], ["@anysearch-cli/store"]],
   ]) {
     const plan = planPreflight(root, files);
-    const readers = [...new Set(rows.flatMap((row) => EXPECTED_ROOT_READERS[row]))].sort();
     assert.equal(plan.mode, "readers", files.join(","));
     assert.deepEqual(plan.packages, readers, files.join(","));
-  }
-
-  // Literal pins for two root-file rows a table edit could silently lose: when
-  // the table and the mirror in preflight-root-readers.mjs drop the same
-  // package together, only a literal catches it.
-  for (const [file, readers] of [
-    ["eval-badcases.json", ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
-    ["eval-looks.json", ["@anysearch-cli/store"]],
-  ]) {
-    assert.deepEqual(planPreflight(root, [file]).packages, readers, file);
   }
 });
 

@@ -1,9 +1,11 @@
 // What the ROOT_READERS table in scripts/preflight-plan.mjs should answer, in
 // one place: the plan tests and the CLI tests both read it, so adding or
-// dropping a reader is one edit instead of seven copies drifting apart. Each
-// list is sorted on export, because the plan prints readers sorted and the
-// tests compare against that output directly — typing a new name in the wrong
-// spot cannot turn a correct table red.
+// dropping a reader is one edit here instead of seven copies drifting apart.
+// This is the only mirror; preflight-plan.test.mjs also pins every root row to a
+// literal reader list, deliberately, so a table edit cannot hide behind a
+// matching edit here — change both when a reader really moves. Each list is
+// sorted on export, because the plan prints readers sorted and the tests compare
+// against that output directly.
 const ANSWERS = {
   domains: ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"],
   "AGENTS.md": ["@anysearch-cli/store"],
