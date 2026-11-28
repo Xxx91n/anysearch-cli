@@ -56,9 +56,13 @@ interface EpisodeRow {
   entity: string | null;
   title: string | null;
   snippet: string | null;
-  // the full page body. The summary feed reads this instead of the
-  // opening snippet; a snippet-only row keeps `null` here.
+  // the full page body. Filled only for the rows a cluster actually feeds (see
+  // loadEpisodeContent); the scan leaves it `null` so archive scope never pulls
+  // the whole library into memory.
   content: string | null;
+  // Cheap "has a body" flag from the scan, so URL dedupe can prefer a body
+  // version before any body is read.
+  hasBody?: boolean;
   url: string;
   created_at: string;
   last_accessed: string | null;
@@ -187,15 +191,24 @@ export function formatConsolidateQuotes(q: ConsolidateQuoteReport): string {
 export interface ConsolidateSummaryText {
   conclusion: string;
   quotes: string | null;
+  /** No usable quotes at all: either the shape was wrong, or <quotes> was empty. */
   quotesMissing: boolean;
+  /**
+   * The reply was not shaped as <quotes> + <conclusion>, so the whole reply was
+   * kept as the conclusion. False when only the <quotes> block came back empty.
+   * `quotesMissing` is the union of the two; hosts read this one to say which.
+   */
+  quotesMalformed: boolean;
 }
 
 /**
  * Split a shaped summarizer reply into <quotes> and <conclusion>.
  *
  * Design: persist only <conclusion> and send <quotes> to the judges/report —
- * a malformed reply is kept whole and flagged `quotesMissing` instead, so an
- * older or malformed model answer can never silently lose its stated facts.
+ * a malformed reply is kept whole, so an older or malformed model answer can
+ * never silently lose its stated facts, and `quotesMalformed` says that is what
+ * happened. An empty <quotes> block with a readable conclusion is a different
+ * case: the conclusion is used as written and only the evidence is missing.
  */
 export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
   const raw = text.trim();
@@ -220,7 +233,7 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
     conclusionClose >= 0 &&
     raw.slice(conclusionClose + CONCLUSION_CLOSE.length).trim() === "";
   if (!wellFormed) {
-    return { conclusion: raw, quotes: null, quotesMissing: true };
+    return { conclusion: raw, quotes: null, quotesMissing: true, quotesMalformed: true };
   }
   const quotes = raw.slice(quotesOpen + QUOTES_OPEN.length, quotesClose).trim();
   const conclusion = raw.slice(conclusionOpen + CONCLUSION_OPEN.length, conclusionClose).trim();
@@ -228,14 +241,16 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
     // A shaped reply with an empty conclusion states nothing to persist. Keep
     // the whole reply as the conclusion so the caller sees what came back
     // instead of writing an empty row; the flag says the shape was unusable.
-    return { conclusion: raw, quotes: quotes.length > 0 ? quotes : null, quotesMissing: true };
+    return { conclusion: raw, quotes: quotes.length > 0 ? quotes : null, quotesMissing: true, quotesMalformed: true };
   }
   return {
     conclusion,
     quotes: quotes.length > 0 ? quotes : null,
     // A shape with an empty <quotes> block is still a missing-evidence report:
-    // the judges would otherwise receive an empty string and no alarm.
+    // the judges would otherwise receive an empty string and no alarm. It is
+    // not malformed, though — the conclusion was read as written.
     quotesMissing: quotes.length === 0,
+    quotesMalformed: false,
   };
 }
 
@@ -490,10 +505,13 @@ export interface ConsolidateReport {
   // the <quotes> block each cluster returned, verbatim. Only the
   // conclusion is persisted; quotes exist for the judges and this audit trail.
   quotes: ConsolidateQuoteReport[];
-  // clusters whose reply did not use the <quotes>+<conclusion> shape,
-  // or used it with an empty <quotes> block. A malformed reply's whole text
-  // was treated as the conclusion.
+  // clusters whose reply had no usable <quotes>: the shape was wrong (the whole
+  // reply was kept as the conclusion) or the block was empty. Hosts that need
+  // to tell those apart read quotesMalformed.
   quotesMissing: number;
+  // The subset of quotesMissing where the reply was malformed, not merely
+  // quote-less. quotesMissing - quotesMalformed is the empty-block count.
+  quotesMalformed: number;
   // token cap for one cluster's material block (24,000).
   clusterTokenBudget: number;
   // Clusters whose material block exceeded the cap and was planned by section
@@ -940,8 +958,8 @@ function isLiveMaterial(e: EpisodeRow): boolean {
 // predecessor can repeat the same page in one cluster; a body beats a snippet
 // because it is the stronger tier, otherwise the newer row wins.
 function preferMaterialVersion(a: EpisodeRow, b: EpisodeRow): EpisodeRow {
-  const aBody = typeof a.content === "string" && a.content.trim().length > 0;
-  const bBody = typeof b.content === "string" && b.content.trim().length > 0;
+  const aBody = a.hasBody === true || (typeof a.content === "string" && a.content.trim().length > 0);
+  const bBody = b.hasBody === true || (typeof b.content === "string" && b.content.trim().length > 0);
   if (aBody !== bBody) return bBody ? b : a;
   if (a.created_at !== b.created_at) return b.created_at > a.created_at ? b : a;
   return b.id > a.id ? b : a;
@@ -1001,6 +1019,8 @@ function evidenceForCluster(db: Database.Database, rows: readonly EpisodeRow[]):
   const pageIds = rows
     .filter((r) => typeof r.content === "string" && r.content.trim().length > 0)
     .map((r) => r.id);
+  // `content` above is only set by loadEpisodeContent, which runs for the
+  // deduped rows of a triggered cluster — never for the whole scan.
   const byPage = pageIds.length > 0 ? sectionsForPages(db, pageIds) : new Map<number, MemorySection[]>();
   return rows.map((r) => {
     const hasBody = typeof r.content === "string" && r.content.trim().length > 0;
@@ -1098,7 +1118,7 @@ export async function consolidateMemoryRun(
   const scope = opts.scope ?? { by: "archive" as const, sessionIds: [], memoryIds: [], sessionIdNotApplied: false };
   const report: ConsolidateReport = {
     dryRun, clustersScanned: 0, clustersTriggered: 0,
-    materialsFed: [], quotes: [], quotesMissing: 0,
+    materialsFed: [], quotes: [], quotesMissing: 0, quotesMalformed: 0,
     clusterTokenBudget: CONSOLIDATION_CLUSTER_TOKEN_BUDGET, clustersOverBudget: 0,
     duplicateMaterialSkipped: 0,
     llmUnavailable: 0,
@@ -1208,7 +1228,9 @@ export async function consolidateMemoryRun(
     collisions.push({
       planned: row,
       candidate: info.candidate,
-      evidence: reportEvidence(info.evidence),
+      // Full evidence on purpose: the resolution phase re-merges with it, and a
+      // merge that only sees snippets cannot keep the facts in the page body.
+      evidence: info.evidence,
       ...(info.quotes ? { quotes: info.quotes } : {}),
       epsIds: info.epsIds,
       ...(info.confidence !== undefined ? { confidence: info.confidence } : {}),
@@ -1372,10 +1394,12 @@ export async function consolidateMemoryRun(
     }
     const rows = (db
       .prepare(
-        "SELECT id, entity, title, snippet, url, created_at, last_accessed, access_count, superseded_by, valid_until " +
+        "SELECT id, entity, title, snippet, url, created_at, last_accessed, access_count, superseded_by, valid_until, " +
+          "CASE WHEN content IS NOT NULL AND length(trim(content)) > 0 THEN 1 ELSE 0 END AS hasBody " +
           "FROM retrieval_results WHERE " + where.join(" AND ") + " ORDER BY entity, id",
       )
-      .all(...params) as Array<Omit<EpisodeRow, "content">>).map((r) => ({ ...r, content: null }));
+      .all(...params) as Array<Omit<EpisodeRow, "content" | "hasBody"> & { hasBody: number }>)
+      .map((r) => ({ ...r, content: null, hasBody: r.hasBody === 1 }));
     report.scope.materialsRead = rows.length;
     // "In scope" means "this run read it", not "it belongs to the cluster being
     // processed": dedup compares against every live knowledge row, so a matched
@@ -1482,8 +1506,6 @@ export async function consolidateMemoryRun(
         report.supersededClusterSkipped++;
         continue;
       }
-      // Bodies are loaded after the scan so closed rows never enter memory.
-      loadEpisodeContent(db, liveRows);
       // #273 review: the batch gate counts LIVE materials only. Superseded ones
       // stay in the cluster for the update chain, but they are already history —
       // letting three replaced episodes carry a fourth new material past
@@ -1514,6 +1536,10 @@ export async function consolidateMemoryRun(
       // reached, so the run stops spending and reports it instead of looping
       // through the remaining clusters only to be refused again.
       if (!deps.summarize) { report.llmUnavailable++; continue; }
+      // Bodies are read here, not at scan time: only a cluster that passed the
+      // gates and is about to call the model needs them, and only for the rows
+      // dedupe kept. Everything before this decides without the body.
+      loadEpisodeContent(db, liveEps.filter((r) => r.hasBody === true));
       const evidence = evidenceForCluster(db, liveEps);
       let summarized: ReturnType<typeof normalizeConsolidateSummary>;
       try {
@@ -1532,6 +1558,7 @@ export async function consolidateMemoryRun(
       const quotes: string | null = shaped.quotes;
       clusterOrdinal++;
       if (shaped.quotesMissing) report.quotesMissing++;
+      if (shaped.quotesMalformed) report.quotesMalformed++;
       recordQuotes(clusterOrdinal, quotes);
       if (summarized.materials.length > 0) {
         for (const m of summarized.materials) {

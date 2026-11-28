@@ -85,6 +85,24 @@ assert(estimatePromptTokens("a你b") === 2, "estimate: the two scripts are count
   assert(planned.materials.reduce((n, m) => n + m.fedChars, 0) > 0, "mixed sizes: something is fed");
 }
 
+// --- over budget: a long header does not stop later materials -----------
+
+{
+  // The first candidate cannot fit even its header, the second one has a short
+  // header and room left. Giving up at the first miss left the second material
+  // at fedChars 0 although there was space for it.
+  const eps: ConsolidateEvidence[] = [
+    { title: "a".repeat(500), snippet: "x".repeat(400), url: "https://a.example/long-heading" },
+    { title: "k", snippet: "y".repeat(400), url: "https://a.example/short" },
+  ];
+  const planned = planClusterEvidence(eps, 100);
+  const longHead = planned.materials.find((m) => m.url === "https://a.example/long-heading")!;
+  const shortHead = planned.materials.find((m) => m.url === "https://a.example/short")!;
+  assert(longHead.fedChars === 0, "long header: the material whose header alone exceeds the cap is dropped");
+  assert(shortHead.fedChars > 0 && shortHead.truncated,
+    "long header: a later material with a short header still gets its head fed");
+}
+
 // --- over budget: current knowledge is pinned, never dropped --------------
 
 {

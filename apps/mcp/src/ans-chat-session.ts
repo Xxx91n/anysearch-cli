@@ -529,7 +529,9 @@ export function buildAnsChatConsolidateResult(
       : "") +
     ((report.quotesMissing ?? 0) > 0
       ? "\nquotes missing: " + report.quotesMissing +
-        " cluster(s) had no usable <quotes> block (empty, or the reply was in the wrong shape);" +
+        " cluster(s) had no usable <quotes> (" +
+        (report.quotesMalformed ?? 0) + " reply/replies came back in the wrong shape, so the whole text was kept as the conclusion; " +
+        ((report.quotesMissing - (report.quotesMalformed ?? 0))) + " had a readable conclusion but an empty <quotes>);" +
         " check the quote report before trusting a correction from those clusters"
       : "");
   // #261 (D6): one readable line per refused correction, so a content-only
@@ -642,6 +644,7 @@ export function buildAnsChatConsolidateResult(
         clusterTokenBudget: report.clusterTokenBudget,
         clustersOverBudget: report.clustersOverBudget,
         quotesMissing: report.quotesMissing,
+        quotesMalformed: report.quotesMalformed ?? 0,
         quotesReported: (report.quotes ?? []).length,
         materialsReported: (report.materialsFed ?? []).length,
       },

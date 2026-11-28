@@ -348,6 +348,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
         ? ", clusterTokenBudget " + r.clusterTokenBudget + ", clustersOverBudget " + r.clustersOverBudget
         : "") +
       (r.quotesMissing > 0 ? ", quotesMissing " + r.quotesMissing : "") +
+      (r.quotesMalformed > 0 ? ", quotesMalformed " + r.quotesMalformed : "") +
       // #277: how the cross-script pass went. Printed only when it did
       // something, so a run over same-language material reads exactly as before.
       (r.crossScriptDeclared > 0 ? ", crossScriptDeclared " + r.crossScriptDeclared : "") +

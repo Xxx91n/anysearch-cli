@@ -563,26 +563,18 @@ function codePointOffsets(text: string): number[] {
   return out;
 }
 
-/** Slice by code-point offset/length, the unit the block table stores. */
-function codePointSlice(text: string, start: number, count: number, offsets?: readonly number[]): string {
+/**
+ * Slice by code-point offset/length, the unit the block table stores.
+ *
+ * `offsets` is required on purpose: the boundary map is built once per page, so
+ * a page with many sections is sliced in O(1) each instead of re-walking the
+ * body from its first character for every section.
+ */
+function codePointSlice(text: string, start: number, count: number, offsets: readonly number[]): string {
   if (count <= 0) return "";
-  if (offsets) {
-    const from = offsets[start];
-    const to = offsets[Math.min(offsets.length - 1, start + count)];
-    return from === undefined || to === undefined ? "" : text.slice(from, to);
-  }
-  const out: string[] = [];
-  let offset = 0;
-  let taken = 0;
-  for (const ch of text) {
-    if (offset >= start && taken < count) {
-      out.push(ch);
-      taken++;
-      if (taken >= count) break;
-    }
-    offset++;
-  }
-  return out.join("");
+  const from = offsets[start];
+  const to = offsets[Math.min(offsets.length - 1, start + count)];
+  return from === undefined || to === undefined ? "" : text.slice(from, to);
 }
 
 /** Cut text at the last character that fits the token budget. */
@@ -651,13 +643,11 @@ function renderHeader(c: PlannedEvidenceCandidate, ordinal: number): string {
   return "[" + ordinal + "] " + heading + offset + " (" + c.material.url + ")\n";
 }
 
-function candidateText(c: PlannedEvidenceCandidate): string {
-  if (c.text.length > 0 || !c.section || c.sourceText === undefined) return c.text;
-  return codePointSlice(c.sourceText, c.section.startOffset, c.section.chars);
-}
-
 function renderCandidate(c: PlannedEvidenceCandidate, ordinal: number): { block: string; textChars: number; tokens: number } {
-  const text = candidateText(c);
+  // Every candidate reaching this point already carries its text: the whole-page
+  // path sets it up front and a section is sliced by sectionText before it is
+  // ranked by size. Re-slicing here would bypass that page's offset map.
+  const text = c.text;
   const block = renderHeader(c, ordinal) + text;
   return { block, textChars: codePointLength(text), tokens: estimatePromptTokens(block) };
 }
@@ -816,7 +806,10 @@ export function planClusterEvidence(
     const withText = c.section ? { ...c, text: sectionText(c) } : c;
     const header = renderHeader(withText, c.materialIndex + 1);
     const room = Math.max(0, materialBudget - used - estimatePromptTokens(header));
-    if (room <= 0) break;
+    // Skip this candidate, not the rest: the block that does not fit may be a
+    // long title or url, while a shorter-headed material further down still has
+    // room. Giving up here left that material at fedChars 0 for no reason.
+    if (room <= 0) continue;
     const text = truncateToTokenBudget(withText.text, room);
     if (!text.length) continue;
     chosen.push({ ...withText, text, truncated: text.length < withText.text.length });

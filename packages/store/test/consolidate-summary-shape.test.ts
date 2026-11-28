@@ -23,12 +23,14 @@ function assert(cond: boolean, msg: string): void {
   assert(ok.conclusion === "支持改为 7×24。", "shaped: only the conclusion is returned");
   assert(ok.quotes === "[1] Notice \"support is 24x7\"", "shaped: the quotes are returned verbatim");
   assert(ok.quotesMissing === false, "shaped: quotes are present");
+  assert(ok.quotesMalformed === false, "shaped: not malformed");
 }
 
 {
   const plain = splitConsolidateSummary("support is 24x7");
   assert(plain.conclusion === "support is 24x7", "no tags: the whole reply is the conclusion");
   assert(plain.quotes === null && plain.quotesMissing === true, "no tags: quotes are missing");
+  assert(plain.quotesMalformed === true, "no tags: reported as malformed, not merely quote-less");
 }
 
 {
@@ -49,6 +51,8 @@ function assert(cond: boolean, msg: string): void {
   assert(emptyQuotes.conclusion === "done", "empty quotes: the conclusion still persists");
   assert(emptyQuotes.quotes === null && emptyQuotes.quotesMissing === true,
     "empty quotes: flagged as missing evidence");
+  assert(emptyQuotes.quotesMalformed === false,
+    "empty quotes: the shape was fine, so it is not reported as malformed");
 }
 
 {
