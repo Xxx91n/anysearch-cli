@@ -7,13 +7,13 @@
 // -> inserts use lastInsertRowid.
 
 import type Database from "better-sqlite3";
+import { isPositiveWholeInt } from "@anysearch-cli/retriever";
 import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
 import { suspendSummariesForCorrection, liveHeadOf } from "./summary-sources.js";
 import { sectionsForPages, type MemorySection } from "./retrieval-chunks.js";
 import { hasPageBody, HAS_PAGE_BODY_EXPR } from "./retrieval-content.js";
 import { applyStatedPairAsAlias, crossScriptPairsInText, loadLiveEntities, queueProposedAlias, resolveQueryObject, type AliasJudgeFn, type AliasJudgeVerdict } from "./entity-alias.js";
-import { isPositiveWholeInt as isPositiveInteger } from "@anysearch-cli/retriever";
 import { parseSqliteUtc } from "./sqlite-time.js";
 
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >
@@ -779,7 +779,7 @@ export function resolveConsolidateScope(raw: {
     : raw.memoryIds !== undefined && raw.memoryIds !== null;
 
   if (memoriesSupplied) {
-    const bad = rawMemories.filter((id) => !isPositiveInteger(id));
+    const bad = rawMemories.filter((id) => !isPositiveWholeInt(id));
     if (bad.length > 0 || rawMemories.length === 0) {
       throw new ConsolidateScopeError(
         "memoryIds must be a non-empty list of positive integer ids; got " + JSON.stringify(rawMemories),

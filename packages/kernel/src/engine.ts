@@ -226,7 +226,7 @@ export class RetroaererdEngine {
   // q.vertical replaces it wholesale (no deep-merge).
   private repoVertical?: () => SearchRequest["vertical"];
   // The sufficiency gate is fixed at construction and consulted per request.
-  private gate: SufficiencyGate;
+  private readonly gate: SufficiencyGate;
   // The per-fanout budget the caller picked: tests shrink it, eval raises it,
   // and `ans search --deadline` passes the terminal's choice; absent is 4s.
   // Public and readonly only because RetrieverPort declares the same field.

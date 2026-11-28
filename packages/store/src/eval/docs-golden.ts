@@ -95,9 +95,8 @@ export interface DocsGoldenVerticalSpec {
 
 // Closed vocabularies: DOCS_GOLDEN_TOLERATED_SEGMENTS gates
 // expected.mustHitPaths.tolerate; DOCS_GOLDEN_STABILITY_CLASSES gates
-// entry.stability_class. A new tolerate value also widens the page-family rule
-// in docs/limitations.md; a new stability_class rides with the corpus rows that
-// use it, plus a counterexample in the validator's own tests.
+// entry.stability_class. A new value in either list rides with the corpus row
+// that uses it and a counterexample in the validator's own tests.
 export const DOCS_GOLDEN_TOLERATED_SEGMENTS = ["locale", "version", "dated"] as const;
 export type DocsGoldenToleratedSegment = (typeof DOCS_GOLDEN_TOLERATED_SEGMENTS)[number];
 export const DOCS_GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "external"] as const;

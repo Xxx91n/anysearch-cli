@@ -1,4 +1,4 @@
-// Types for scripts/golden-shape.mjs. The seven declarations mirror its exports
+// Types for scripts/golden-shape.mjs. The declarations here mirror its exports
 // one for one. The parity test pins the names and kinds it can see from the .mjs;
 // this file is only checked when tsc follows an import to it, so an export added
 // or reshaped there has to be carried over by hand.

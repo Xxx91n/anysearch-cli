@@ -192,14 +192,13 @@ export async function runSearch(args: string[]): Promise<number> {
     );
   }
   // 写错的值会静默回落成 4 秒，这一轮评测就白跑了；说清原值和这次实际用的。
-  if (
-    requestTimeoutMs === undefined &&
-    evalTimeoutRaw !== undefined &&
-    Number(evalTimeoutRaw) !== engine.requestTimeoutMs
-  ) {
+  // reportedDeadlineMs is the same read the --json document uses, so the hint
+  // cannot name a different budget than the run reports.
+  const armedDeadlineMs = reportedDeadlineMs(engine);
+  if (requestTimeoutMs === undefined && evalTimeoutRaw !== undefined && Number(evalTimeoutRaw) !== armedDeadlineMs) {
     process.stderr.write(
       "[ans search] ANS_EVAL_REQUEST_TIMEOUT_MS=" + JSON.stringify(evalTimeoutRaw) +
-        " 没有原样生效，这次按 " + engine.requestTimeoutMs + " ms 跑\n",
+        " 没有原样生效，这次按 " + armedDeadlineMs + " ms 跑\n",
     );
   }
   const { retriever, observation, providerBuildErrors, store, config, credentialSources } = engine;

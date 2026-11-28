@@ -6,14 +6,15 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { GOLDEN_COVERAGE_SCHEMA, GOLDEN_SCHEMA } from "../golden-shape.mjs";
+import { GOLDEN_COVERAGE_SCHEMA, GOLDEN_DIMENSION_VALUES, GOLDEN_SCHEMA } from "../golden-shape.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SCRIPT = join(REPO, "scripts", "badcase-backfill.mjs");
 const QUESTION = "How do I install the widget?";
-// The fixture host appears in the badcase, in its docs.toml allowlist and in
-// the crossCheck call below; one constant keeps the three in step.
+// The fixture host appears in the badcase, its docs.toml allowlist, the anchor
+// URLs and the crossCheck call below; one constant keeps them in step.
 const DOCS_HOST = "docs.example.com";
+const DOCS_URL = "https://" + DOCS_HOST + "/install";
 
 function expected() {
   return {
@@ -178,7 +179,7 @@ const REJECTS = [
   {
     name: "--new rejects a non-http mustHitUrl",
     file: "eval-badcases.json",
-    edit: (b) => { b.badcases[0].expected.mustHitUrls = ["ftp://docs.example.com/install"]; },
+    edit: (b) => { b.badcases[0].expected.mustHitUrls = ["ftp://" + DOCS_HOST + "/install"]; },
     pattern: /must be http\(s\)/,
   },
   {
@@ -244,7 +245,7 @@ const REJECTS = [
   {
     name: "--new rejects mustHitUrls without a stability_class",
     file: "eval-badcases.json",
-    edit: (b) => { b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"]; delete b.badcases[0].stability_class; },
+    edit: (b) => { b.badcases[0].expected.mustHitUrls = [DOCS_URL]; delete b.badcases[0].stability_class; },
     pattern: /no stability_class/,
   },
   {
@@ -415,7 +416,7 @@ const REJECTS = [
   {
     name: "--new rejects a mustHitUrl on an external-controllability row",
     file: "eval-badcases.json",
-    edit: (b) => { b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"]; b.badcases[0].stability_class = "external"; },
+    edit: (b) => { b.badcases[0].expected.mustHitUrls = [DOCS_URL]; b.badcases[0].stability_class = "external"; },
     pattern: /only accepts controlled\|frozen-spec/,
   },
   {
@@ -467,6 +468,18 @@ const REJECTS = [
     pattern: /mustHitPaths must be \{path,tolerate\}\[\]/,
   },
   {
+    name: "--new rejects a mustHitUrls entry that is not a string",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitUrls = [42]; },
+    pattern: /mustHitUrl must be http\(s\)/,
+  },
+  {
+    name: "--new rejects a mustHitPaths without tolerate",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitPaths = [{ path: "/install" }]; },
+    pattern: /tolerate outside locale\|version\|dated/,
+  },
+  {
     name: "--new rejects a mustHitHosts entry that is not a string",
     file: "eval-badcases.json",
     edit: (b) => { b.badcases[0].expected.mustHitHosts = ["docs.example.com", 42]; },
@@ -516,7 +529,7 @@ test("--new writes the next docs row and promotes the badcase", (t) => {
 test("--new persists a URL anchor with its stability_class", (t) => {
   const dir = tree(t);
   editJson(join(dir, "eval-badcases.json"), (b) => {
-    b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"];
+    b.badcases[0].expected.mustHitUrls = [DOCS_URL];
     // frozen-spec rather than the fixture's default controlled, so the entry
     // proves it took the badcase's value.
     b.badcases[0].stability_class = "frozen-spec";
@@ -525,7 +538,7 @@ test("--new persists a URL anchor with its stability_class", (t) => {
   assert.equal(r.status, 0, r.stderr);
   const g = readJson(dir, "eval-golden.json");
   const entry = g.entries.at(-1);
-  assert.deepEqual(entry.expected.mustHitUrls, ["https://docs.example.com/install"]);
+  assert.deepEqual(entry.expected.mustHitUrls, [DOCS_URL]);
   assert.equal(entry.stability_class, "frozen-spec");
   const cov = readJson(dir, "eval-looks.coverage.json");
   assert.equal(cov.dimensions.find((d) => d.dimension === "intent")?.classes?.howto, 2);
@@ -541,7 +554,7 @@ test("a mustHitPaths-only answer row still auto-scopes live", (t) => {
   assert.equal(readJson(dir, "eval-golden.json").scopes["docs-g0002"], "live");
 });
 
-test("node too old to strip types says the store validator was skipped", (t) => {
+test("node too old to strip types refuses instead of writing unvalidated", (t) => {
   const probe = spawnSync(process.execPath, ["--no-experimental-strip-types", "-e", "0"], { encoding: "utf8" });
   if (probe.status !== 0) {
     t.skip("this node predates --no-experimental-strip-types");
@@ -549,12 +562,11 @@ test("node too old to strip types says the store validator was skipped", (t) => 
   }
   const dir = tree(t);
   const r = run(dir, ["--id", "docs-bc0001", "--new"], ["--no-experimental-strip-types"]);
-  // The write still goes through on this script's own checks; the point is that
-  // the skip is announced instead of reading as a pass.
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /badcase-backfill: skipped the store validator/);
-  assert.match(r.stderr, /cannot load the TS module/);
-  assert.equal(readJson(dir, "eval-golden.json").scopes["docs-g0002"], "live");
+  // No validator, no write: this script's own checks are the looser first pass.
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /cannot load the store validator/);
+  assert.match(r.stderr, /needs >= 22\.18/);
+  assert.equal(readJson(dir, "eval-golden.json").scopes["docs-g0002"], undefined);
 });
 
 test("a valid --new writes an entry the store validator accepts", async (t) => {
@@ -816,4 +828,13 @@ test("a null eval-golden.json root is reported as a root problem", (t) => {
   expectFail(t, (dir) => {
     writeJson(join(dir, "eval-golden.json"), null);
   }, /eval-golden\.json root must be an object/);
+});
+
+test("the coverage fixture lists exactly the dimensions the mirror knows", () => {
+  // The manifest is fixture prose (status, trigger, owner per dimension), but its
+  // dimension names come from the one vocabulary a ninth slice would change.
+  assert.deepEqual(
+    coverage().dimensions.map((d) => d.dimension).sort(),
+    Object.keys(GOLDEN_DIMENSION_VALUES).sort(),
+  );
 });

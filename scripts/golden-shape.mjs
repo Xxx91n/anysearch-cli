@@ -57,12 +57,19 @@ export function goldenShapeProblems(doc) {
     problems.push("scopes must not be empty");
   } else {
     for (const [id, scope] of Object.entries(doc.scopes)) {
-      if (!GOLDEN_SCOPE_VALUES.includes(scope)) problems.push("scope for " + id + " must be " + GOLDEN_SCOPE_VALUES.join("|"));
+      if (!GOLDEN_SCOPE_VALUES.includes(scope)) {
+        problems.push("scope for " + id + " must be " + GOLDEN_SCOPE_VALUES.join("|") + " (got " + JSON.stringify(scope) + ")");
+      }
     }
   }
   // Same pairing readGoldenFile makes: a tombstoned row has no scope, every
-  // other row has exactly one. Checked after the shapes above, which supply ids.
-  if (problems.length === 0) {
+  // other row has exactly one. Gated on ids and scopes being readable rather
+  // than on "no problems at all": a bad schema or one wrong scope value must
+  // not hide every pairing and anchor error behind a second run.
+  const idsReadable = Array.isArray(doc.entries) && doc.entries.length > 0 &&
+    doc.entries.every((e) => e && typeof e === "object" && !Array.isArray(e) && typeof e.id === "string" && e.id.length > 0);
+  const scopesReadable = !!doc.scopes && typeof doc.scopes === "object" && !Array.isArray(doc.scopes);
+  if (idsReadable && scopesReadable) {
     const scopes = doc.scopes;
     const ids = new Set(doc.entries.map((e) => e.id));
     for (const e of doc.entries) {

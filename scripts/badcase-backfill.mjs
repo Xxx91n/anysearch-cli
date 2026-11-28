@@ -1,4 +1,4 @@
-// B4/T3: badcase -> golden 回灌闭环。
+// badcase -> golden 回灌闭环。
 //
 // node scripts/badcase-backfill.mjs --id docs-bc0001 --into docs-g0007
 // attach 模式：把已观测 badcase 标记为 promoted，回指既有 golden 条目
@@ -8,10 +8,9 @@
 // eval-looks.coverage.json 的 covered 维度计数。只接 answer+mustHit* 的提问（写
 // live）；abstain 等需要 stub lane 的条目要有 kernel scenario fixture，本脚本不造，会直接拒绝。
 //
-// 禁合成护栏：badcase 必须携带 observed + evidence.command（真实观测），
-// 否则拒绝回灌。脚本先挡一批会写出必红行的输入（schema、词表、domain、
-// expected、mustHit* 配对、runAt 形状等）；完整 schema/词汇/交叉校验仍由
-// packages/store/test/eval-docs-golden.test.ts 在 CI 兜底。
+// 禁合成护栏：badcase 必须带 observed + evidence.command，否则拒绝回灌。
+// 写盘前先挡掉 schema、词表、domain、expected、mustHit* 配对、runAt 这些坏输入，
+// 再交给 packages/store/src/eval/docs-golden.ts 的真校验器。
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,9 +101,8 @@ if (into) {
   if (target.domain !== bc.domain) fail("domain mismatch — badcase " + id + " is " + bc.domain + ", target " + into + " is " + target.domain);
   if (typeof target.question !== "string") fail("golden target " + into + " has no string question — fix eval-golden.json first");
   if (target.question.trim() !== bc.question.trim()) fail("question mismatch — attach requires the same verbatim question");
-  // An abstain observation attached to an answer row (or the reverse) would hang
-  // the regression evidence on the opposite assertion, so refuse the mismatch.
-  // The verdict itself is checked first: two absent verdicts compare equal.
+  // Verdict first: two absent verdicts compare equal, so the mismatch below
+  // would pass with nothing attached.
   if (bc.expected.verdict !== "answer" && bc.expected.verdict !== "abstain") {
     fail(id + " expected.verdict must be answer|abstain (got " + String(bc.expected.verdict) + ")");
   }
@@ -177,9 +175,7 @@ if (into) {
   if (mustNotHitPaths !== undefined && (!Array.isArray(mustNotHitPaths) || mustNotHitPaths.length === 0 || mustNotHitPaths.some((u) => typeof u !== "string" || u.length === 0))) {
     fail(id + " mustNotHitPaths must be a non-empty string[]");
   }
-  // Array fields are judged as written, never through `?? []`: a null list has
-  // to fail here instead of being written, and the type error is named before
-  // the answer+mustHit* gate below sends the reader to the kernel fixtures.
+  // Array fields are judged as written, never through `?? []`.
   if (expected.mustHitUrls !== undefined && !Array.isArray(expected.mustHitUrls)) fail(id + " mustHitUrls must be an array");
   if (expected.mustHitHosts !== undefined && !Array.isArray(expected.mustHitHosts)) fail(id + " mustHitHosts must be an array");
   if (expected.mustHitPaths !== undefined && !Array.isArray(expected.mustHitPaths)) fail(id + " mustHitPaths must be {path,tolerate}[]");
@@ -223,9 +219,7 @@ if (into) {
   for (const host of mustHitHosts) {
     if (!allow.has(host)) fail(id + " mustHitHost " + host + " outside domains/docs.toml urlAllowlist");
   }
-  // Hostname only, the same comparison crossCheckDocsGolden makes. new URL()
-  // lowercases the host but keeps "www.", so a "www." URL needs a "www." entry
-  // in the allowlist — the bare domain will not match it.
+  // Hostname only, like crossCheckDocsGolden; URL() lowercases but keeps "www.".
   for (const url of mustHitUrls) {
     if (typeof url !== "string" || !/^https?:\/\//.test(url)) fail(id + " mustHitUrl must be http(s): " + url);
     let host;
@@ -241,9 +235,8 @@ if (into) {
   if (mustHitPaths.length > 0 && (mustNotHitPaths?.length ?? 0) === 0) {
     fail(id + " mustHitPaths requires mustNotHitPaths negative pins");
   }
-  // The checks above are this script's own reading of the contract. Where node
-  // can load the TS module (type stripping, node >= 22.18), the real validator
-  // gets the last word, so a rule added there cannot be missed here.
+  // This script's checks are the first word; the store validator runs next, and
+  // a node that cannot load it is a refusal rather than a skip.
   const validatorProblems = await realValidatorProblems(entry);
   if (validatorProblems.length > 0) fail(next + " would fail the store validator: " + validatorProblems.join("; "));
   golden.entries.push(entry);
@@ -258,12 +251,10 @@ async function realValidatorProblems(entry) {
   try {
     ({ validateDocsGoldenEntry } = await import(VALIDATOR_URL));
   } catch (err) {
-    // node < 22.18 cannot load the .ts validator and reports the import as an
-    // unknown extension, which reads as a pass unless it is said out loud. Any
-    // other error means the validator could not run at all, so throw.
+    // node < 22.18 reports the .ts import as an unknown extension; any other
+    // error means the validator could not run at all.
     if (err?.code !== "ERR_UNKNOWN_FILE_EXTENSION") throw err;
-    console.error("badcase-backfill: skipped the store validator — node " + process.version + " cannot load the TS module; only this script's own checks ran");
-    return [];
+    fail("node " + process.version + " cannot load the store validator (needs >= 22.18) — refusing to write on this script's checks alone");
   }
   return validateDocsGoldenEntry(entry);
 }

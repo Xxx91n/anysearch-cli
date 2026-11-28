@@ -203,7 +203,7 @@ export function readSummarySourcesForWrite(
       const hasRowId = isPositiveWholeInt(rowId);
       const url = typeof r.url === "string" ? r.url : "";
       if (!hasRowId && url.length === 0) continue;
-      reads.push({ url, rowId: hasRowId ? (rowId as number) : null });
+      reads.push({ url, rowId: hasRowId ? rowId : null });
     }
     if (hasReads && reads.length > 0) {
       sources.push(...((s.resolveSummarySourcesFromReads!(reads) ?? []) as typeof sources));

@@ -8,6 +8,7 @@
 import * as shape from "../../../scripts/golden-shape.mjs";
 import { GOLDEN_FILE } from "../src/eval/corpus-files";
 import {
+  DOCS_GOLDEN_COVERAGE_SCHEMA,
   DOCS_GOLDEN_DIMENSION_VALUES,
   DOCS_GOLDEN_INTENTS,
   DOCS_GOLDEN_SCHEMA,
@@ -34,6 +35,13 @@ assert(
   "GOLDEN_FILE mirror drifted: golden-shape.mjs has " + shape.GOLDEN_FILE + ", corpus-files.ts has " + GOLDEN_FILE,
 );
 assert(shape.GOLDEN_SCHEMA === DOCS_GOLDEN_SCHEMA, "schema literal mirror drifted");
+// The coverage schema has no reader on this side: the backfill imports it to build
+// fixtures and ship-gate never checks a manifest, so only this comparison keeps
+// the two literals from drifting apart.
+assert(
+  shape.GOLDEN_COVERAGE_SCHEMA === DOCS_GOLDEN_COVERAGE_SCHEMA,
+  "coverage schema mirror drifted: golden-shape.mjs has " + shape.GOLDEN_COVERAGE_SCHEMA + ", docs-golden.ts has " + DOCS_GOLDEN_COVERAGE_SCHEMA,
+);
 assert(list(shape.GOLDEN_SCOPE_VALUES) === list(GOLDEN_SCOPE_VALUES), "scope vocabulary mirror drifted");
 assert(
   list(shape.GOLDEN_STABILITY_CLASSES) === list(DOCS_GOLDEN_STABILITY_CLASSES),
