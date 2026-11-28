@@ -35,10 +35,7 @@ export function readGoldenFile(file: string): GoldenFile {
   try {
     parsed = JSON.parse(text);
   } catch (err) {
-    // Only a syntax error means "invalid JSON"; anything else is a real failure
-    // and must not be relabelled as a parse problem.
-    if (!(err instanceof SyntaxError)) throw err;
-    throw new Error("eval-golden: invalid JSON in " + file + ": " + err.message);
+    throw new Error("eval-golden: invalid JSON in " + file + ": " + (err as Error).message);
   }
   const problems = validateDocsGoldenSet(parsed);
   if (problems.length > 0) {
