@@ -123,9 +123,10 @@ interface Target {
  *
  * `emptyStreak` counts batches that returned no new page. `rejectedStreak`
  * counts batches a gate refused (address, deny, allowlist, credential) and the
- * trust requests the tool answered itself (headless refusal, prompt limit).
- * A trust question a human actually answered does not count — see
- * rejectTrustSettled. `trustPrompts` caps how many questions one run may ask.
+ * trust request headless/MCP cannot answer. A trust question a human actually
+ * answered does not count — see rejectTrustSettled — and neither does the
+ * run-wide prompt allowance running out, because that host was never judged.
+ * `trustPrompts` is that allowance.
  */
 class FetchRunState {
   pagesRead = 0;
@@ -174,11 +175,16 @@ class FetchRunState {
     this.rejectedStreak = 0;
   }
 
-  /** Note one trust question about to be shown; true means the run has used up its allowance. */
-  trustPromptsExhausted(): boolean {
-    if (this.trustPrompts >= FETCH_LIMITS.maxTrustPrompts) return true;
+  /** Claim one trust question; false means this run has already asked its fill. */
+  claimTrustPromptSlot(): boolean {
+    if (this.trustPrompts >= FETCH_LIMITS.maxTrustPrompts) return false;
     this.trustPrompts++;
-    return false;
+    return true;
+  }
+
+  /** True once this run has asked its fill, so `no_ticket` must stop inviting more. */
+  trustQuestionsClosed(): boolean {
+    return this.trustPrompts >= FETCH_LIMITS.maxTrustPrompts;
   }
 
   stopMessage(): string {
@@ -444,12 +450,10 @@ async function handleTrustRequest(
   if (state.declinedTrust.has(address.host)) {
     return rejectTrustSettled(options, state, "trust_declined", domain, address.host);
   }
-  if (state.trustPromptsExhausted()) {
-    return rejectTrustGate(
-      options, state,
-      fetchRejectMessage("trust_prompt_limit"),
-      "trust_prompt_limit", domain, address.host, undefined,
-    );
+  // The allowance is per run, not this host: running out says nothing about the
+  // host, so this refusal must not count toward the rejected-batch stop.
+  if (!state.claimTrustPromptSlot()) {
+    return trustRefusal(options, fetchRejectMessage("trust_prompt_limit"), "trust_prompt_limit", domain, address.host);
   }
   // The model followed the documented escape hatch and a human is about to
   // decide. The earlier no_ticket is answered, not repeated.
@@ -709,7 +713,8 @@ export function createFetchTool(options: FetchToolOptions): AgentTool {
       for (const handle of handles) {
         const resolved = resolveTicket(handle, options.store, options.sessionId, policy, options.span, (host) => ({
           trustAvailable,
-          trustRefused: state.declinedTrust.has(host) || state.failedTrust.has(host),
+          trustRefused:
+            state.declinedTrust.has(host) || state.failedTrust.has(host) || state.trustQuestionsClosed(),
         }));
         if (resolved.ok) admitted.push(resolved.target);
         else rejected.push(resolved.rejection);

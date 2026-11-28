@@ -40,7 +40,7 @@ export interface FetchRejectContext {
   host?: string;
   /** True when an interactive CLI can ask the user to trust a site this session. */
   trustAvailable?: boolean;
-  /** True when this host was already asked and refused, or its ticket could not be written. */
+  /** True when this host was already asked and refused, its ticket could not be written, or the run's question allowance is gone. */
   trustRefused?: boolean;
 }
 
@@ -55,7 +55,7 @@ export function fetchRejectMessage(reason: FetchRejectReason, context: FetchReje
         : "先按标题或站点搜索，";
       let trust: string;
       if (context.trustRefused) {
-        trust = "这个主机的信任已经问过了，别再带 requestTrustFor；让用户把网页正文贴进来，或者换一个站点。";
+        trust = "信任这条路已经用完了（这个主机问过了，或者这次提问的额度到顶），别再带 requestTrustFor；让用户把网页正文贴进来，或者换一个站点。";
       } else if (context.trustAvailable) {
         trust = "还搜不到的话，带 requestTrustFor: \"" + (context.host ?? "域名") + "\" 再调一次，用户会看清网址后决定信不信任这个网站；";
       } else {

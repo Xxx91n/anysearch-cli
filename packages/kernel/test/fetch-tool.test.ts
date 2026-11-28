@@ -794,7 +794,7 @@ async function main() {
       const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
       await tool.execute("t25r1", { handles: ["https://docs.deny2.example/a"], requestTrustFor: "docs.deny2.example" });
       const again = await tool.execute("t25r2", { handles: ["https://docs.deny2.example/b"] });
-      assert(rawText(again).includes("信任已经问过了") && !rawText(again).includes("还搜不到的话"),
+      assert(rawText(again).includes("信任这条路已经用完了") && !rawText(again).includes("还搜不到的话"),
         "an answered host is not invited to ask again");
       assert(asked === 1, "an answered host prompts exactly once");
     }
@@ -858,6 +858,24 @@ async function main() {
       assert(rawText(overLimit).includes("不再弹确认") && asked === 3,
         "a trust question past the allowance is refused without prompting");
       assert(!store.hasFetchTicket(session.id, "tofu", "docs.four.example"), "the refusal writes no ticket");
+
+      // A plain no-ticket read must stop inviting requestTrustFor too, or the
+      // model retries the call this refusal just turned down.
+      const plain = await tool.execute("t25t-plain", { handles: ["https://docs.five.example/a"] });
+      assert(rawText(plain).includes("别再带 requestTrustFor"),
+        "a no-ticket refusal after the allowance stops suggesting a trust request");
+
+      // Running out of questions is not a verdict on the host: the refusal must
+      // not feed the rejected-batch stop and strand readable URLs.
+      await tool.execute("t25t-over2", {
+        handles: ["https://docs.six.example/a"], requestTrustFor: "docs.six.example",
+      });
+      await store.saveFetchTickets(session.id, "user", ["https://readable.example/page"]);
+      const readable = await tool.execute("t25t-read", { handles: ["https://readable.example/page"] });
+      assert(!rawText(readable).includes("这轮抓页已经停了"),
+        "a prompt-limit refusal does not stop the run");
+      assert(envelope(readable).pages.length === 1 && provider.calls.length === 1,
+        "a ticketed URL is still readable after the trust allowance ran out");
     }
 
     store.close();

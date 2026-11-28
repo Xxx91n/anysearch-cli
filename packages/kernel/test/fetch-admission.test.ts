@@ -169,8 +169,8 @@ assert(fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailabl
 assert(!fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: false }).includes("requestTrustFor"),
   "a headless refusal does not suggest a parameter that cannot work");
 assert(fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: true, trustRefused: true })
-  .includes("信任已经问过了"),
-  "an answered host is not invited to ask again");
+  .includes("信任这条路已经用完了"),
+  "an answered host or an exhausted allowance is not invited to ask again");
 assert(!fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: true, trustRefused: true })
   .includes("还搜不到的话"),
   "an answered host drops the requestTrustFor suggestion entirely");
