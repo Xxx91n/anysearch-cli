@@ -73,7 +73,7 @@
     {
       "dimension": "adversarial",
       "status": "deferred",
-      "entryTrigger": "docs 域真实流量中首次注入尝试，或 B4 badcase 回灌带入账",
+      "entryTrigger": "docs 域真实流量中首次注入尝试；B4 badcase 回灌不直接带入，须先把 status 改成 covered",
       "owner": "B4"
     }
   ]
