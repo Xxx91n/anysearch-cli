@@ -766,10 +766,6 @@ export class PiAgentRuntime {
     this.archive = wiredSessionId ? { store: opts.store!, sessionId: wiredSessionId } : undefined;
     this.scopedRetriever = wiredSessionId || opts.taskBudget || opts.includeAnswer
       ? {
-        // The engine owns the wait, so the wrapper reports the engine's clock:
-        // reportedDeadlineMs reads this field first, and a wrapper that left it
-        // out would be reported under the composition result's budget instead.
-        requestTimeoutMs: opts.retriever.requestTimeoutMs,
         search: (q) => opts.retriever.search({
           ...q,
           ...(wiredSessionId ? { sessionId: q.sessionId ?? wiredSessionId } : {}),

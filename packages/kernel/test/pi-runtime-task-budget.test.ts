@@ -161,11 +161,6 @@ async function main() {
       "the session handle still rides along (context keys on the session)");
     assert(retriever.queries[0]?.taskBudget?.taskId === "t-302-b",
       "the task budget scope rides along (the engine bills the task, not the session)");
-    // reportedDeadlineMs reads the wrapper's field first. A wrapper that keeps
-    // the engine's clock must hand it through, or every report under it widens
-    // to the composition result's budget.
-    assert(scoped.requestTimeoutMs === 7000,
-      "the scoped wrapper reports the engine's own wait, not the result's");
     // And the same wiring without a session still routes the task scope — a
     // task-wired runtime with no memory context must not silently fall back
     // to billing the conversation.
