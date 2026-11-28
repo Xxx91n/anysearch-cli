@@ -363,6 +363,20 @@ async function callConsolidate(args: Record<string, unknown>) {
   const fits = buildAnsChatConsolidateResult({ ...base, materialsFed: many.slice(0, 3) } as never, usage as never, {});
   assert(!/materials shown/.test(fits.content[0]!.text), "under the cap: no count line");
 
+  // Over the cap with nothing needing attention: the count line must not claim
+  // that the shown ones were picked out.
+  const allFitMany = Array.from({ length: 22 }, (_, i) => ({
+    ...feed, materialId: 200 + i, url: "https://b.example/" + i,
+  }));
+  const noAttention = buildAnsChatConsolidateResult(
+    { ...base, materialsFed: allFitMany } as never, usage as never, {},
+  );
+  const noAttentionText = noAttention.content[0]!.text;
+  assert(/\(20 of 22 materials shown; the rest are/.test(noAttentionText),
+    "over the cap with nothing notable: a plain count line");
+  assert(!/need attention first/.test(noAttentionText),
+    "over the cap with nothing notable: no false 'attention first' claim");
+
   // The counters are per cluster and independent: the note appears only when
   // two of them are non-zero, because one cluster can land under both.
   const oneCounter = buildAnsChatConsolidateResult(
