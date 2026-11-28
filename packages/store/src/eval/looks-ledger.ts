@@ -11,6 +11,7 @@
 // rows are dropped and the SHA-256 of the pre-compaction row set is preserved in `compaction`.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { writeStderr } from "../stderr";
 import { GOLDEN_FILE } from "./corpus-files";
 
@@ -64,11 +65,20 @@ export function readLooksLedger(file: string): LooksLedger {
   const parsedRoot = parsed as Record<string, unknown>;
   if (!parsedRoot || typeof parsedRoot !== "object" || !Array.isArray(parsedRoot.looks)) return emptyLooksLedger();
   // An old checkout (or a merge conflict) can still leave a `golden` block in
-  // the ledger; the corpus lives in eval-golden.json, so this copy is dropped
-  // and reported. The input object is left untouched.
-  const { golden: staleGolden, ...j } = parsedRoot;
-  if (staleGolden !== undefined) {
-    writeStderr("[eval] ignoring a stale golden block in " + file + " — the corpus lives in " + GOLDEN_FILE + "\n");
+  // the ledger; the corpus lives in eval-golden.json beside it, so this copy is
+  // dropped and reported. The input object is left untouched. When that file is
+  // missing the block is the only copy left — a write would erase it for good,
+  // so keep it and say why instead of dropping it silently.
+  let j = parsedRoot;
+  if (parsedRoot.golden !== undefined) {
+    const corpus = join(dirname(file), GOLDEN_FILE);
+    if (existsSync(corpus)) {
+      const { golden: _stale, ...rest } = parsedRoot;
+      j = rest;
+      writeStderr("[eval] ignoring a stale golden block in " + file + " — the corpus lives in " + corpus + "\n");
+    } else {
+      writeStderr("[eval] keeping the golden block in " + file + " — " + corpus + " is missing\n");
+    }
   }
   const looks: LooksLedgerEntry[] = [];
   for (const raw of j.looks as Array<Record<string, unknown>>) {
