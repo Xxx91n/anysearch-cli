@@ -291,12 +291,13 @@ async function main() {
       "an SDK timeout stays a retryable transient page fault marked timedOut without retiring the arm");
   }
 
-  // ---- ETIMEDOUT / bare ECONNABORTED / HTTP 504 still throw so bad arms retire --
+  // ---- ETIMEDOUT / bare ECONNABORTED / HTTP 408 & 504 still throw so bad arms retire --
   for (const err of [
     new Error("connect ETIMEDOUT 1.2.3.4:443"),
     new Error("socket hang up ECONNABORTED"),
     Object.assign(new Error("504 Gateway Timeout"), { status: 504 }),
     new Error("504 Gateway Timeout"),
+    new Error("408 Request Timeout"),
   ]) {
     const calls: ExtractCall[] = [];
     const provider = new TavilyFetchProvider(clientOf(calls, () => {

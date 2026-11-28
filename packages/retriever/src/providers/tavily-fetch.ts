@@ -53,7 +53,8 @@ function isTimeoutThrow(error: unknown, text: string): boolean {
   const cls = providerErrorClassOf(error) ?? classifyProviderError(text);
   if (FETCH_ARM_FAULT_CLASSES.includes(cls)) return false;
   // 带 HTTP 状态码（axios 的 response.status、providerErrorText 拼出来的 status=<n>，
-  // 或纯文本 408/504）说明是 Tavily 服务端自己回了错误响应，交给抛错路径让这家本轮退场。
+  // 或纯文本 408/504）说明是 Tavily 自己网关回了错误响应（目标站回 504 走 HTTP 200 的
+  // failedResults，不会落进这里），交给抛错路径让这家本轮退场。
   const respStatus = (error as { response?: { status?: unknown } } | null)?.response?.status;
   if (
     typeof respStatus === "number"
