@@ -73,9 +73,17 @@ function coverage() {
     schema: "anysearch/eval-looks-coverage@1",
     domain: "docs",
     recordedAt: "2026-11-27",
+    // All eight slices, laid out like the real manifest: seven covered and the
+    // deferred adversarial trigger carrying its owner.
     dimensions: [
       { dimension: "intent", status: "covered", count: 1, classes: { howto: 1 } },
       { dimension: "lang", status: "covered", count: 1, classes: { en: 1 } },
+      { dimension: "source-tier", status: "covered", count: 0, classes: {} },
+      { dimension: "freshness", status: "covered", count: 0, classes: {} },
+      { dimension: "attribution", status: "covered", count: 0, classes: {} },
+      { dimension: "hops", status: "covered", count: 0, classes: {} },
+      { dimension: "negative", status: "covered", count: 0, classes: {} },
+      { dimension: "adversarial", status: "deferred", entryTrigger: "first injection attempt", owner: "B4" },
     ],
   };
 }
@@ -422,18 +430,16 @@ test("--new persists a URL anchor with its stability_class", (t) => {
   assert.equal(cov.dimensions.find((d) => d.dimension === "intent")?.classes?.howto, 2);
 });
 
-test("a null coverage dimension row does not crash the recount", (t) => {
+test("a valid --new writes an entry the store validator accepts", async (t) => {
   const dir = tree(t);
-  editJson(join(dir, "eval-looks.coverage.json"), (c) => { c.dimensions.push(null); });
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
-  const cov = readJson(dir, "eval-looks.coverage.json");
-  const dim = (name) => cov.dimensions.find((d) => d && d.dimension === name);
-  assert.equal(dim("intent")?.count, 2, "the intent recount still lands");
-  assert.deepEqual(dim("intent")?.classes, { howto: 2 });
-  assert.equal(dim("lang")?.count, 2, "the lang recount still lands");
-  assert.deepEqual(dim("lang")?.classes, { en: 2 });
-  assert.equal(cov.dimensions.at(-1), null, "the null row rides through untouched");
+  const { validateDocsGoldenEntry, validateCoverageManifest } = await import(
+    "../../packages/store/src/eval/docs-golden.ts"
+  );
+  const written = readJson(dir, "eval-golden.json");
+  assert.deepEqual(validateDocsGoldenEntry(written.entries.at(-1)), [], "the written row passes the real entry validator");
+  assert.deepEqual(validateCoverageManifest(readJson(dir, "eval-looks.coverage.json")), [], "the recount leaves a valid manifest");
 });
 
 test("--new rejects a question already in the golden corpus", (t) => {
@@ -452,6 +458,18 @@ test("--into attaches to the same-question row", (t) => {
   const b = readJson(dir, "eval-badcases.json");
   assert.equal(b.badcases[0].status, "promoted");
   assert.equal(b.badcases[0].promotedTo, "docs-g0001");
+});
+
+test("--new numbers docs rows from docs-g ids only", (t) => {
+  const dir = tree(t);
+  editJson(join(dir, "eval-golden.json"), (g) => {
+    g.entries.push(liveRow("vert-f1105", "A vertical fixture question?"));
+    g.scopes["vert-f1105"] = "live";
+  });
+  const r = run(dir, ["--id", "docs-bc0001", "--new"]);
+  assert.equal(r.status, 0, r.stderr);
+  const g = readJson(dir, "eval-golden.json");
+  assert.equal(g.entries.at(-1).id, "docs-g0002", "vert-* ids carry four digits and must not advance the docs sequence");
 });
 
 test("--new skips a tombstoned row with the same question", (t) => {
@@ -474,10 +492,8 @@ test("--new skips a tombstoned row with the same question", (t) => {
 });
 
 test("--new rejects a deferred dimension", (t) => {
+  // The fixture manifest defers adversarial exactly like the real one.
   expectFail(t, (dir) => {
-    editJson(join(dir, "eval-looks.coverage.json"), (c) => {
-      c.dimensions.push({ dimension: "adversarial", status: "deferred" });
-    });
     editJson(join(dir, "eval-badcases.json"), (b) => {
       b.badcases[0].dimensions.push("adversarial:injection");
     });
