@@ -48,17 +48,16 @@ export interface TavilyExtractFailedResult {
 /** 把这家的超时放在工具那道 20 秒墙里面，留出一点余量。 */
 const EXTRACT_TIMEOUT_SECONDS = 15;
 
-/** 判断 SDK 抛出来的是不是单纯客户端超时（排除鉴权/配额、带 HTTP 状态码的服务端报错和底层连不上）。 */
+/** 判断 SDK 抛出来的是不是单纯客户端超时（排除鉴权/配额、Tavily 服务端报错和底层连不上）。 */
 function isTimeoutThrow(error: unknown, text: string): boolean {
   const cls = providerErrorClassOf(error) ?? classifyProviderError(text);
   if (FETCH_ARM_FAULT_CLASSES.includes(cls)) return false;
-  // 带 HTTP 状态码（如 504 Gateway Timeout）说明上游已经回了错误响应，不是本地调用超时。
-  const structured = error as { status?: unknown; statusCode?: unknown; response?: { status?: unknown } } | null;
+  // 带 HTTP 状态码（axios 的 response.status、providerErrorText 拼出来的 status=<n>，
+  // 或纯文本 408/504）说明是 Tavily 服务端自己回了错误响应，交给抛错路径让这家本轮退场。
+  const respStatus = (error as { response?: { status?: unknown } } | null)?.response?.status;
   if (
-    typeof structured?.status === "number"
-    || typeof structured?.statusCode === "number"
-    || typeof structured?.response?.status === "number"
-    || /\bHTTP\s+\d{3}\b|\bstatus(?:Code)?=\d{3}\b/i.test(text)
+    typeof respStatus === "number"
+    || /\bHTTP\s+\d{3}\b|\bstatus=\d{3}\b|\b(?:408|504)\s+(?:request|gateway)\s+timeout\b/i.test(text)
   ) {
     return false;
   }

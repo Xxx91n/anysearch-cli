@@ -296,6 +296,7 @@ async function main() {
     new Error("connect ETIMEDOUT 1.2.3.4:443"),
     new Error("socket hang up ECONNABORTED"),
     Object.assign(new Error("504 Gateway Timeout"), { status: 504 }),
+    new Error("504 Gateway Timeout"),
   ]) {
     const calls: ExtractCall[] = [];
     const provider = new TavilyFetchProvider(clientOf(calls, () => {
