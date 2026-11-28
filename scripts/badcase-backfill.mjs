@@ -16,7 +16,13 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
-import { GOLDEN_FILE, goldenShapeProblems } from "./golden-shape.mjs";
+import {
+  GOLDEN_DIMENSION_VALUES,
+  GOLDEN_FILE,
+  GOLDEN_STABILITY_CLASSES,
+  GOLDEN_TOLERATED_SEGMENTS,
+  goldenShapeProblems,
+} from "./golden-shape.mjs";
 
 // Tests point ANS_BACKFILL_ROOT at a temp fixture tree.
 const ROOT = process.env.ANS_BACKFILL_ROOT
@@ -26,18 +32,6 @@ const BADCASES = join(ROOT, "eval-badcases.json");
 const GOLDEN = join(ROOT, GOLDEN_FILE);
 const COVERAGE = join(ROOT, "eval-looks.coverage.json");
 const DOCS_TOML = join(ROOT, "domains", "docs.toml");
-// Keep this vocabulary in sync with DOCS_GOLDEN_DIMENSION_VALUES in
-// packages/store/src/eval/docs-golden.ts; this script runs as plain node.
-const DIMENSION_VALUES = {
-  intent: ["factoid", "howto", "troubleshoot", "comparison", "reference"],
-  "source-tier": ["spec", "reference", "settings"],
-  freshness: ["stable", "active", "supersede-event"],
-  lang: ["zh", "en"],
-  attribution: ["claim", "domain"],
-  hops: ["single", "multi"],
-  negative: ["abstain"],
-  adversarial: ["injection"],
-};
 
 function fail(msg) {
   console.error("badcase-backfill: " + msg);
@@ -128,13 +122,13 @@ if (into) {
     const sep = tag.indexOf(":");
     const dim = tag.slice(0, sep);
     const val = tag.slice(sep + 1);
-    const allowed = Object.hasOwn(DIMENSION_VALUES, dim) ? DIMENSION_VALUES[dim] : undefined;
+    const allowed = Object.hasOwn(GOLDEN_DIMENSION_VALUES, dim) ? GOLDEN_DIMENSION_VALUES[dim] : undefined;
     if (!allowed || !allowed.includes(val)) fail(id + " dimension tag outside the eight-dimension vocabulary: " + tag);
     if (!coveredDims.has(dim)) fail(id + " dimension '" + dim + "' is deferred in eval-looks.coverage.json; backfill cannot carry it until coverage marks it covered");
   }
   const provType = bc.provenance?.type ?? "internal-dogfood";
   if (provType !== "internal-dogfood") fail("--new only writes internal-dogfood provenance; " + id + " is " + provType);
-  if (bc.stability_class !== undefined && !["controlled", "frozen-spec", "external"].includes(bc.stability_class)) {
+  if (bc.stability_class !== undefined && !GOLDEN_STABILITY_CLASSES.includes(bc.stability_class)) {
     fail(id + " stability_class must be controlled|frozen-spec|external");
   }
   // Next docs-g number only: vert-*/ctrl-* ids carry four-digit numbers too and
@@ -217,7 +211,7 @@ if (into) {
   if (!Array.isArray(mustHitPaths)) fail(id + " mustHitPaths must be {path,tolerate}[]");
   for (const pm of mustHitPaths) {
     if (!pm || typeof pm.path !== "string" || !pm.path.startsWith("/")) fail(id + " mustHitPaths pattern must start with /");
-    if (!Array.isArray(pm.tolerate) || pm.tolerate.some((t) => !["locale", "version", "dated"].includes(t))) {
+    if (!Array.isArray(pm.tolerate) || pm.tolerate.some((t) => !GOLDEN_TOLERATED_SEGMENTS.includes(t))) {
       fail(id + " mustHitPaths tolerate outside locale|version|dated: " + pm.path);
     }
   }

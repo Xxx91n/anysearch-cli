@@ -28,7 +28,15 @@ import { verifyInstalledProduct } from "./verify-installed-product.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
-import { GOLDEN_FILE, goldenShapeProblems } from "./golden-shape.mjs";
+import {
+  GOLDEN_DIMENSION_VALUES,
+  GOLDEN_FILE,
+  GOLDEN_SCHEMA,
+  GOLDEN_SCOPE_VALUES,
+  GOLDEN_STABILITY_CLASSES,
+  GOLDEN_TOLERATED_SEGMENTS,
+  goldenShapeProblems,
+} from "./golden-shape.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import { discoverAllLocalActions, classifyLocalUsesRef, resolveYaml } from "./check-workflows.mjs";
 import { LANES } from "./ci-changes.mjs";
@@ -533,6 +541,18 @@ function stepStaticAssertions() {
     }
     // Shape checks live in scripts/golden-shape.mjs, shared with the backfill.
     for (const problem of goldenShapeProblems(evalGolden)) fail(GOLDEN_FILE + " " + problem);
+    // That module mirrors the TS vocabularies, so pin each value back to
+    // docs-golden.ts: a TS-side bump then fails here instead of surfacing as a
+    // "schema must be ..." error at run time.
+    const dgShapeSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/docs-golden.ts"), "utf8");
+    for (const literal of [GOLDEN_SCHEMA, ...GOLDEN_SCOPE_VALUES, ...GOLDEN_STABILITY_CLASSES, ...GOLDEN_TOLERATED_SEGMENTS]) {
+      if (!dgShapeSrc.includes(JSON.stringify(literal))) fail("docs-golden.ts no longer declares " + literal + " — sync scripts/golden-shape.mjs");
+    }
+    for (const [dim, values] of Object.entries(GOLDEN_DIMENSION_VALUES)) {
+      for (const value of values) {
+        if (!dgShapeSrc.includes(JSON.stringify(value))) fail("docs-golden.ts lost the " + dim + " value " + value + " — sync scripts/golden-shape.mjs");
+      }
+    }
     // Anchor lookup covers every entry, not only the live slice: the c1 abstain
     // anchor lives in the stub lane.
     const ge = evalGolden.entries;
