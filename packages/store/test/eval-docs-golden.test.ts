@@ -14,9 +14,10 @@ import {
   writeLooksLedger,
   type LooksLedgerEntry,
 } from "../src/eval/looks-ledger";
-import { GOLDEN_FILE, readGoldenFile } from "../src/eval/golden-file";
+import { GOLDEN_FILE, isLiveScope, isStubScope, readGoldenFile } from "../src/eval/golden-file";
 import {
   DOCS_GOLDEN_DIMENSIONS,
+  GOLDEN_SCOPE_VALUES,
   TOMBSTONE_REASON_CODES,
   validateCoverageManifest,
   validateDocsGoldenEntry,
@@ -126,6 +127,17 @@ assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.lengt
   );
   fs.rmSync(dir, { recursive: true, force: true });
 }
+
+// --- 1c. the scope predicates cover every value the vocabulary allows --------
+// corpus-files.ts spells the two predicates out instead of importing the value
+// constant (that import would pull the validator in), so pin the pair here.
+for (const value of GOLDEN_SCOPE_VALUES) {
+  assert(isLiveScope(value) || isStubScope(value), "scope value " + value + " is claimed by a predicate");
+}
+assert(
+  !isLiveScope("sometimes") && !isStubScope("sometimes"),
+  "a value outside the scope vocabulary is claimed by neither predicate"
+);
 
 // --- 2. every entry validates against the entry schema ----------------------
 const entryProblems = validateDocsGoldenSet(golden);
