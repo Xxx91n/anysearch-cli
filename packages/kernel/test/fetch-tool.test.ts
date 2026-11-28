@@ -850,6 +850,39 @@ async function main() {
       const timedOutOnly = await singleTool.execute("t25h3", { handles: ["https://allowed.example/slow-only"] });
       assert(rawText(timedOutOnly).includes("没有回包") && !rawText(timedOutOnly).includes("都退场了"),
         "a single-arm timeout keeps PROVIDER_NO_REPLY_MESSAGE because the arm is still alive");
+
+      // Multi-chunk batch (maxUrlsPerCall = 1): two consecutive timeouts retire
+      // the stalled arm so remaining chunks do not each wait out a full deadline.
+      await tickets("user", ["allowed.example/mc1", "allowed.example/mc2", "allowed.example/mc3"]);
+      const stalled = new FakeProvider(async (_urls, signal) => {
+        await new Promise<void>((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+        return pageEnvelope([]);
+      }, "anysearch", 1);
+      const fastFallback = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "fallback body" })),
+        failures: [],
+      }), "tavily", 5);
+      const multiChunkTool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [stalled, fastFallback],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+        callTimeoutMs: 25,
+      });
+      const mcResult = await multiChunkTool.execute("t25h4", {
+        handles: [
+          "https://allowed.example/mc1",
+          "https://allowed.example/mc2",
+          "https://allowed.example/mc3",
+        ],
+      });
+      assert(stalled.calls.length === 2,
+        "a stalled 1-URL arm retires after 2 consecutive timeouts instead of waiting for every chunk (got " + stalled.calls.length + ")");
+      assert(fastFallback.calls.length === 1 && envelope(mcResult).pages.length === 3,
+        "all three URLs move to the fallback arm and succeed");
     }
 
     // ---- 8. parameter errors are ordinary tool errors ----------------------

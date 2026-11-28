@@ -54,7 +54,7 @@ export interface ProviderFacts {
   fetchMaxUrlsPerCall?: number;
 }
 
-/** MCP 握手时 clientInfo.version 报的版本号，适配器和探针共用这一格，发版只改这一处。 */
+/** MCP 握手时 clientInfo.version 报的版本号，适配器和探针共用这一格；发版时跟 packages/retriever/package.json 的 version 一起改（anysearch.test.ts 第 14 条盯着两边一致）。 */
 export const MCP_CLIENT_VERSION = "0.2.0";
 
 /** 老配置把端点写成 REST 搜索尾巴时，要被替掉的那一段（换成 /mcp，写在下头的函数里）。 */

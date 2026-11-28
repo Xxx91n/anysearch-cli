@@ -100,11 +100,6 @@ function trimResolvedKeys(creds: CredentialSource): CredentialSource {
   };
 }
 
-// Best-effort diagnostic: a closed/broken stderr (e.g. the MCP parent closed
-// the pipe) must not turn the fail-open engine build into a process crash —
-// handled by writeStderrDiagnostic from @anysearch-cli/retriever.
-// The providerBuildErrors record remains the durable trace in that case.
-
 /**
  * Which of the two things a provider-construction throw means, for callers that
  * have to word it themselves. The message is never returned or reprinted: it can

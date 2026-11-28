@@ -26,7 +26,7 @@ export const FETCH_EMPTY_BODY_MESSAGE = "该网址没有返回正文";
  * 分类器答「这个请求要不要重试」，这里答「换一家还有没有意义」。
  */
 export const FETCH_FINAL_PAGE_FAULT =
-  /(?:HTTP\s*|\bstatus(?:Code)?\s*[:=]?\s*)(?:404|410)\b|\b(?:404|410)\s+(?:not\s+found|gone)\b|no such host|invalid url|unsupported (?:url|scheme)|ENOTFOUND/i;
+  /(?:HTTP\s*|\bstatus(?:[\s_-]*code)?\s*[:=]?\s*)(?:404|410)\b|\b(?:404|410)\s+(?:not\s+found|gone)\b|no such host|invalid url|unsupported (?:url|scheme)|ENOTFOUND/i;
 
 /**
  * 说的是一家而不是这一页的失败类：配额、403（key 死了或整站挡了）、免费额度墙、

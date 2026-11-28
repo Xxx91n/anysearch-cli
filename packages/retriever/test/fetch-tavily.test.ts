@@ -291,7 +291,22 @@ async function main() {
       "an SDK timeout stays a retryable transient page fault without retiring the arm");
   }
 
-  // ---- FETCH_FINAL_PAGE_FAULT covers 410, status 404, DNS and bad schemes -
+  // ---- ETIMEDOUT / bare ECONNABORTED still throw so unreachable arms retire --
+  for (const msg of ["connect ETIMEDOUT 1.2.3.4:443", "socket hang up ECONNABORTED"]) {
+    const calls: ExtractCall[] = [];
+    const provider = new TavilyFetchProvider(clientOf(calls, () => {
+      throw new Error(msg);
+    }));
+    let threw = false;
+    try {
+      await provider.fetch({ urls: ["https://example.com/unreachable"], maxCharacters: 4000 }, SIG);
+    } catch {
+      threw = true;
+    }
+    assert(threw, "unreachable error surfaces to retire the arm (" + msg + ")");
+  }
+
+  // ---- FETCH_FINAL_PAGE_FAULT covers 410, status [code] 404, DNS and bad schemes -
   {
     const calls: ExtractCall[] = [];
     const provider = new TavilyFetchProvider(clientOf(calls, () => ({
@@ -299,6 +314,7 @@ async function main() {
       failedResults: [
         { url: "https://example.com/g1", error: "410 Gone" },
         { url: "https://example.com/g2", error: "upstream returned status 404" },
+        { url: "https://example.com/g2b", error: "upstream said status code 404" },
         { url: "https://example.com/g3", error: "dial tcp: no such host" },
         { url: "https://example.com/g4", error: "getaddrinfo ENOTFOUND nope.invalid" },
         { url: "https://example.com/g5", error: "unsupported scheme ftp" },
@@ -312,6 +328,7 @@ async function main() {
         urls: [
           "https://example.com/g1",
           "https://example.com/g2",
+          "https://example.com/g2b",
           "https://example.com/g3",
           "https://example.com/g4",
           "https://example.com/g5",
@@ -327,6 +344,7 @@ async function main() {
     for (const u of [
       "https://example.com/g1",
       "https://example.com/g2",
+      "https://example.com/g2b",
       "https://example.com/g3",
       "https://example.com/g4",
       "https://example.com/g5",

@@ -9,6 +9,8 @@
 
 import { classifyProviderError, providerErrorClassOf, providerErrorText } from "../contract";
 import { FETCH_ARM_FAULT_CLASSES, FETCH_PAGE_MAX_CHARS, isCallDeadlineAbort, pageFault, type FetchEnvelope, type FetchFailure, type FetchPage, type FetchProvider, type FetchRequest } from "../fetch-contract";
+import { redactSecrets } from "../redact";
+import { writeStderrDiagnostic } from "../stderr";
 import { AnySearchMcpClient, toolResultBodyText, toolResultErrorText, type McpToolResult } from "./anysearch-mcp";
 import { PROVIDER_FACTS } from "./provider-facts";
 
@@ -57,13 +59,19 @@ function readExtractReply(
     if (typeof structured === "string") return pageFault(url, "");
     throw new Error("AnySearch MCP tools/call extract malformed reply (no structuredContent.content and no text)");
   }
+  // 只有 structuredContent.content 缺失时才会走到这里（正常读页正文在结构部分，上面已返回）。
   // 没配 key 撞到免费额度墙时，上游回的是 HTTP 200（不是 isError）+ 一段自动建号/发 key
-  // 的短提示、没有 structuredContent.content。只认共享分类器判出的 `free-quota-exhausted`
-  // （跟搜索臂共用 contract.ts 里的 PROVISIONING_REPLY_TEXT）且字数不超过上限，免得把墙
-  // 原文当正文存进库，也不会把正常文章里出现的 403 或普通配额字眼误判成整家坏——鉴权和
-  // 普通配额由上面的 isError 负责。
+  // 的短提示。这里只认共享分类器判出的 `free-quota-exhausted`（跟搜索臂共用 contract.ts 的
+  // PROVISIONING_REPLY_TEXT）且总字数 <= FREE_WALL_MAX_CHARS；鉴权和普通配额字眼不走这里，
+  // 留给上面的 isError。若极短的纯文本页碰巧命中发 key 模板，打一行脱敏诊断方便排查。
   const cls = classifyProviderError(fallback);
-  if (cls === "free-quota-exhausted" && fallback.length <= FREE_WALL_MAX_CHARS) return pageFault(url, fallback);
+  if (cls === "free-quota-exhausted" && fallback.length <= FREE_WALL_MAX_CHARS) {
+    writeStderrDiagnostic(
+      "[anysearch-fetch] 纯文本回包命中免费额度墙判据，按 free-quota-exhausted 退场：" +
+      redactSecrets(url, { keepPaths: false }) + "\n",
+    );
+    return pageFault(url, fallback);
+  }
   return { url, ...(title ? { title } : {}), text: fallback.slice(0, maxCharacters) };
 }
 

@@ -48,13 +48,13 @@ export interface TavilyExtractFailedResult {
 /** 把这家的超时放在工具那道 20 秒墙里面，留出一点余量。 */
 const EXTRACT_TIMEOUT_SECONDS = 15;
 
-/** 判断 SDK 抛出来的是不是单纯超时（排除鉴权/配额这些真该退场的错）。 */
+/** 判断 SDK 抛出来的是不是单纯墙钟超时（排除鉴权/配额和底层连不上 ETIMEDOUT/ECONNABORTED）。 */
 function isTimeoutThrow(error: unknown, text: string): boolean {
   const cls = providerErrorClassOf(error) ?? classifyProviderError(text);
   if (FETCH_ARM_FAULT_CLASSES.includes(cls)) return false;
   const name = (error as { name?: unknown } | null)?.name;
   if (name === "TimeoutError") return true;
-  return /\b(?:timed?\s*out|timeout|ETIMEDOUT|ECONNABORTED)\b/i.test(text);
+  return /\b(?:timed?\s*out|timeout)\b/i.test(text);
 }
 
 export class TavilyFetchProvider implements FetchProvider {

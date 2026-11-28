@@ -62,6 +62,8 @@ const TRUST_GRANTED = "已信任这个主机，本会话内有效。现在重新
 const NO_FETCH_SOURCE_MESSAGE = "没有可用的抓取信息源";
 const EMPTY_BODY_MESSAGE = "过完净化还是空的";
 const FETCH_TIMEOUT_MS = 20_000;
+/** 同一家连续撞超时墙达到这个次数就本轮退场：单页慢不废整家，但连卡两次别再排队白等。 */
+const MAX_CONSECUTIVE_TIMEOUTS = 2;
 
 /**
  * Store seams: the tool calls the first three; saveFetchTickets is used by the
@@ -148,9 +150,21 @@ class FetchRunState {
   readonly failedTrust = new Set<string>();
   // 一家整家坏了就记在这里：本轮剩下的调用都跳过它，下一轮 run 是新实例、重新试。
   readonly deadProviders = new Set<string>();
+  // 同一家连续撞超时墙的次数：单次慢不拉黑，连续两次就当本轮卡死了。
+  readonly consecutiveTimeouts = new Map<string, number>();
 
   noteCall(provider: string): void {
     this.calls.set(provider, (this.calls.get(provider) ?? 0) + 1);
+  }
+
+  noteTimeout(provider: string): number {
+    const next = (this.consecutiveTimeouts.get(provider) ?? 0) + 1;
+    this.consecutiveTimeouts.set(provider, next);
+    return next;
+  }
+
+  clearTimeouts(provider: string): void {
+    this.consecutiveTimeouts.delete(provider);
   }
 
   notePage(provider: string): void {
@@ -644,8 +658,12 @@ async function runProviders(
         }
         state.noteCall(provider.id);
         if (timedOut) {
-          // 工具自己那道超时墙响了只是这批网址慢，不算这家坏：不拉黑本轮，
-          // 这批网址留在 pending 交给下一家，剩下的分片继续由这家读。
+          // 单页慢不废掉整家，但同一家连撞两次超时墙（比如按 1 个 URL 切分片撞上彻底
+          // 无响应的源）就当本轮卡死了，立刻摘掉，别排着队把后面分片都等一遍。
+          if (state.noteTimeout(provider.id) >= MAX_CONSECUTIVE_TIMEOUTS) {
+            state.deadProviders.add(provider.id);
+            continue providerLoop;
+          }
           continue;
         }
         // This arm is down. Skip its remaining chunks and leave every URL for
@@ -675,9 +693,21 @@ async function runProviders(
         pending.delete(identity);
         pages.push({ page: { ...page, url: entry.url }, provider: responseProvider });
       }
+      // 适配器自己吞掉的超时（anysearch 捕获工具墙、tavily 捕获 SDK 15 秒超时）也要算
+      // 进连续超时；只要拿到了页或回了非超时结果，就把连续计数清零。
+      const batchTimedOut = envelope.pages.length === 0 && (
+        deadline.aborted
+        || (envelope.failures.length > 0
+          && envelope.failures.every((f) => f.errorClass === "transient" && /timed?\s*out|timeout|超时/i.test(f.message ?? "")))
+      );
       // 逐页失败里带着整家坏的类：同样的请求换个网址也会坏，这家本轮就到此为止。
       // 这一批已经读到的页留着，没读的（包括这一页）交给下一家。
       let armDown = false;
+      if (batchTimedOut) {
+        if (state.noteTimeout(provider.id) >= MAX_CONSECUTIVE_TIMEOUTS) armDown = true;
+      } else {
+        state.clearTimeouts(provider.id);
+      }
       for (const failure of envelope.failures) {
         const identity = normalizeUrlIdentity(failure.url);
         const entry = pending.get(identity);

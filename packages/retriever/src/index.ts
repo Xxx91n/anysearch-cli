@@ -1,6 +1,7 @@
 // @anysearch-cli/retriever: search provider contract + RRF fusion
 export * from "./contract";
 export * from "./fetch-contract";
+export * from "./http-headers";
 export * from "./outcome";
 export * from "./rrf";
 export * from "./fusion-registry";
