@@ -9,15 +9,7 @@ import {
 } from "./docs-golden";
 
 // Re-exported so the executors and tests keep one import site for the corpus.
-export { GOLDEN_FILE } from "./corpus-files";
-
-export function isLiveScope(scope: unknown): scope is GoldenScope {
-  return scope === "live" || scope === "both";
-}
-
-export function isStubScope(scope: unknown): scope is GoldenScope {
-  return scope === "stub" || scope === "both";
-}
+export { GOLDEN_FILE, isLiveScope, isStubScope } from "./corpus-files";
 
 // GoldenFile is DocsGoldenSet plus the entry-id -> stub|live|both sidecar map;
 // the executors read scopes and entries from the same document in one pass.
