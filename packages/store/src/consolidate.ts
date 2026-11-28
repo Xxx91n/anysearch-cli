@@ -13,6 +13,7 @@ import { suspendSummariesForCorrection, liveHeadOf } from "./summary-sources.js"
 import { sectionsForPages, type MemorySection } from "./retrieval-chunks.js";
 import { hasPageBody, HAS_PAGE_BODY_EXPR } from "./retrieval-content.js";
 import { applyStatedPairAsAlias, crossScriptPairsInText, loadLiveEntities, queueProposedAlias, resolveQueryObject, type AliasJudgeFn, type AliasJudgeVerdict } from "./entity-alias.js";
+import { isPositiveWholeInt as isPositiveInteger } from "@anysearch-cli/retriever";
 import { parseSqliteUtc } from "./sqlite-time.js";
 
 export const THETA_DUP = 0.90;           // D4/D7: NOOP boundary; golden boundary case pins <, =, >
@@ -739,10 +740,6 @@ export class ConsolidateScopeError extends Error {
 
 export const CONSOLIDATE_SESSION_ID_MAX_CHARS = 128;
 const CONSOLIDATE_SESSION_ID_PATTERN = /^[\x21-\x7E]+$/;
-
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1;
-}
 
 /**
  * Decide what a consolidation run may read, from raw caller input.

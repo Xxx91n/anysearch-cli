@@ -1,8 +1,5 @@
 // The docs golden corpus lives in eval-golden.json. Bad input throws instead
 // of returning an empty set, so a broken file fails the run instead of SKIPping.
-// This reader is the full rule set. scripts/golden-shape.mjs repeats only the
-// outer layer for the two plain-node consumers, so a file it accepts can still
-// be rejected here — that ordering is intentional, the reverse is not.
 import { readFileSync } from "node:fs";
 import {
   GOLDEN_SCOPE_VALUES,

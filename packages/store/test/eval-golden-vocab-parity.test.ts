@@ -68,6 +68,7 @@ const shapeKinds = Object.entries(shape)
   .sort()
   .join(",");
 const declaredKinds = [
+  "GOLDEN_COVERAGE_SCHEMA=string",
   "GOLDEN_DIMENSION_VALUES=object",
   "GOLDEN_FILE=string",
   "GOLDEN_SCHEMA=string",

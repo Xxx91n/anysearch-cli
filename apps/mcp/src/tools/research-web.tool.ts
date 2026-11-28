@@ -169,8 +169,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
           let callOutcome = lastOutcome;
           if (allResults.length > 0) callOutcome = "answer";
           else if (lastOutcome === "failed") callOutcome = "empty";
-          // One read for both halves: the same budget in the text JSON and in
-          // structuredContent, so the two copies cannot drift.
+          // Same one read as search_web: the text JSON and structuredContent carry
+          // the same budget.
           const deadlineMs = reportedDeadlineMs(eng);
           const summary = JSON.stringify(
             {
@@ -226,8 +226,8 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             // The same arm fields the content JSON carries.
             providersQueried: lastRoundQueried,
             providersCancelled: lastRoundCancelled,
-            // Both always present. deadlineMs is the per-round budget, so a
-            // multi-round call can wait up to rounds times that long.
+            // Both always present (see search_web). deadlineMs is the per-round
+            // budget, so a multi-round call can wait up to rounds times that long.
             partial,
             deadlineMs,
             providerElapsedMs: lastRoundProviderElapsedMs,

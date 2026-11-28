@@ -6,9 +6,8 @@
 // decision 4A: loads domain from domains/<name>.toml convention directory.
 
 import { TavilyProvider, AnySearchProvider, createExaProvider, createExaFetchProvider } from "@anysearch-cli/retriever/providers";
-import { redactSecrets, type FetchProvider, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
+import { isPositiveWholeInt, redactSecrets, type FetchProvider, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
 import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
-import { isPositiveWholeInt } from "./num";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   ansAttributionRoot,

@@ -70,8 +70,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { isPositiveWholeInt } from "@anysearch-cli/retriever";
 import { probePid, type PidLiveness } from "@anysearch-cli/store/process-liveness";
-import { isPositiveWholeInt } from "./num";
 
 /**
  * Reclaim window for an owner this machine has no pid evidence about — another
@@ -265,8 +265,8 @@ function readSessionLockHolder(lockPath: string): SessionLockHolder | undefined 
     // still present in locks written before the rename.
     const lockedAt = readableTime(raw.lockedAt) ?? readableTime(raw.startedAt);
     return lockedAt === undefined
-      ? { pid: raw.pid as number, host: raw.host }
-      : { pid: raw.pid as number, host: raw.host, lockedAt };
+      ? { pid: raw.pid, host: raw.host }
+      : { pid: raw.pid, host: raw.host, lockedAt };
   } catch (e) {
     if (e instanceof UnreadableOwnerError) throw e;
     throw new UnreadableOwnerError("owner.json is not valid JSON");

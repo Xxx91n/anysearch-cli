@@ -2,6 +2,7 @@
 export * from "./contract";
 export * from "./fetch-contract";
 export * from "./outcome";
+export * from "./num";
 export * from "./rrf";
 export * from "./fusion-registry";
 export * from "./content-trust";

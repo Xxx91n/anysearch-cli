@@ -6,6 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { GOLDEN_COVERAGE_SCHEMA, GOLDEN_SCHEMA } from "../golden-shape.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SCRIPT = join(REPO, "scripts", "badcase-backfill.mjs");
@@ -65,7 +66,7 @@ function liveRow(id, question) {
 
 function golden(question = "How do I configure the widget?") {
   return {
-    schema: "anysearch/docs-golden@1",
+    schema: GOLDEN_SCHEMA,
     scopes: { "docs-g0001": "live" },
     entries: [liveRow("docs-g0001", question)],
   };
@@ -73,7 +74,7 @@ function golden(question = "How do I configure the widget?") {
 
 function coverage() {
   return {
-    schema: "anysearch/eval-looks-coverage@1",
+    schema: GOLDEN_COVERAGE_SCHEMA,
     domain: "docs",
     recordedAt: "2026-11-27",
     // Only the two dimensions the one live row tags count as covered; the rest
@@ -334,6 +335,18 @@ const REJECTS = [
     pattern: /entry id must be a non-empty string/,
   },
   {
+    name: "a golden entry without a domain is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { delete g.entries[0].domain; },
+    pattern: /has no domain/,
+  },
+  {
+    name: "a golden entry whose verdict is outside answer|abstain is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.entries[0].expected.verdict = "maybe"; },
+    pattern: /expected.verdict must be answer/,
+  },
+  {
     name: "a golden entry without a scope is rejected",
     file: "eval-golden.json",
     edit: (g) => { g.entries.push(liveRow("docs-g0002", "How do I uninstall the widget?")); },
@@ -448,7 +461,7 @@ const REJECTS = [
     pattern: /mustHitUrls must be an array/,
   },
   {
-    name: "--new rejects mustHitPaths that are not an array",
+    name: "--new rejects a mustHitPaths that is an object",
     file: "eval-badcases.json",
     edit: (b) => { b.badcases[0].expected.mustHitPaths = { path: "/install" }; },
     pattern: /mustHitPaths must be \{path,tolerate\}\[\]/,

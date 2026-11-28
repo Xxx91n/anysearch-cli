@@ -9,6 +9,7 @@
 // (--quick skips that step).
 export const GOLDEN_FILE = "eval-golden.json";
 export const GOLDEN_SCHEMA = "anysearch/docs-golden@1";
+export const GOLDEN_COVERAGE_SCHEMA = "anysearch/eval-looks-coverage@1";
 export const GOLDEN_SCOPE_VALUES = ["stub", "live", "both"];
 export const GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "external"];
 export const GOLDEN_TOLERATED_SEGMENTS = ["locale", "version", "dated"];
@@ -66,8 +67,16 @@ export function goldenShapeProblems(doc) {
     const ids = new Set(doc.entries.map((e) => e.id));
     for (const e of doc.entries) {
       const scoped = Object.prototype.hasOwnProperty.call(scopes, e.id);
-      if (e.tombstone !== undefined && scoped) problems.push("tombstoned entry " + e.id + " must not carry a scope");
-      if (e.tombstone === undefined && !scoped) problems.push("entry " + e.id + " has no scope");
+      if (e.tombstone !== undefined) {
+        if (scoped) problems.push("tombstoned entry " + e.id + " must not carry a scope");
+        continue;
+      }
+      if (!scoped) problems.push("entry " + e.id + " has no scope");
+      // The anchor checks read these two fields; without them a row missing one
+      // gets reported as a missing anchor instead of as the row that broke.
+      if (typeof e.domain !== "string" || e.domain.length === 0) problems.push("entry " + e.id + " has no domain");
+      const verdict = e.expected && typeof e.expected === "object" ? e.expected.verdict : undefined;
+      if (verdict !== "answer" && verdict !== "abstain") problems.push("entry " + e.id + " expected.verdict must be answer|abstain");
     }
     for (const id of Object.keys(scopes)) {
       if (!ids.has(id)) problems.push("scope for unknown entry " + id);

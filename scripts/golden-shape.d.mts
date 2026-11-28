@@ -4,6 +4,7 @@
 // or reshaped there has to be carried over by hand.
 export declare const GOLDEN_FILE: string;
 export declare const GOLDEN_SCHEMA: string;
+export declare const GOLDEN_COVERAGE_SCHEMA: string;
 export declare const GOLDEN_SCOPE_VALUES: readonly string[];
 export declare const GOLDEN_STABILITY_CLASSES: readonly string[];
 export declare const GOLDEN_TOLERATED_SEGMENTS: readonly string[];

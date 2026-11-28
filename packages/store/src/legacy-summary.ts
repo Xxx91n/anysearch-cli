@@ -1,7 +1,7 @@
 // #265 (D10): inspect one legacy summary only when the caller needs it.
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
-import { unwrapRetrieved } from "@anysearch-cli/retriever";
+import { isPositiveWholeInt, unwrapRetrieved } from "@anysearch-cli/retriever";
 import { collectTaskRecords, planSummaryRebuild, readStoredMessageText } from "./summary-rebuild.js";
 import { parseSummarySourceRefs, type SummarySourceRef } from "./summary-sources.js";
 
@@ -66,7 +66,7 @@ function transcriptSources(db: Database.Database, sessionId: string, createdAt: 
     if (Array.isArray(payload?.results)) {
       for (const item of payload.results) {
         const id: unknown = item?.archiveRowId;
-        if (typeof id === "number" && Number.isInteger(id) && id > 0) sources.push({ kind: "material", id });
+        if (isPositiveWholeInt(id)) sources.push({ kind: "material", id });
         else reasons.push("tool record " + record.id + " does not name the exact material version it read");
       }
     } else if (Array.isArray(payload?.internal)) {

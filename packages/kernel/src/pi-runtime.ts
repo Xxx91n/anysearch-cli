@@ -39,6 +39,7 @@ import { dirname, join } from "node:path";
 import {
   CONTENT_TRUST_SCHEMA_VERSION,
   RETRIEVAL_CONTENT_SCHEMA_URL,
+  isPositiveWholeInt,
   shouldAllowUrl,
   wrapRetrieved,
   type NormalizedResult,
@@ -50,7 +51,6 @@ import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, ansProjectHitlPath, ansProjectPi
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink, TaskBudgetScope } from "./ports";
 import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
-import { isPositiveWholeInt } from "./num";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 import { SEARCH_MODE_DESCRIPTION } from "./tool-schemas";
 import { BUILTIN_FETCH_TOOL, createFetchTool, type FetchStorePort, type FetchTrustRequest } from "./fetch-tool";

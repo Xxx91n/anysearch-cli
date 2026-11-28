@@ -12,9 +12,9 @@
 // Control entries (role:"control") record existence facts — their failures
 // walk the degraded list, never the red gate (iii).
 // ANS_VERTICAL_DELTA_LIMIT=N caps the corpus slice for smoke runs.
-// Unset or empty runs the full corpus; anything else must be a positive integer
-// and an invalid value fails the run (whitespace included). The check runs after
-// the missing-dist SKIP, so a lane that skips still skips.
+// Only an unset variable runs the full corpus; any set value must be decimal
+// digits (a positive integer) and anything else fails the run. The check runs
+// after the missing-dist SKIP, so a lane that skips still skips.
 
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
@@ -32,10 +32,12 @@ const dist = join(root, "apps", "cli", "dist", "index.js");
 const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
   ?? join(root, ".scratch", "vertical-eval", "delta.json");
 const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT;
-// "Set?" reads the raw value: trimming first turns "   " into "" and quietly
-// runs the whole corpus instead of refusing the value.
-const limitSet = rawLimit !== undefined && rawLimit !== "";
-const limitNum = limitSet ? Number(rawLimit.trim()) : 0;
+// Only an unset variable means "no cap". A set value is decimal digits or a
+// failure: Number("") is 0, and Number("1e3")/Number("0x10") are integers that a
+// plain isInteger check would accept as a smaller cap than the one written.
+const limitSet = rawLimit !== undefined;
+const limitDigits = /^[0-9]+$/.test((rawLimit ?? "").trim());
+const limitNum = limitSet ? (limitDigits ? Number((rawLimit ?? "").trim()) : NaN) : 0;
 const CONCURRENCY = 4;
 
 function hostOf(url: string): string {

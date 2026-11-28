@@ -21,7 +21,7 @@
 // recorded any (10/12). A summary with no recorded dependency is left alone —
 // "no record" is not "depends on everything".
 
-import { normalizeUrlIdentity } from "@anysearch-cli/retriever";
+import { isPositiveWholeInt, normalizeUrlIdentity } from "@anysearch-cli/retriever";
 import type Database from "better-sqlite3";
 
 /** The two anchor types that carry a derived summary (see MemoryPipeline). */
@@ -57,7 +57,7 @@ export function parseSummarySourceRefs(raw: unknown): SummarySourceRef[] {
     if (!item || typeof item !== "object") continue;
     const { kind, id } = item as { kind?: unknown; id?: unknown };
     if (kind !== "material" && kind !== "knowledge") continue;
-    if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) continue;
+    if (!isPositiveWholeInt(id)) continue;
     const key = kind + ":" + id;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -157,7 +157,7 @@ export function recordSummarySources(
   for (const ref of args.sources ?? []) {
     if (!ref || typeof ref !== "object") continue;
     if (ref.kind !== "material" && ref.kind !== "knowledge") continue;
-    if (!Number.isInteger(ref.id) || ref.id <= 0) continue;
+    if (!isPositiveWholeInt(ref.id)) continue;
     const key = ref.kind + ":" + ref.id;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -185,7 +185,7 @@ export function findSummariesDependingOn(
   refs: SummarySourceRef[],
 ): DependentSummary[] {
   const valid = (refs ?? []).filter(
-    (r) => r && Number.isInteger(r.id) && r.id > 0 && (r.kind === "material" || r.kind === "knowledge"),
+    (r) => r && isPositiveWholeInt(r.id) && (r.kind === "material" || r.kind === "knowledge"),
   );
   if (valid.length === 0) return [];
   const materialIds = [...new Set(valid.filter((r) => r.kind === "material").map((r) => r.id))];

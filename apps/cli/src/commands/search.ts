@@ -26,19 +26,19 @@ export const SEARCH_DEADLINE_MAX_MS = 60000;
 // Both render paths print "Providers failed" and the remedy beside it, or an
 // abstain hides why the arm died. One helper, so neither branch can drop half.
 function printFailedArms(
+  failed: readonly string[],
   metadata: {
-    providersFailed: string[];
     providerErrorClasses?: Record<string, ProviderErrorClass>;
     providerErrorRetryAfterSeconds?: Record<string, number>;
   },
   credentialSources?: CredentialSources,
 ): void {
   const hints = providerErrorHints(
-    metadata.providersFailed,
+    failed,
     metadata.providerErrorClasses,
     metadata.providerErrorRetryAfterSeconds,
   );
-  for (const line of formatFailedArmLines({ providersFailed: metadata.providersFailed, credentialSources, hints })) {
+  for (const line of formatFailedArmLines({ providersFailed: failed, credentialSources, hints })) {
     console.log(line);
   }
 }
@@ -345,10 +345,10 @@ export async function runSearch(args: string[]): Promise<number> {
     if (abstain) {
       console.log(formatAbstainLine(abstain));
       console.log("---");
-      console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
+      console.log("Providers queried: " + arms.queried.join(", "));
       // Reachable: the gate dropped arrivals while another arm failed, which is
       // still a refusal — and the failed arm's remedy belongs beside it.
-      printFailedArms(envelope.metadata, credentialSources);
+      printFailedArms(arms.failed, envelope.metadata, credentialSources);
       // 这条分支不打 cancelled：拒答本身就要求没有臂被掐断（有一条被掐，
       // 再说「这个域里没有」就说得太满），所以这里的 cancelled 恒为空表。
       if (providerAbsentLine) console.log(providerAbsentLine);
@@ -390,8 +390,8 @@ export async function runSearch(args: string[]): Promise<number> {
       console.log(renderAttributionText(envelope.attribution));
     }
 
-    console.log("Providers queried: " + envelope.metadata.providersQueried.join(", "));
-    printFailedArms(envelope.metadata, credentialSources);
+    console.log("Providers queried: " + arms.queried.join(", "));
+    printFailedArms(arms.failed, envelope.metadata, credentialSources);
     const cancelledLine = formatProvidersCancelledLine(cancelledProviders);
     if (cancelledLine) console.log(cancelledLine);
     if (providerAbsentLine) console.log(providerAbsentLine);

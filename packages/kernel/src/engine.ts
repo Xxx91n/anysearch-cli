@@ -5,14 +5,13 @@
 // JS adaptation: Promise.all + Promise.race + AbortController; the deadline runs from fan-out.
 
 import type { SearchProvider, SearchRequest, NormalizedResult, FusedEnvelope, SufficiencySignal, ProviderAnswer, WebProviderLedger, ProviderEnvelope, ProviderErrorClass } from "@anysearch-cli/retriever";
-import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorClassOf, providerErrorText, retryAfterSeconds, classifySearchOutcome, normalizeUrlIdentity } from "@anysearch-cli/retriever";
+import { rrfRank, FUSION_REGISTRY, SCORE_KIND, sanitizeRetrieved, shouldAllowUrl, canonicalizeVertical, classifyProviderError, providerErrorClassOf, providerErrorText, retryAfterSeconds, classifySearchOutcome, isPositiveWholeInt, normalizeUrlIdentity } from "@anysearch-cli/retriever";
 import { randomUUID } from "node:crypto";
 import type { Query, RetrieverPort } from "./ports";
 import type { BudgetLedgerPort, ResumeAnchorsPort } from "./ports";
 import { attachAttribution, applyJudgeEscalation, type JudgeFn } from "./attribution";
 import type { AttributionCalibration } from "./calibrate";
 import { TaskBudgetRejectedError } from "./budget-error";
-import { isPositiveWholeInt } from "./num";
 
 // Sufficiency gate config: minimum quality thresholds for a search result.
 // atomcode research: min angles (providers) / min fetches (results) / min domains / cross-engine verify.

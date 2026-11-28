@@ -177,10 +177,9 @@ if (into) {
   if (mustNotHitPaths !== undefined && (!Array.isArray(mustNotHitPaths) || mustNotHitPaths.length === 0 || mustNotHitPaths.some((u) => typeof u !== "string" || u.length === 0))) {
     fail(id + " mustNotHitPaths must be a non-empty string[]");
   }
-  // Shape first, and the values that go into the row: a null list read through
-  // `?? []` would pass the answer+mustHit* gate below, then be written as null
-  // for CI's validator to reject. It would also point the reader at the kernel
-  // fixtures instead of the field that is wrong.
+  // Array fields are judged as written, never through `?? []`: a null list has
+  // to fail here instead of being written, and the type error is named before
+  // the answer+mustHit* gate below sends the reader to the kernel fixtures.
   if (expected.mustHitUrls !== undefined && !Array.isArray(expected.mustHitUrls)) fail(id + " mustHitUrls must be an array");
   if (expected.mustHitHosts !== undefined && !Array.isArray(expected.mustHitHosts)) fail(id + " mustHitHosts must be an array");
   if (expected.mustHitPaths !== undefined && !Array.isArray(expected.mustHitPaths)) fail(id + " mustHitPaths must be {path,tolerate}[]");
@@ -191,8 +190,8 @@ if (into) {
   if (!(expected.verdict === "answer" && mustHit)) {
     fail("--new can only auto-scope an answer+mustHit* row (live); " + next + " needs the stub lane, which needs a kernel scenario fixture this script cannot invent — add the row and fixture by hand");
   }
-  // Element type before the allowlist lookup, or [123] reports "outside
-  // urlAllowlist" and sends the reader to the wrong file.
+  // Element type before the allowlist lookup, or a non-string host is reported
+  // as a host outside the allowlist.
   if (mustHitHosts.some((h) => typeof h !== "string")) fail(id + " mustHitHosts must be string[]");
   // ship-gate only lets a byte-exact URL anchor sit on a controlled|frozen-spec
   // target; "external" is a legal stability_class but not a controllable one.
