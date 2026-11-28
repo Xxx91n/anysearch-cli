@@ -122,14 +122,33 @@ const EVIDENCE: ConsolidateEvidence[] = [
 }
 
 {
+  // A summarizer that skipped <quotes> must not turn every correction in the
+  // cluster into an automatic refusal: the judge gets one line per material and
+  // can still answer.
   let prompt = "";
   const seams = createConsolidationSeams(fakeSession({
     text: '{"sameFact": true, "reliable": true, "relation": "correction"}',
     onPrompt: (p) => { prompt = p; },
   }));
   await seams.verify({ oldContent: "old", summary: "new", quotes: "", evidence: EVIDENCE });
-  assert(!prompt.includes("Support hours changed to 24x7 on 2026-11-01."),
-    "verify: an empty quote string is a real answer, not a fallback to the evidence");
+  assert(prompt.includes("Support hours changed to 24x7 on 2026-11-01."),
+    "verify: with no quotes the judge reads one line per material instead of nothing");
+  assert(prompt.includes("https://a.example/notice"), "verify: the fallback names the material's url");
+}
+
+{
+  // Same fallback for the final-content check, which shares the seam.
+  let prompt = "";
+  const seams = createConsolidationSeams(fakeSession({
+    text: '{"supported": true, "preserved": true, "corrected": true, "noExtras": true}',
+    onPrompt: (p) => { prompt = p; },
+  }));
+  await seams.verifyFinal({
+    oldContent: "old", finalContent: "merged", correctedContent: "new",
+    quotes: "", evidence: EVIDENCE,
+  });
+  assert(prompt.includes("Support hours changed to 24x7 on 2026-11-01."),
+    "verifyFinal: with no quotes the judge reads one line per material instead of nothing");
 }
 
 // --- #613: materials first, instructions last -----------------------------

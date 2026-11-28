@@ -201,7 +201,7 @@ export const CONSOLIDATION_SUMMARY_PROMPT = [
 // D6: the correction-relationship check. A negation word, a newer date,
 // overall similarity or a self-declared "official" source is not sufficient on
 // its own; the checker must see the same object, matter, scope and time, and
-// an evidence that itself asserts the change confidently.
+// excerpts that themselves assert the change confidently.
 export const CORRECTION_CHECK_PROMPT = [
   "You are checking a correction before it replaces durable knowledge.",
   "CURRENT KNOWLEDGE:",
@@ -210,23 +210,24 @@ export const CORRECTION_CHECK_PROMPT = [
   "CANDIDATE SUMMARY FROM THE MATERIALS:",
   "{NEW}",
   "",
-  "QUOTES FROM THE MATERIALS (verbatim excerpts; no other material text is shown):",
+  "EXCERPTS FROM THE MATERIALS (verbatim quotes when the summarizer supplied them,",
+  "otherwise a line per material):",
   "{QUOTES}",
   "",
-  "If the quotes are empty, answer alreadyCurrent=false, sameFact=false and reliable=false.",
+  "If there are no excerpts at all, answer alreadyCurrent=false, sameFact=false and reliable=false.",
   "",
   "Decide:",
-  "1. alreadyCurrent: do the quotes already say the same thing as the current",
+  "1. alreadyCurrent: do the excerpts already say the same thing as the current",
   "   knowledge (no change)? If yes, there is nothing to correct.",
-  "2. sameFact: do the quotes assert a change to the SAME fact, subject and scope as the",
+  "2. sameFact: do the excerpts assert a change to the SAME fact, subject and scope as the",
   "   current knowledge? A different subject, period, population, or special case",
   "   (for example holiday hours vs regular hours) is NOT the same fact.",
-  "3. reliable: do the quotes themselves confidently and specifically assert the change?",
+  "3. reliable: do the excerpts themselves confidently and specifically assert the change?",
   "   Hearsay, speculation, questions, anonymous forum guesses, or \"might be\" text is NOT",
   "   reliable enough to replace existing knowledge.",
   "4. relation: one of",
-  '   "same"       the quotes restate the current value (no correction)',
-  '   "correction" the quotes explicitly replace the current value (effective date,',
+  '   "same"       the excerpts restate the current value (no correction)',
+  '   "correction" the excerpts explicitly replace the current value (effective date,',
   '                "changed to", "no longer", "replaced by")',
   '   "different"  a different subject, period, population or special case',
   '   "unclear"    same topic but a conflicting claim with no basis to prefer either side',
@@ -251,22 +252,23 @@ export const FINAL_CONTENT_CHECK_PROMPT = [
   "ACCEPTED CORRECTION (the change this replacement must express):",
   "{CORRECTED}",
   "",
-  "QUOTES FROM THE MATERIALS (the only evidence for the change):",
+  "EXCERPTS FROM THE MATERIALS (verbatim quotes when the summarizer supplied them,",
+  "otherwise a line per material):",
   "{QUOTES}",
   "",
-  "If the quotes are empty, answer supported=false and corrected=false.",
+  "If there are no excerpts at all, answer supported=false and corrected=false.",
   "",
   "Decide:",
   "1. supported: is every statement in the replacement text supported by the current",
-  "   knowledge or the quotes? A statement with no basis in either is not supported.",
+  "   knowledge or the excerpts? A statement with no basis in either is not supported.",
   "2. preserved: does the replacement text keep every fact the current knowledge states,",
-  "   except the one fact the quotes explicitly correct? A fact that vanished",
+  "   except the one fact the excerpts explicitly correct? A fact that vanished",
   "   although nothing corrected it means preserved is false.",
   "3. corrected: does the replacement text actually state the corrected fact? The accepted",
-  "   correction is given below; if the replacement omits it or contradicts it, corrected is",
+  "   correction is given above; if the replacement omits it or contradicts it, corrected is",
   "   false even when supported and preserved are true.",
   "4. noExtras: does the replacement text avoid stating facts that are neither in the current",
-  "   knowledge nor the accepted correction? A detail that appears only in the quotes",
+  "   knowledge nor the accepted correction? A detail that appears only in the excerpts",
   "   (for example a price nobody asked to change) is an extra, and noExtras is false.",
   "",
   "Reply with JSON only:",
@@ -419,9 +421,8 @@ async function completeText(
           "consolidation stopped: the call budget is exhausted (reserveCalls rejected)",
         );
       }
-      // Design: reserve with the same language-aware estimate the feed uses —
-      // a Latin prompt at chars/2 over-reserved and a CJK prompt at chars/2
-      // under-reserved; the provider figure still settles the call afterwards.
+      // Reserve with the same estimate the feed uses; the provider's own
+      // figure settles the call afterwards.
       reservedTokens = estimatePromptTokens(prompt) + SUMMARY_OUTPUT_RESERVE_TOKENS;
       if (!budget.ledger.reserveTokens(budget.sessionId, reservedTokens)) {
         // The call reservation succeeded, so it must be given back before this
@@ -513,10 +514,13 @@ async function completeText(
 /**
  * Language-aware token estimate for a prompt block.
  *
- * A tokenizer is not available here, so this is deliberately conservative:
- * one CJK code point is one token (Chinese/Japanese/Korean are the dense
- * case), Latin text is about four characters per token. The store reports the
- * number as an estimate, never as a billed count.
+ * No tokenizer is available here, so the estimate leans high on purpose: a
+ * budget read too small spends past the cap the ledger reserved, while one read
+ * too large only trims a prompt. Latin letters and spaces pack about four to a
+ * token; every non-ASCII code point counts as one (CJK, Cyrillic, Arabic, Thai
+ * and Devanagari are all dense); ASCII digits and symbols count as two per
+ * token, because URLs, numbers and JSON break into shorter pieces. The store
+ * reports the number as an estimate, never as a billed count.
  */
 export function estimatePromptTokens(text: string): number {
   let cost = 0;
@@ -526,20 +530,8 @@ export function estimatePromptTokens(text: string): number {
 
 /** Per-code-point cost shared by the estimate and the truncation. */
 function charTokenCost(cp: number): number {
-  return isCjkCodePoint(cp) ? 1 : 0.25;
-}
-
-function isCjkCodePoint(cp: number): boolean {
-  return (
-    (cp >= 0x3400 && cp <= 0x4dbf) ||   // CJK extension A
-    (cp >= 0x4e00 && cp <= 0x9fff) ||   // CJK unified ideographs
-    (cp >= 0xf900 && cp <= 0xfaff) ||   // compatibility ideographs
-    (cp >= 0x20000 && cp <= 0x2a6df) || // CJK extension B
-    (cp >= 0x3040 && cp <= 0x30ff) ||   // kana
-    (cp >= 0xac00 && cp <= 0xd7af) ||   // hangul
-    (cp >= 0x3000 && cp <= 0x303f) ||   // CJK punctuation
-    (cp >= 0xff00 && cp <= 0xffef)      // fullwidth forms
-  );
+  if (cp >= 0x80) return 1;
+  return cp === 0x20 || (cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a) ? 0.25 : 0.5;
 }
 
 function codePointLength(text: string): number {
@@ -637,13 +629,22 @@ interface PlannedEvidenceCandidate {
   truncated: boolean;
 }
 
-function renderHeader(c: PlannedEvidenceCandidate, ordinal: number): string {
+function renderHeader(c: PlannedEvidenceCandidate, ordinal: number | string): string {
   const heading = c.heading.trim() || "(untitled)";
   const offset = c.section ? " @" + c.section.startOffset : "";
   return "[" + ordinal + "] " + heading + offset + " (" + c.material.url + ")\n";
 }
 
-function renderCandidate(c: PlannedEvidenceCandidate, ordinal: number): { block: string; textChars: number; tokens: number } {
+/**
+ * Placeholder ordinal used only while costing a block, so the estimate does not
+ * depend on where the block will finally land. It is as wide as the largest
+ * number that can appear: no more blocks than there are candidates.
+ */
+function costOrdinal(maxBlocks: number): string {
+  return "9".repeat(String(Math.max(1, maxBlocks)).length);
+}
+
+function renderCandidate(c: PlannedEvidenceCandidate, ordinal: number | string): { block: string; textChars: number; tokens: number } {
   // Every candidate reaching this point already carries its text: the whole-page
   // path sets it up front and a section is sliced by sectionText before it is
   // ranked by size. Re-slicing here would bypass that page's offset map.
@@ -655,11 +656,10 @@ function renderCandidate(c: PlannedEvidenceCandidate, ordinal: number): { block:
 /**
  * Lay materials out for one summary call under the 24k-token budget.
  *
- * Design: feed the whole body (or snippet) under the cap, and only section
- * metadata over it — ranking by heading path/offset/length avoids reading
- * blocks that may be dropped. Blocks go most-relevant LAST and least-relevant
- * in the middle, because the model attends to both ends of a long prompt more
- * than the middle.
+ * Under the cap every block goes in whole. Over it, sections are chosen from
+ * heading path, offset and length, so blocks that lose are never read. Blocks
+ * are ordered most-relevant LAST and least-relevant in the middle: attention
+ * reaches both ends of a long prompt better than its middle.
  */
 export function planClusterEvidence(
   episodes: ConsolidateEvidence[],
@@ -702,47 +702,54 @@ export function planClusterEvidence(
     truncated: false,
   }));
 
-  // The existing claim is not a retrieval material. Reserve it first so an
+  // The existing claim is not a retrieval material: it is reserved first so an
   // over-budget cluster cannot silently drop the facts the merge must keep.
   const pinned = new Set<number>();
-  const pinnedBlocks: string[] = [];
-  let pinnedTokens = 0;
   for (let i = 0; i < episodes.length; i++) {
-    if (!episodes[i]!.pinned) continue;
-    pinned.add(i);
-    const r = renderCandidate(whole[i]!, i + 1);
-    pinnedBlocks.push(r.block);
-    pinnedTokens += r.tokens;
+    if (episodes[i]!.pinned) pinned.add(i);
+  }
+  const materialIndexes = episodes.map((_, i) => i).filter((i) => !pinned.has(i));
+  // The model is asked to cite [n], so numbers run 1..N over the blocks it
+  // actually sees. Numbering by original index goes sparse as soon as anything
+  // is dropped, and a reordered prompt would then cite numbers out of order.
+  const promptOrder = [...materialIndexes, ...episodes.map((_, i) => i).filter((i) => pinned.has(i))];
+
+  const costNumber = costOrdinal(promptOrder.length);
+  let pinnedTokens = 0;
+  for (const i of promptOrder) {
+    if (!pinned.has(i)) continue;
+    pinnedTokens += renderCandidate(whole[i]!, costNumber).tokens;
   }
   const materialBudget = Math.max(0, budget - pinnedTokens);
 
-  // Whole-page path. Use each block's real ordinal: padding every index to the
-  // widest one made a cluster that fits read as over budget.
-  let wholeTokens = pinnedTokens;
-  for (let i = 0; i < whole.length; i++) {
-    if (pinned.has(i)) continue;
-    wholeTokens += renderCandidate(whole[i]!, i + 1).tokens;
+  // Whole-page path: cost every block at the number it will really carry, so a
+  // cluster that fits is not read as over budget.
+  let wholeTokens = 0;
+  for (let at = 0; at < promptOrder.length; at++) {
+    wholeTokens += renderCandidate(whole[promptOrder[at]!]!, at + 1).tokens;
   }
   if (wholeTokens <= budget) {
-    const rendered = whole.map((c, i) => renderCandidate(c, i + 1));
+    const rendered = new Map<number, { block: string; textChars: number; tokens: number }>();
+    for (let at = 0; at < promptOrder.length; at++) {
+      const i = promptOrder[at]!;
+      rendered.set(i, renderCandidate(whole[i]!, at + 1));
+    }
     return {
-      prompt: preamble + rendered.map((r) => r.block).join("\n\n"),
-      materials: episodes
-        .map((e, i) => ({
-          cluster: 0,
-          materialId: e.materialId ?? null,
-          url: e.url,
-          title: e.title,
-          originalChars: codePointLength(sources[i]!.text),
-          fedChars: rendered[i]!.textChars,
-          estimatedTokens: rendered[i]!.tokens,
-          sections: [],
-          overBudget: false,
-          truncated: false,
-          cacheHit: false,
-          source: sources[i]!.source,
-        }))
-        .filter((_, i) => !pinned.has(i)),
+      prompt: preamble + promptOrder.map((i) => rendered.get(i)!.block).join("\n\n"),
+      materials: materialIndexes.map((i) => ({
+        cluster: 0,
+        materialId: episodes[i]!.materialId ?? null,
+        url: episodes[i]!.url,
+        title: episodes[i]!.title,
+        originalChars: codePointLength(sources[i]!.text),
+        fedChars: rendered.get(i)!.textChars,
+        estimatedTokens: rendered.get(i)!.tokens,
+        sections: [],
+        overBudget: false,
+        truncated: false,
+        cacheHit: false,
+        source: sources[i]!.source,
+      })),
       overBudget: false,
     };
   }
@@ -786,12 +793,11 @@ export function planClusterEvidence(
   const chosen: PlannedEvidenceCandidate[] = [];
   let used = 0;
   for (const c of ranked) {
-    // Ranking was metadata-only; now that order is fixed, slice this candidate
-    // and cost it with the same language-aware estimate used in the report.
-    // Reading only the candidate under consideration keeps unselected sections
-    // out of the planner, while Latin pages no longer under-fill the cap.
+    // Ranking read metadata only. Now that the order is fixed, slice this one
+    // candidate and cost it with the same estimate the report shows: sections
+    // that never get chosen are never read.
     const withText = c.section ? { ...c, text: sectionText(c) } : c;
-    const tokens = renderCandidate(withText, c.materialIndex + 1).tokens;
+    const tokens = renderCandidate(withText, costNumber).tokens;
     if (used + tokens <= materialBudget) {
       chosen.push(withText);
       used += tokens;
@@ -804,11 +810,11 @@ export function planClusterEvidence(
   for (const c of ranked) {
     if (represented.has(c.materialIndex)) continue;
     const withText = c.section ? { ...c, text: sectionText(c) } : c;
-    const header = renderHeader(withText, c.materialIndex + 1);
+    const header = renderHeader(withText, costNumber);
     const room = Math.max(0, materialBudget - used - estimatePromptTokens(header));
-    // Skip this candidate, not the rest: the block that does not fit may be a
-    // long title or url, while a shorter-headed material further down still has
-    // room. Giving up here left that material at fedChars 0 for no reason.
+    // Skip this candidate, not the rest: its header alone (a long title or
+    // url) may fill the room, while a later block with a shorter header still
+    // has space.
     if (room <= 0) continue;
     const text = truncateToTokenBudget(withText.text, room);
     if (!text.length) continue;
@@ -840,10 +846,11 @@ export function planClusterEvidence(
   const firstSeen = ordered
     .map((c) => c.materialIndex)
     .filter((i, at, all) => all.indexOf(i) === at);
+  // Numbers follow the prompt: 1..N over the blocks in the order they appear.
   const blocks: string[] = [];
   for (let i = 0; i < ordered.length; i++) {
     const c = ordered[i]!;
-    const r = renderCandidate(c, c.materialIndex + 1);
+    const r = renderCandidate(c, i + 1);
     blocks.push(r.block);
     const feed = materials[c.materialIndex]!;
     feed.fedChars += r.textChars;
@@ -857,8 +864,12 @@ export function planClusterEvidence(
       });
     }
   }
-  // The pinned claim follows the materials and is never ranked or budgeted.
-  blocks.push(...pinnedBlocks);
+  // The pinned claim follows the materials and is never ranked or budgeted. It
+  // still takes the next number: the model cites what it sees, in order.
+  for (const i of promptOrder) {
+    if (!pinned.has(i)) continue;
+    blocks.push(renderCandidate(whole[i]!, blocks.length + 1).block);
+  }
   // Prompt order first; materials that did not fit follow with fedChars 0 so
   // the report can say what was dropped instead of silently omitting it.
   const rest = episodes.map((_, i) => i).filter((i) => !pinned.has(i) && !firstSeen.includes(i));
@@ -974,6 +985,15 @@ export function createConsolidationSeams(
   const evidenceLines = (evidence: ConsolidateEvidence[]): string =>
     evidence.map((e, i) => "[" + (i + 1) + "] " + e.title + " - " + e.snippet + " (" + e.url + ")").join("\n");
 
+  // A judge with nothing to read can only answer "no", and that would refuse
+  // every correction in a cluster whose summarizer skipped the <quotes> block —
+  // including summaries injected as plain strings. With no quotes the judge gets
+  // one line per material instead: weaker evidence, but an answerable question.
+  const judgeExcerpts = (quotes: string | undefined, evidence: ConsolidateEvidence[]): string => {
+    const supplied = quotes?.trim() ?? "";
+    return supplied.length > 0 ? supplied : evidenceLines(evidence);
+  };
+
   const summarize: ConsolidateSummarizeFn = async (episodes) => {
     const planned = planClusterEvidence(episodes, CONSOLIDATION_CLUSTER_TOKEN_BUDGET);
     // Materials first, instructions last: the model reads the evidence before
@@ -1063,11 +1083,10 @@ export function createConsolidationSeams(
     // example a note that documents this very prompt) would have its own body
     // overwritten and the candidate section left empty (#273 review).
     //
-    // Design: judges read the summarizer's verbatim quotes instead of the full
-    // evidence — quotes bound what the judge must verify without re-feeding the
-    // cluster. `undefined` keeps old callers working; an empty string is a real
-    // answer ("the model quoted nothing") and must not fall back to evidence.
-    const quoteText = quotes === undefined ? evidenceLines(evidence) : quotes;
+    // The judge reads the summarizer's quotes when it supplied any: they bound
+    // what must be verified without re-feeding the cluster. With none it reads
+    // one line per material, so the call still has something to judge.
+    const quoteText = judgeExcerpts(quotes, evidence);
     const prompt = fillTemplate(CORRECTION_CHECK_PROMPT, {
       OLD: oldContent,
       NEW: summary,
@@ -1080,7 +1099,7 @@ export function createConsolidationSeams(
   };
 
   const verifyFinal: ConsolidateFinalCheckFn = async ({ oldContent, finalContent, correctedContent, quotes, evidence }) => {
-    const quoteText = quotes === undefined ? evidenceLines(evidence) : quotes;
+    const quoteText = judgeExcerpts(quotes, evidence);
     const prompt = fillTemplate(FINAL_CONTENT_CHECK_PROMPT, {
       OLD: oldContent,
       FINAL: finalContent,

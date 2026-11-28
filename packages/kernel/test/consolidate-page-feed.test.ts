@@ -23,6 +23,16 @@ assert(estimatePromptTokens("你好世界") === 4, "estimate: four CJK code poin
 assert(estimatePromptTokens("abcd") === 1, "estimate: four Latin characters are one token");
 assert(estimatePromptTokens("abcde") === 2, "estimate: a partial Latin token rounds up");
 assert(estimatePromptTokens("a你b") === 2, "estimate: the two scripts are counted separately");
+// The estimate must not read low: a prompt that really costs more than the cap
+// is a spend past the ledger's reservation, while reading high only trims text.
+assert(estimatePromptTokens("Привет") === 6, "estimate: Cyrillic is one token a character, not a quarter");
+assert(estimatePromptTokens("مرحبا") === 5, "estimate: Arabic is one token a character");
+{
+  const url = "https://a.example/x";
+  assert(estimatePromptTokens(url) > Math.ceil(url.length * 0.25),
+    "estimate: a url costs more than four characters a token");
+}
+assert(estimatePromptTokens("1234567890") === 5, "estimate: digits cost two per token");
 
 // --- under budget: the full body, not the snippet -------------------------
 
@@ -119,6 +129,30 @@ assert(estimatePromptTokens("a你b") === 2, "estimate: the two scripts are count
     "pinned: current knowledge is not reported as a retrieval material");
   assert(planned.materials.every((m) => m.fedChars === 0),
     "pinned: reserved budget can leave no room for material bodies");
+}
+
+// --- numbering follows the prompt, not the cluster's original indexes ----
+
+{
+  // Over budget, two of three materials get fed and the order is by relevance.
+  // The model is told to cite [n], so the numbers must run 1..N over the blocks
+  // it sees: original indexes would leave gaps like [1] and [3] and could even
+  // run backwards after reordering.
+  const eps: ConsolidateEvidence[] = [
+    { title: "First", snippet: "z".repeat(60), url: "https://a.example/1" },
+    { title: "Second", snippet: "y".repeat(60), url: "https://a.example/2" },
+    { title: "Third", snippet: "x".repeat(60), url: "https://a.example/3" },
+    { title: "CURRENT KNOWLEDGE", snippet: "keep", url: "knowledge://semantic/1", pinned: true },
+  ];
+  const planned = planClusterEvidence(eps, 60);
+  assert(planned.overBudget === true, "numbering: over budget");
+  const numbers = [...planned.prompt.matchAll(/^\[(\d+)\] /gm)].map((m) => Number(m[1]));
+  assert(numbers.length > 0, "numbering: the prompt carries numbered blocks");
+  assert(numbers.every((n, i) => n === i + 1),
+    "numbering: the blocks are numbered 1..N in prompt order (got " + numbers.join(",") + ")");
+  assert(planned.prompt.includes("CURRENT KNOWLEDGE"), "numbering: the pinned claim is still fed");
+  assert(planned.prompt.trimEnd().endsWith("keep"),
+    "numbering: the pinned claim is the LAST block, so it takes the last number");
 }
 
 // --- over budget: most relevant LAST, least relevant in the middle --------

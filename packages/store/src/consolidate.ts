@@ -33,12 +33,10 @@ export const THETA_JAC = 0.80;
 export const SAME_TOPIC_JACCARD = 0.4;
 export const LOW_CONFIDENCE = 0.2;       // fidelity-gate absent or uncertain claims
 export const CLUSTER_MIN = 3;            // D2: minimum episodes per entity cluster
-// Design: cap one cluster's material block at 24,000 estimated tokens — a
-// whole page is cheap to feed, but an unbounded cluster is not; the cap is a
-// planning budget, not a model context limit.
-// 24k leaves room for the instructions and the reply inside a 32k window; the
-// estimate is language-aware (CJK code points count as one token, Latin text
-// as roughly four characters per token).
+// One cluster's material block is capped at 24,000 estimated tokens. Feeding
+// whole pages is cheap per page and not cheap per cluster, and the cap is a
+// planning budget, not a model context limit. The estimate is language-aware
+// (see estimatePromptTokens in the kernel).
 export const CONSOLIDATION_CLUSTER_TOKEN_BUDGET = 24_000;
 // Design: #262 — ONE salience formula, shared by the plan-time clusters and
 // the collision resolution's one-material fallback, so the two cannot drift.
@@ -144,9 +142,12 @@ export interface ConsolidateMaterialFeed {
 }
 
 /**
- * a summarizer may return the shaped reply plus what it fed. A plain
- * string stays accepted so existing injected seams and tests keep working; the
- * store then treats the whole text as the conclusion and records no feed.
+ * A summarizer may return the shaped reply plus what it fed.
+ *
+ * A plain string stays accepted so an injected seam or a test can answer
+ * without the planner. It still has to follow the <quotes> + <conclusion>
+ * shape, or its whole text is kept as the conclusion and the judges read one
+ * line per material instead of quotes — that path is reported, not silent.
  */
 export interface ConsolidateSummaryResult {
   text: string | null;
@@ -194,20 +195,36 @@ export interface ConsolidateSummaryText {
   /** No usable quotes at all: either the shape was wrong, or <quotes> was empty. */
   quotesMissing: boolean;
   /**
-   * The reply was not shaped as <quotes> + <conclusion>, so the whole reply was
-   * kept as the conclusion. False when only the <quotes> block came back empty.
-   * `quotesMissing` is the union of the two; hosts read this one to say which.
+   * The reply was not shaped as <quotes> + <conclusion>. The reply's text is
+   * still kept as the conclusion, with the tag names stripped, because a model
+   * that ignored the format may still have stated a fact; what must not happen
+   * is a stored conclusion that starts with `<quotes>`. False when only the
+   * `<quotes>` block came back empty.
    */
   quotesMalformed: boolean;
+}
+
+/** Remove the reply's markup so a stored conclusion never carries the tags. */
+function stripSummaryTags(text: string): string {
+  const withoutTags = text
+    .replace(/<\/?quotes>/g, "")
+    .replace(/<\/?conclusion>/g, "");
+  return withoutTags
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join("\n")
+    .trim();
 }
 
 /**
  * Split a shaped summarizer reply into <quotes> and <conclusion>.
  *
- * Design: persist only <conclusion> and send <quotes> to the judges/report —
- * a malformed reply is kept whole, so an older or malformed model answer can
- * never silently lose its stated facts, and `quotesMalformed` says that is what
- * happened. An empty <quotes> block with a readable conclusion is a different
+ * Only <conclusion> is persisted; <quotes> goes to the judges and the report.
+ * A malformed reply is not thrown away — an older or sloppy model may still
+ * have said something true — but it is never persisted with its markup: the
+ * known tags are stripped, and `quotesMalformed` records that the reply ignored
+ * the format. An empty <quotes> block with a readable conclusion is a different
  * case: the conclusion is used as written and only the evidence is missing.
  */
 export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
@@ -222,8 +239,8 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
   const conclusionClose = raw.indexOf(CONCLUSION_CLOSE, conclusionOpen >= 0 ? conclusionOpen + CONCLUSION_OPEN.length : 0);
   // The contract is exact: <quotes> first, then <conclusion>, with nothing
   // outside the two blocks. A preamble, a reversed order, or a missing tag is
-  // a malformed shape, and the whole reply is kept as the conclusion so no
-  // stated fact can disappear into a discarded fragment.
+  // a malformed shape: the reply is kept as the conclusion without its tags, so
+  // no stated fact is lost and no markup reaches stored knowledge.
   const wellFormed =
     quotesOpen === 0 &&
     quotesClose >= 0 &&
@@ -233,15 +250,28 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
     conclusionClose >= 0 &&
     raw.slice(conclusionClose + CONCLUSION_CLOSE.length).trim() === "";
   if (!wellFormed) {
-    return { conclusion: raw, quotes: null, quotesMissing: true, quotesMalformed: true };
+    return {
+      // Never persist markup as knowledge: a reply that ignored the shape still
+      // has a chance of holding a fact, so its text is kept, its tags are not.
+      // A reply that was nothing but tags yields "" and the caller drops it.
+      conclusion: stripSummaryTags(raw),
+      quotes: null,
+      quotesMissing: true,
+      quotesMalformed: true,
+    };
   }
   const quotes = raw.slice(quotesOpen + QUOTES_OPEN.length, quotesClose).trim();
   const conclusion = raw.slice(conclusionOpen + CONCLUSION_OPEN.length, conclusionClose).trim();
   if (!conclusion) {
-    // A shaped reply with an empty conclusion states nothing to persist. Keep
-    // the whole reply as the conclusion so the caller sees what came back
-    // instead of writing an empty row; the flag says the shape was unusable.
-    return { conclusion: raw, quotes: quotes.length > 0 ? quotes : null, quotesMissing: true, quotesMalformed: true };
+    // A shaped reply with an empty conclusion states nothing to persist. Its
+    // text is kept without the tags — the quoted part is the only content it
+    // has — and the flags say the shape was unusable.
+    return {
+      conclusion: stripSummaryTags(raw),
+      quotes: quotes.length > 0 ? quotes : null,
+      quotesMissing: true,
+      quotesMalformed: true,
+    };
   }
   return {
     conclusion,
@@ -1012,7 +1042,7 @@ function reportEvidence(rows: readonly ConsolidateEvidence[]): ConsolidateEviden
 
 /**
  * Build the summary feed for a cluster. The body replaces the snippet when the
- * row has one; the section map comes from the block table (#608/#609), so the
+ * row has one, and the section map comes from the retrieval chunk table, so the
  * planner can select by heading and offset without reading block text first.
  */
 function evidenceForCluster(db: Database.Database, rows: readonly EpisodeRow[]): ConsolidateEvidence[] {
@@ -1571,6 +1601,11 @@ export async function consolidateMemoryRun(
         }
       }
       if (summarized.overBudget) report.clustersOverBudget++;
+      // A reply that was nothing but markup has no conclusion to persist. Count
+      // it as no answer (fail-open, nothing written) instead of inserting an
+      // empty knowledge row; the quote counters above already say what came
+      // back.
+      if (!summary.trim()) { report.llmUnavailable++; continue; }
 
       // D4 fidelity gate (kernel classifyClaim shape, injected). Row verdict = worst claim:
       // any unsupported -> reject the whole consolidation; any uncertain -> LOW_CONFIDENCE row.
@@ -1691,10 +1726,10 @@ export async function consolidateMemoryRun(
         const verdict = await deps.verify!({
           oldContent: row.content,
           summary: summary,
-          // the judge reads only the selected quotes. An empty string is
-          // deliberate — it stops the seam from falling back to the full
-          // evidence when the model omitted the <quotes> block.
-          quotes: quotes ?? "",
+          // The judge reads the selected quotes when there are any. With none,
+          // the seam supplies one line per material: passing an empty string
+          // used to make every such correction an automatic refusal.
+          quotes: quotes ?? undefined,
           evidence,
         });
         if (verdict.alreadyCurrent === true || verdict.relation === "same") return { kind: "noop" };
@@ -1865,7 +1900,7 @@ export async function consolidateMemoryRun(
         // the final-content judge sees the same verbatim quotes as the
         // relationship judge; the merge call's own quotes are a fallback for a
         // model that only quoted during the merge.
-        const finalQuotes = quotes ?? mergedShape.quotes ?? "";
+        const finalQuotes = quotes ?? mergedShape.quotes ?? undefined;
         recordQuotes(clusterOrdinal, mergedShape.quotes);
         const mergedEmb = await embedText(finalSummary, "passage");
         const finalEmbBuf = mergedEmb ? Buffer.from(mergedEmb.buffer, mergedEmb.byteOffset, mergedEmb.byteLength) : null;
@@ -2079,9 +2114,9 @@ export async function consolidateMemoryRun(
         verdict = await verify({
           oldContent: head.content,
           summary: pending.candidate,
-          // same rule as the plan-time check — quotes only; an empty
-          // string is a real answer when the model supplied none.
-          quotes: pending.quotes ?? "",
+          // Same rule as the plan-time check: quotes when there are any, and
+          // a per-material fallback inside the seam when there are none.
+          quotes: pending.quotes ?? undefined,
           evidence: pending.evidence,
         });
       } catch (e) {
@@ -2196,7 +2231,7 @@ export async function consolidateMemoryRun(
         continue;
       }
       const finalSummary = mergedShape.conclusion.trim();
-      const finalQuotes = pending.quotes ?? mergedShape.quotes ?? "";
+      const finalQuotes = pending.quotes ?? mergedShape.quotes ?? undefined;
       const mergedEmb = await embedText(finalSummary, "passage");
       const finalEmbBuf = mergedEmb ? Buffer.from(mergedEmb.buffer, mergedEmb.byteOffset, mergedEmb.byteLength) : null;
       // Design: #262 — insert parameters: update-kind pendings carry the

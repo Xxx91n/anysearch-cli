@@ -35,9 +35,13 @@ function assert(cond: boolean, msg: string): void {
 
 {
   const reversed = splitConsolidateSummary("<conclusion>done</conclusion><quotes>q</quotes>");
-  assert(reversed.conclusion === "<conclusion>done</conclusion><quotes>q</quotes>",
-    "reversed order: treated as malformed, whole reply kept");
+  assert(reversed.conclusion === "done\nq",
+    "reversed order: malformed, the reply text is kept without its tags");
+  assert(!/<\/?conclusion>|<\/?quotes>/.test(reversed.conclusion),
+    "reversed order: no markup reaches stored knowledge");
   assert(reversed.quotesMissing === true, "reversed order: flagged");
+  assert(reversed.quotesMalformed === true,
+    "reversed order: the shape was wrong, so it counts as malformed, not quote-less");
 }
 
 {
@@ -57,7 +61,9 @@ function assert(cond: boolean, msg: string): void {
 
 {
   const emptyConclusion = splitConsolidateSummary("<quotes>q</quotes><conclusion> </conclusion>");
-  assert(emptyConclusion.conclusion.includes("<quotes>"), "empty conclusion: whole reply kept");
+  assert(emptyConclusion.conclusion === "q", "empty conclusion: the reply text is kept without tags");
+  assert(!/<\/?conclusion>|<\/?quotes>/.test(emptyConclusion.conclusion),
+    "empty conclusion: no markup reaches stored knowledge");
   assert(emptyConclusion.quotes === "q" && emptyConclusion.quotesMissing === true,
     "empty conclusion: quotes retained for the report, flagged");
 }
