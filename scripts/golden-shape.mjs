@@ -2,7 +2,8 @@
 // two plain-node consumers cannot drift on the vocabularies the corpus uses.
 // The TS originals live in packages/store: GOLDEN_FILE in eval/corpus-files.ts,
 // the schema, scope, dimension, stability and tolerate vocabularies in
-// eval/docs-golden.ts. ship-gate pins every string below back to that file.
+// eval/docs-golden.ts. ship-gate compares each block below, whole, against that
+// source, so a TS-side edit fails the gate instead of the next corpus run.
 // This module deliberately has no imports.
 export const GOLDEN_FILE = "eval-golden.json";
 export const GOLDEN_SCHEMA = "anysearch/docs-golden@1";

@@ -541,17 +541,29 @@ function stepStaticAssertions() {
     }
     // Shape checks live in scripts/golden-shape.mjs, shared with the backfill.
     for (const problem of goldenShapeProblems(evalGolden)) fail(GOLDEN_FILE + " " + problem);
-    // That module mirrors the TS vocabularies, so pin each value back to
-    // docs-golden.ts: a TS-side bump then fails here instead of surfacing as a
-    // "schema must be ..." error at run time.
-    const dgShapeSrc = fs.readFileSync(path.join(ROOT, "packages/store/src/eval/docs-golden.ts"), "utf8");
-    for (const literal of [GOLDEN_SCHEMA, ...GOLDEN_SCOPE_VALUES, ...GOLDEN_STABILITY_CLASSES, ...GOLDEN_TOLERATED_SEGMENTS]) {
-      if (!dgShapeSrc.includes(JSON.stringify(literal))) fail("docs-golden.ts no longer declares " + literal + " — sync scripts/golden-shape.mjs");
-    }
+    // That module mirrors the TS vocabularies, so pin each block back to the
+    // file that declares it: a TS-side bump then fails here instead of showing
+    // up as a "schema must be ..." error at run time. Compare whole blocks
+    // against whitespace-stripped source — single-value substring checks pass
+    // when a value also lives in another vocabulary.
+    const compact = (src) => src.replace(/\s+/g, "");
+    const dgShape = compact(fs.readFileSync(path.join(ROOT, "packages/store/src/eval/docs-golden.ts"), "utf8"));
+    const leafShape = compact(fs.readFileSync(path.join(ROOT, "packages/store/src/eval/corpus-files.ts"), "utf8"));
+    const blockPins = [
+      ["docs-golden.ts", dgShape, "DOCS_GOLDEN_SCHEMA=" + JSON.stringify(GOLDEN_SCHEMA)],
+      ["docs-golden.ts", dgShape, "GOLDEN_SCOPE_VALUES=[" + GOLDEN_SCOPE_VALUES.map((v) => JSON.stringify(v)).join(",") + "]"],
+      ["docs-golden.ts", dgShape, "DOCS_GOLDEN_STABILITY_CLASSES=[" + GOLDEN_STABILITY_CLASSES.map((v) => JSON.stringify(v)).join(",") + "]"],
+      ["docs-golden.ts", dgShape, "DOCS_GOLDEN_TOLERATED_SEGMENTS=[" + GOLDEN_TOLERATED_SEGMENTS.map((v) => JSON.stringify(v)).join(",") + "]"],
+      // GOLDEN_FILE's TS original sits in the leaf module, not the validator.
+      ["eval/corpus-files.ts", leafShape, "GOLDEN_FILE=" + JSON.stringify(GOLDEN_FILE)],
+    ];
     for (const [dim, values] of Object.entries(GOLDEN_DIMENSION_VALUES)) {
-      for (const value of values) {
-        if (!dgShapeSrc.includes(JSON.stringify(value))) fail("docs-golden.ts lost the " + dim + " value " + value + " — sync scripts/golden-shape.mjs");
-      }
+      // Object keys that are not identifiers ("source-tier") are quoted in the TS source.
+      const key = /^[A-Za-z_$][\w$]*$/.test(dim) ? dim : JSON.stringify(dim);
+      blockPins.push(["docs-golden.ts", dgShape, key + ":[" + values.map((v) => JSON.stringify(v)).join(",") + "]"]);
+    }
+    for (const [file, src, needle] of blockPins) {
+      if (!src.includes(needle)) fail(file + " no longer declares " + needle + " — sync scripts/golden-shape.mjs");
     }
     // Anchor lookup covers every entry, not only the live slice: the c1 abstain
     // anchor lives in the stub lane.
