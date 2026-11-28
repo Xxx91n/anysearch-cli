@@ -267,12 +267,12 @@ const staleTmp = path.join(os.tmpdir(), "ans-stale-golden-" + process.pid + ".js
 fs.writeFileSync(staleTmp, JSON.stringify({ schema: "anysearch/eval-looks@2", schema_version: 1, golden: { scopes: {}, entries: [] }, looks: [] }), "utf8");
 const readStale = () => {
   const lines: string[] = [];
-  const realError = console.error;
-  console.error = ((...args: unknown[]) => { lines.push(args.map(String).join(" ")); }) as typeof console.error;
+  const realWrite = process.stderr.write;
+  process.stderr.write = ((chunk: unknown) => { lines.push(String(chunk)); return true; }) as unknown as typeof process.stderr.write;
   try {
     return { ledger: readLooksLedger(staleTmp), lines };
   } finally {
-    console.error = realError;
+    process.stderr.write = realWrite;
   }
 };
 const { ledger: stale, lines: staleErr } = readStale();
