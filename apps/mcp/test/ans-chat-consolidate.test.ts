@@ -343,6 +343,26 @@ async function callConsolidate(args: Record<string, unknown>) {
   const noneFed = buildAnsChatConsolidateResult({ ...base, materialsFed: [] } as never, usage as never, {});
   assert(!/material \(cluster/.test(noneFed.content[0]!.text), "no materials fed: no material line at all");
 
+  // The list is capped, but the cap never hides a material that needs
+  // attention, and the count line names where the rest are.
+  const many = Array.from({ length: 25 }, (_, i) => ({
+    ...feed, materialId: 100 + i, url: "https://a.example/" + i,
+  }));
+  const needsRoom = { ...feed, materialId: 999, url: "https://a.example/starved", fedChars: 0 };
+  const capped = buildAnsChatConsolidateResult(
+    { ...base, materialsFed: [...many, needsRoom] } as never, usage as never, {},
+  );
+  const cappedText = capped.content[0]!.text;
+  assert(cappedText.includes("https://a.example/starved"),
+    "capped list: a material that got nothing is still printed");
+  assert((cappedText.match(/material \(cluster/g) ?? []).length === 20,
+    "capped list: exactly the cap is printed");
+  assert(/\(20 of 26 materials shown/.test(cappedText),
+    "capped list: the count line says how many were left out");
+
+  const fits = buildAnsChatConsolidateResult({ ...base, materialsFed: many.slice(0, 3) } as never, usage as never, {});
+  assert(!/materials shown/.test(fits.content[0]!.text), "under the cap: no count line");
+
   // The counters are per cluster and independent: the note appears only when
   // two of them are non-zero, because one cluster can land under both.
   const oneCounter = buildAnsChatConsolidateResult(

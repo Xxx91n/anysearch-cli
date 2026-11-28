@@ -35,6 +35,7 @@ import type {
 import {
   formatConsolidateScope,
   formatConsolidateMaterialFeed,
+  notableMaterialFeeds,
   formatConsolidateQuotes,
   toBudgetCaps,
   type BudgetConfig,
@@ -58,6 +59,10 @@ export interface AnsChatSessionWiring {
 // 1..128 chars, and the value becomes a SQLite key, so control characters and
 // unbounded lengths are refused. Consolidation is the exception — there the same
 // field names a scope and a bad value fails CLOSED (ConsolidateScopeError).
+// How many material lines the consolidate answer lists before it summarizes the
+// rest. The materials that need attention are printed first, so the cap can
+// never hide a material that got nothing or was cut short.
+const MATERIAL_LINES_IN_TEXT = 20;
 const HANDLE_MAX_CHARS = 128;
 const HANDLE_PATTERN = /^[\x21-\x7E]+$/;
 
@@ -623,13 +628,21 @@ export function buildAnsChatConsolidateResult(
         "; re-judge retries=" + d.retries + ", sameFact=" + d.sameFact + ", reliable=" + d.reliable +
         (d.reason ? "; " + d.reason : "") + ")",
       ).join("\n");
-  // Every material the run fed gets a line. The CLI trims its list (a human
-  // report, with --verbose for the rest); this half does not, because a
-  // content-only host has no other way to read the feed, and the installed
-  // acceptance lane asserts the material lines are here.
-  const feedText = (report.materialsFed ?? []).length === 0
+  // This half lists materials because a content-only host has no other channel
+  // for the feed; the list is capped so one archive run cannot fill the answer.
+  // The materials that need attention come first, so a cap never hides them.
+  const fed = report.materialsFed ?? [];
+  const notableFed = notableMaterialFeeds(fed);
+  const notableSet = new Set(notableFed);
+  const orderedFed = [...notableFed, ...fed.filter((m) => !notableSet.has(m))];
+  const shownFed = orderedFed.slice(0, MATERIAL_LINES_IN_TEXT);
+  const feedText = shownFed.length === 0
     ? ""
-    : "\n" + report.materialsFed.map(formatConsolidateMaterialFeed).join("\n");
+    : "\n" + shownFed.map(formatConsolidateMaterialFeed).join("\n") +
+      (shownFed.length < fed.length
+        ? "\n  (" + shownFed.length + " of " + fed.length +
+          " materials shown, the ones that need attention first; the rest are in structuredContent.report.materialsFed)"
+        : "");
   // The quotes are report-only; semantic memory never stores them.
   const quotesText = (report.quotes ?? []).length === 0
     ? ""

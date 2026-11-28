@@ -373,8 +373,8 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     );
   }
   // Material detail: by default only what needs attention prints; --verbose
-  // prints them all. The rule itself lives in the store so the MCP host cannot
-  // drift from it.
+  // prints them all. Which materials count as "needs attention" lives in the
+  // store, so this host and the MCP one cannot disagree about it.
   const notable = notableMaterialFeeds(r.materialsFed);
   for (const m of verbose ? r.materialsFed : notable) {
     process.stdout.write(formatConsolidateMaterialFeed(m) + "\n");
