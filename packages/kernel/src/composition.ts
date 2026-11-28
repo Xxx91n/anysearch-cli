@@ -390,10 +390,8 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
  * than the engine waits.
  */
 export function reportedDeadlineMs(eng: Pick<CompositionResult, "requestTimeoutMs" | "retriever">): number {
-  const retrieverMs = eng.retriever?.requestTimeoutMs;
+  const retrieverMs = eng.retriever.requestTimeoutMs;
   if (isPositiveWholeMs(retrieverMs)) return Math.min(retrieverMs, MAX_REQUEST_TIMEOUT_MS);
-  // A hand-built CompositionResult can carry 0/NaN here; report the default
-  // rather than hand the host a budget the engine would have rejected.
   if (isPositiveWholeMs(eng.requestTimeoutMs)) return Math.min(eng.requestTimeoutMs, MAX_REQUEST_TIMEOUT_MS);
   return DEFAULT_REQUEST_TIMEOUT_MS;
 }
