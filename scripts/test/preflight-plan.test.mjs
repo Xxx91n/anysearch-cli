@@ -122,7 +122,6 @@ test("windows separators name the same package", () => {
   assert.equal(plan.packages.length, 7);
 });
 
-// The reader table names a root file's readers instead of the whole suite.
 test("a root file runs the packages whose tests read it, and stops there", () => {
   // kernel depends on store, and this file is read by store's tests alone: a
   // dependent cannot see it through the reader's tests, so it does not run.
