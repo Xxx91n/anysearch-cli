@@ -82,5 +82,21 @@ function assert(cond: boolean, msg: string): void {
     "only a quote block: no conclusion to persist");
 }
 
+{
+  // A forgotten closing tag is more common than a forgotten whole format, and
+  // everything after the opening tag is quoted page text.
+  const orphan = splitConsolidateSummary('<quotes>\n[1] Notice "support is 24x7 and free of charge"');
+  assert(orphan.conclusion === "",
+    "unclosed <quotes>: the quoted page text never becomes the conclusion");
+  assert(orphan.conclusionMissing === true && orphan.quotesMalformed === true,
+    "unclosed <quotes>: reported as malformed with no conclusion");
+}
+
+{
+  const mixed = splitConsolidateSummary("<conclusion>done</conclusion><quotes>a</quotes><quotes>b");
+  assert(mixed.conclusion === "done",
+    "closed block then an orphan: only the model's own prose survives");
+}
+
 console.log("consolidate-summary-shape: " + passed + " passed, " + failed + " failed");
 if (failed > 0) process.exit(1);

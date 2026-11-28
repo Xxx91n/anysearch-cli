@@ -371,12 +371,11 @@ export async function runConsolidate(argv: string[]): Promise<number> {
         "before an apply can make the apply differ.\n",
     );
   }
-  // What each material actually contributed. fedChars is the code-point count
-  // placed in the prompt, originalChars the source size, estimatedTokens the
-  // language-aware estimate (not a tokenizer). An archive run can feed a
-  // thousand materials, so by default only the ones that need attention print:
-  // fed nothing, cut short, or planned by section. --verbose prints them all.
-  const notable = r.materialsFed.filter((m) => m.fedChars === 0 || m.truncated || m.overBudget);
+  // Material detail: by default only what needs attention prints — a material
+  // that got no room, was cut short, or was planned by section. `overBudget` is
+  // a cluster flag, so it would print every material of an over-budget cluster
+  // and defeat the filter on a full-archive run. --verbose prints them all.
+  const notable = r.materialsFed.filter((m) => m.fedChars === 0 || m.truncated || m.sections.length > 0);
   for (const m of verbose ? r.materialsFed : notable) {
     process.stdout.write(formatConsolidateMaterialFeed(m) + "\n");
   }

@@ -239,11 +239,15 @@ function stripSummaryTags(text: string): string {
 /**
  * The reply with any <quotes> block removed, tags and text alike. Used where the
  * shape was not understood: quoted page text must never become the conclusion.
+ *
+ * An opening tag with no closing tag still starts a quote block — a model that
+ * forgets `</quotes>` is common — so everything from that tag on is dropped.
  */
 function withoutQuotesBlock(text: string): string {
-  return text
-    .replace(/<quotes>[\s\S]*?<\/quotes>/g, "\n")
-    .replace(/<\/?quotes>/g, "\n");
+  const closed = text.replace(/<quotes>[\s\S]*?<\/quotes>/g, "\n");
+  const orphan = closed.indexOf("<quotes>");
+  const kept = orphan >= 0 ? closed.slice(0, orphan) : closed;
+  return kept.replace(/<\/?quotes>/g, "\n");
 }
 
 /**
