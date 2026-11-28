@@ -73,8 +73,8 @@ function coverage() {
     schema: "anysearch/eval-looks-coverage@1",
     domain: "docs",
     recordedAt: "2026-11-27",
-    // Shaped like the real manifest: all eight slices present, the two the one
-    // live row tags are covered, the rest deferred with an owner.
+    // Only the two dimensions the one live row tags count as covered; the rest
+    // are deferred with an owner, so the manifest agrees with the entries.
     dimensions: [
       { dimension: "intent", status: "covered", count: 1, classes: { howto: 1 } },
       { dimension: "lang", status: "covered", count: 1, classes: { en: 1 } },
@@ -314,10 +314,40 @@ const REJECTS = [
     pattern: /has no entries/,
   },
   {
+    name: "a golden entry without a scope is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.entries.push(liveRow("docs-g0002", "How do I uninstall the widget?")); },
+    pattern: /entry docs-g0002 has no scope/,
+  },
+  {
+    name: "a tombstoned golden entry carrying a scope is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.entries[0].tombstone = tombstone(); },
+    pattern: /tombstoned entry docs-g0001 must not carry a scope/,
+  },
+  {
+    name: "a golden scope without an entry is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.scopes["docs-g9999"] = "stub"; },
+    pattern: /scope for unknown entry docs-g9999/,
+  },
+  {
     name: "coverage dimensions that are not an array are rejected",
     file: "eval-looks.coverage.json",
     edit: (c) => { c.dimensions = {}; },
     pattern: /dimensions must be an array/,
+  },
+  {
+    name: "coverage dimensions holding a non-object are rejected",
+    file: "eval-looks.coverage.json",
+    edit: (c) => { c.dimensions.push(null); },
+    pattern: /dimensions must contain objects/,
+  },
+  {
+    name: "--new rejects a dimension tag that is not dimension:value",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].dimensions = ["howto"]; },
+    pattern: /dimension:value tags/,
   },
   {
     name: "--new rejects a badcase with no domain",

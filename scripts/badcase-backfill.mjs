@@ -223,11 +223,28 @@ if (into) {
   if (mustHitPaths.length > 0 && (mustNotHitPaths?.length ?? 0) === 0) {
     fail(id + " mustHitPaths requires mustNotHitPaths negative pins");
   }
+  // The checks above are this script's own reading of the contract. Where node
+  // can load the TS module (type stripping, node >= 22.18), the real validator
+  // gets the last word, so a rule added there cannot be missed here.
+  const validatorProblems = await realValidatorProblems(entry);
+  if (validatorProblems.length > 0) fail(next + " would fail the store validator: " + validatorProblems.join("; "));
   golden.entries.push(entry);
   golden.scopes[next] = "live";
   bc.status = "promoted";
   bc.promotedTo = next;
   console.log("created " + next + " from " + id);
+}
+
+async function realValidatorProblems(entry) {
+  let validateDocsGoldenEntry;
+  try {
+    ({ validateDocsGoldenEntry } = await import(new URL("../packages/store/src/eval/docs-golden.ts", import.meta.url)));
+  } catch (err) {
+    // Older node cannot strip types; the local checks above still stand.
+    if (err?.code === "ERR_UNKNOWN_FILE_EXTENSION" || err?.code === "ERR_MODULE_NOT_FOUND") return [];
+    throw err;
+  }
+  return validateDocsGoldenEntry(entry);
 }
 
 // Recount covered dimension counts AND class histograms so the manifest stays
