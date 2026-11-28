@@ -103,7 +103,12 @@ cut off, whether that left the pool short (`partial`) and the wait budget the
 call ran on (`deadlineMs`), how long each answered arm took, and the
 provider-failure fields). It never carries
 
-the result list itself. The credential record (`credentialSources`) is
+the result list itself. `providersQueried`, `providersCancelled` and
+`providersFailed` are required on the envelope metadata, empty arrays included:
+a host that implements `RetrieverPort` itself must write all three. Both tools
+fail the call with `retriever envelope metadata missing <field>` rather than
+reading an absent list as "no arm" — `providersFailed` is what names an outage,
+and `providersCancelled` is what sets `partial`. The credential record (`credentialSources`) is
 deliberately written into both halves, because hosts split on
 which half reaches the model — a fact placed in only one of them is invisible to
 the other (see "Credential sources travel with every successful result — in both

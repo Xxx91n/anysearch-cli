@@ -17,10 +17,13 @@ export interface EnvelopeArmLists {
 }
 
 /**
- * The three arm lists every fanout writes. The RetrieverPort is public, so a
- * host-built envelope can arrive without them; name the missing ones here
- * instead of letting a TypeError surface as "Cannot read properties of ..."
- * with the provider context already lost.
+ * The three arm lists every fanout writes. A host that implements the public
+ * RetrieverPort itself can leave one out, and an absent list is not neutral:
+ * `failed: []` reads as "no arm failed", so a total outage would come back as a
+ * success naming no failed providers, and `cancelled: []` would clear `partial`.
+ * Name the missing field(s) and fail the call rather than invent that verdict.
+ * The port's envelope contract requires all three; docs/mcp-server.md says so
+ * for host implementers.
  */
 export function envelopeArmLists(metadata: unknown): EnvelopeArmLists {
   const meta = metadata as {
