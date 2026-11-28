@@ -71,6 +71,7 @@ function golden(question = "How do I configure the widget?") {
 function coverage() {
   return {
     schema: "anysearch/eval-looks-coverage@1",
+    domain: "docs",
     recordedAt: "2026-11-27",
     dimensions: [
       { dimension: "intent", status: "covered", count: 1, classes: { howto: 1 } },
@@ -86,6 +87,10 @@ function editJson(file, fn) {
   const value = JSON.parse(readFileSync(file, "utf8"));
   fn(value);
   writeJson(file, value);
+}
+
+function readJson(dir, file) {
+  return JSON.parse(readFileSync(join(dir, file), "utf8"));
 }
 
 function tree(t, options = {}) {
@@ -358,6 +363,18 @@ const REJECTS = [
     edit: (b) => { b.badcases.push(null); },
     pattern: /badcases must contain objects/,
   },
+  {
+    name: "--new rejects mustHitHosts that are not an array",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitHosts = "docs.example.com"; },
+    pattern: /mustHitUrls\/mustHitHosts must be arrays/,
+  },
+  {
+    name: "--new rejects mustNotHitPaths holding a non-string",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustNotHitPaths = [""]; },
+    pattern: /mustNotHitPaths must be a non-empty string\[\]/,
+  },
 ];
 
 for (const { name, file, edit, pattern } of REJECTS) {
@@ -370,15 +387,15 @@ test("--new writes the next docs row and promotes the badcase", (t) => {
   const dir = tree(t);
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
-  const g = JSON.parse(readFileSync(join(dir, "eval-golden.json"), "utf8"));
+  const g = readJson(dir, "eval-golden.json");
   const entry = g.entries.at(-1);
   assert.equal(entry.id, "docs-g0002");
   assert.equal(g.scopes["docs-g0002"], "live");
   assert.equal(entry.provenance.ref, "eval-badcases.json");
-  const b = JSON.parse(readFileSync(join(dir, "eval-badcases.json"), "utf8"));
+  const b = readJson(dir, "eval-badcases.json");
   assert.equal(b.badcases[0].status, "promoted");
   assert.equal(b.badcases[0].promotedTo, "docs-g0002");
-  const cov = JSON.parse(readFileSync(join(dir, "eval-looks.coverage.json"), "utf8"));
+  const cov = readJson(dir, "eval-looks.coverage.json");
   const count = (dim) => cov.dimensions.find((d) => d.dimension === dim)?.count;
   assert.equal(count("intent"), 2);
   assert.equal(count("lang"), 2);
@@ -397,11 +414,11 @@ test("--new persists a URL anchor with its stability_class", (t) => {
   });
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
-  const g = JSON.parse(readFileSync(join(dir, "eval-golden.json"), "utf8"));
+  const g = readJson(dir, "eval-golden.json");
   const entry = g.entries.at(-1);
   assert.deepEqual(entry.expected.mustHitUrls, ["https://docs.example.com/install"]);
   assert.equal(entry.stability_class, "frozen-spec");
-  const cov = JSON.parse(readFileSync(join(dir, "eval-looks.coverage.json"), "utf8"));
+  const cov = readJson(dir, "eval-looks.coverage.json");
   assert.equal(cov.dimensions.find((d) => d.dimension === "intent")?.classes?.howto, 2);
 });
 
@@ -410,7 +427,7 @@ test("a null coverage dimension row does not crash the recount", (t) => {
   editJson(join(dir, "eval-looks.coverage.json"), (c) => { c.dimensions.push(null); });
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
-  const cov = JSON.parse(readFileSync(join(dir, "eval-looks.coverage.json"), "utf8"));
+  const cov = readJson(dir, "eval-looks.coverage.json");
   const dim = (name) => cov.dimensions.find((d) => d && d.dimension === name);
   assert.equal(dim("intent")?.count, 2, "the intent recount still lands");
   assert.deepEqual(dim("intent")?.classes, { howto: 2 });
@@ -430,9 +447,9 @@ test("--into attaches to the same-question row", (t) => {
   const dir = tree(t, { goldenQuestion: QUESTION });
   const r = run(dir, ["--id", "docs-bc0001", "--into", "docs-g0001"]);
   assert.equal(r.status, 0, r.stderr);
-  const g = JSON.parse(readFileSync(join(dir, "eval-golden.json"), "utf8"));
+  const g = readJson(dir, "eval-golden.json");
   assert.match(g.entries[0].notes, /badcase docs-bc0001/);
-  const b = JSON.parse(readFileSync(join(dir, "eval-badcases.json"), "utf8"));
+  const b = readJson(dir, "eval-badcases.json");
   assert.equal(b.badcases[0].status, "promoted");
   assert.equal(b.badcases[0].promotedTo, "docs-g0001");
 });
@@ -448,11 +465,11 @@ test("--new skips a tombstoned row with the same question", (t) => {
   });
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
-  const g = JSON.parse(readFileSync(join(dir, "eval-golden.json"), "utf8"));
+  const g = readJson(dir, "eval-golden.json");
   assert.equal(g.entries.length, 3);
   assert.equal(g.entries.at(-1).id, "docs-g0003");
   assert.equal(g.scopes["docs-g0003"], "live");
-  const b = JSON.parse(readFileSync(join(dir, "eval-badcases.json"), "utf8"));
+  const b = readJson(dir, "eval-badcases.json");
   assert.equal(b.badcases[0].status, "promoted");
 });
 
@@ -485,6 +502,12 @@ test("a broken docs.toml reports invalid TOML", (t) => {
   expectFail(t, (dir) => {
     writeFileSync(join(dir, "domains", "docs.toml"), "[sources\n", "utf8");
   }, /invalid TOML in domains\/docs\.toml/);
+});
+
+test("a docs.toml without urlAllowlist is reported, not thrown", (t) => {
+  expectFail(t, (dir) => {
+    writeFileSync(join(dir, "domains", "docs.toml"), "[sources]\n", "utf8");
+  }, /cannot read sources\.urlAllowlist from domains\/docs\.toml/);
 });
 
 test("a broken eval-golden.json reports invalid JSON", (t) => {
