@@ -351,6 +351,21 @@ function rejectTrust(
   });
 }
 
+/** One refusal shape for a ticket that the user agreed to but the store could not write. */
+function rejectTrustWriteFailed(
+  options: FetchToolOptions,
+  state: FetchRunState,
+  domain: string,
+  host: string,
+): ReturnType<typeof textResult> {
+  state.failedTrust.add(host);
+  return rejectTrust(
+    options, state,
+    fetchRejectMessage("trust_write_failed", { host }),
+    "trust_write_failed", domain, host,
+  );
+}
+
 /**
  * Handle an explicit `requestTrustFor`: ask the user, write one ticket, and tell
  * the model to retry. This call reads no page, so a headless host refuses
@@ -394,11 +409,7 @@ async function handleTrustRequest(
     return rejectTrust(options, state, fetchRejectMessage("trust_unavailable"), "trust_unavailable", domain, address.host);
   }
   if (state.failedTrust.has(address.host)) {
-    return rejectTrust(
-      options, state,
-      fetchRejectMessage("trust_write_failed", { host: address.host }),
-      "trust_write_failed", domain, address.host,
-    );
+    return rejectTrustWriteFailed(options, state, domain, address.host);
   }
   if (state.declinedTrust.has(address.host)) {
     return rejectTrust(
@@ -425,12 +436,7 @@ async function handleTrustRequest(
     await options.store.saveFetchTickets(options.sessionId, "tofu", [address.host]);
   } catch {
     // Remember it, so a retry does not ask the same user again.
-    state.failedTrust.add(address.host);
-    return rejectTrust(
-      options, state,
-      fetchRejectMessage("trust_write_failed", { host: address.host }),
-      "trust_write_failed", domain, address.host,
-    );
+    return rejectTrustWriteFailed(options, state, domain, address.host);
   }
   options.span?.addEvent("fetch.trust", {
     "fetch.host": address.host,

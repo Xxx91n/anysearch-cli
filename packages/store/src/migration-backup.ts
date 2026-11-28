@@ -105,11 +105,7 @@ export const STORE_META_TABLE = "store_meta";
  */
 const SESSION_SCHEMA_SENTINELS: readonly string[] = ["sessions", "messages", "retrieval_results", "budget_ledger"];
 
-/**
- * Whether the fetch_tickets CHECK admits every ticket kind this build writes.
- * The rebuild in session-store and the layout probe both ask this, so they
- * cannot drift into "one recognizes the old table, the other does not".
- */
+/** True when fetch_tickets' CHECK already lists `tofu`; a missing table counts as current (nothing to rebuild). */
 export function fetchTicketsSqlIsCurrent(sql: string | undefined): boolean {
   return sql === undefined || sql.includes("'tofu'");
 }
@@ -173,9 +169,9 @@ function probeLayout(db: Database.Database): LayoutProbe {
   ).all() as Array<{ name: string }>;
   const names = new Set(tables.map((t) => t.name));
   const storeMetaPresent = names.has(STORE_META_TABLE);
-  // The current marker can still sit on a fetch_tickets table whose CHECK is
-  // older. That rebuild drops the table, so an old CHECK counts as not-current
-  // and gets a pre-migration snapshot first. An existing snapshot is reused.
+  // An old CHECK counts as not-current: the rebuild drops this table, so it goes
+  // through the snapshot step first. A database that already has a snapshot reuses
+  // it; the rebuild itself runs in one transaction and rolls back as a whole.
   const fetchTicketsSql = names.has("fetch_tickets")
     ? (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'fetch_tickets'").get() as { sql: string } | undefined)?.sql
     : undefined;

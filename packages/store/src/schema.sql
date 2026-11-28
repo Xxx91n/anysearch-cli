@@ -19,9 +19,10 @@ PRAGMA journal_mode = WAL;
 -- a legacy file mid-migration, or the registry having upgraded an old file
 -- ahead of the engine; either way the next full assembly still needs the
 -- recovery point (which the registry's pre-schema snapshot already put there).
--- #612 adds a second probe: an old fetch_tickets CHECK also counts as
--- not-current even with the marker, so the rebuild gets a recovery point first
--- (an existing snapshot is reused, and the rebuild itself is one transaction).
+-- Layout is current when store_meta's store_layout equals the current value AND
+-- fetch_tickets' CHECK lists 'tofu'. Otherwise opening the file snapshots it to
+-- .pre-migration.db first (an existing snapshot is reused; the rebuild itself is
+-- one transaction).
 CREATE TABLE IF NOT EXISTS store_meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

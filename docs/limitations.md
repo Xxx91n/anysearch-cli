@@ -424,7 +424,8 @@
   grant covers one exact host; it never widens to a parent suffix or a shared
   suffix such as `co.uk`; the grant call reads no page, writes one session ticket, and later
   pages on that exact host still pass the address, deny and allowlist
-  gates, so it cannot override a deny rule. Headless/MCP never prompts — it
+  gates, so it cannot override a deny rule. A user declines once, or the ticket
+  cannot be written, and that host is not asked again in the same run. Headless/MCP never prompts — it
   refuses and tells the model to ask the user to paste the link. No TOML is
   written and nothing crosses sessions. This does not open the external
   surfaces: there is still no MCP `fetch_pages`, no `ans fetch`, and no
