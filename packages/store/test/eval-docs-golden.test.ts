@@ -335,8 +335,18 @@ fs.writeFileSync(staleCorpus, JSON.stringify({ schema: "anysearch/docs-golden@1"
   assert(Object.hasOwn(kept, "golden"), "a golden block stays when the corpus beside it is unreadable");
   assert(keptErr.some((line) => line.includes(staleTmp) && line.includes("keeping")), "keeping it is reported for an unusable corpus too");
 }
-// A usable corpus beside it makes the block a stale copy: dropped and reported.
-fs.writeFileSync(staleCorpus, JSON.stringify({ schema: "anysearch/docs-golden@1", scopes: { probe: "stub" }, entries: [{ id: "probe" }] }), "utf8");
+// Right shape, wrong schema: readGoldenFile rejects it, so the block stays. A
+// shallow "looks like a corpus" check dropped the block here and left the next
+// reader throwing with the only copy already gone.
+const realCorpus = JSON.parse(fs.readFileSync(path.join(root, "eval-golden.json"), "utf8")) as Record<string, unknown>;
+fs.writeFileSync(staleCorpus, JSON.stringify({ ...realCorpus, schema: "anysearch/docs-golden@2" }), "utf8");
+{
+  const { ledger: kept, lines: keptErr } = readStale();
+  assert(Object.hasOwn(kept, "golden"), "a golden block stays when the corpus beside it fails the reader");
+  assert(keptErr.some((line) => line.includes(staleTmp) && line.includes("keeping")), "keeping it is reported for a corpus the reader rejects");
+}
+// A corpus the reader accepts makes the block a stale copy: dropped and reported.
+fs.copyFileSync(path.join(root, "eval-golden.json"), staleCorpus);
 const { ledger: stale, lines: staleErr } = readStale();
 assert(!Object.hasOwn(stale, "golden"), "a stale golden block is dropped when the corpus is on disk");
 assert(staleErr.some((line) => line.includes(staleTmp)), "dropping a stale golden block is reported on stderr, naming the file");

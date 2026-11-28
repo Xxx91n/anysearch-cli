@@ -14,6 +14,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { writeStderr } from "../stderr";
 import { GOLDEN_FILE } from "./corpus-files";
+import { readGoldenFile } from "./golden-file";
 
 export const LOOKS_LEDGER_SCHEMA = "anysearch/eval-looks@2";
 export const LOOKS_LEDGER_LEGACY_SCHEMA = "anysearch/eval-looks@1";
@@ -49,16 +50,14 @@ export function emptyLooksLedger(): LooksLedger {
   return { schema: LOOKS_LEDGER_SCHEMA, looks: [] };
 }
 
-// A corpus this reader would stand behind: an object with a non-empty entries
-// array and a scopes object. Anything else (absent, torn, empty) cannot replace
-// the ledger's block.
+// A corpus the reader would accept. This decides whether the ledger's `golden`
+// block can be replaced, so ask the reader itself: a hand-rolled shape check
+// here accepted a corpus whose schema or scopes were wrong, dropped the block,
+// and left the next read throwing with the only copy already gone.
 function usableCorpus(file: string): boolean {
-  if (!existsSync(file)) return false;
   try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown> | null;
-    return !!parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      && Array.isArray(parsed.entries) && parsed.entries.length > 0
-      && !!parsed.scopes && typeof parsed.scopes === "object" && !Array.isArray(parsed.scopes);
+    readGoldenFile(file);
+    return true;
   } catch {
     return false;
   }
