@@ -844,13 +844,13 @@ export class PiAgentRuntime {
     const items = results as Array<{ handle?: string; archiveRowId?: number }>;
     // Row ids are unconditional; only a usable fetch ticket adds the handle.
     ids.forEach((id, index) => {
-      if (typeof id === "number" && id > 0 && items[index]) items[index].archiveRowId = id;
+      if (isPositiveWholeInt(id) && items[index]) items[index].archiveRowId = id;
     });
     if (!this.fetchEligible()) return;
     const store = this.archive!.store as FetchStorePort;
     if (!await writeSearchTickets(store, this.archive!.sessionId, ids)) return;
     ids.forEach((id, index) => {
-      if (typeof id === "number" && id > 0 && items[index]) items[index].handle = searchHandle(id);
+      if (isPositiveWholeInt(id) && items[index]) items[index].handle = searchHandle(id);
     });
   }
 

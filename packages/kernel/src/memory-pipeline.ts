@@ -393,7 +393,7 @@ export function summaryAnchorsToInherit(
 ): number[] {
   const ids: number[] = [];
   const add = (id: unknown): void => {
-    if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return;
+    if (!isPositiveWholeInt(id)) return;
     if (!ids.includes(id)) ids.push(id);
   };
   add(previousSummaryAnchorId);
@@ -448,7 +448,7 @@ export function distillGap(messages: any[], fromIdx: number): TaggedGap {
         // #263: carried through when the search path recorded it. Absent on an
         // older transcript or a store without the seam — the URL bridge then
         // applies, which is why this stays optional rather than defaulted.
-        ...(Number.isInteger(rowId) && rowId > 0 ? { archiveRowId: rowId } : {}),
+        ...(isPositiveWholeInt(rowId) ? { archiveRowId: rowId } : {}),
       });
       label = combineLabels(label, itemLabel);
     }
