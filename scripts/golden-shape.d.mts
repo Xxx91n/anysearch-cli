@@ -10,3 +10,4 @@ export declare const GOLDEN_STABILITY_CLASSES: readonly string[];
 export declare const GOLDEN_TOLERATED_SEGMENTS: readonly string[];
 export declare const GOLDEN_DIMENSION_VALUES: Record<string, readonly string[]>;
 export declare function goldenShapeProblems(doc: unknown): string[];
+export declare function isLiveScope(scope: unknown): boolean;

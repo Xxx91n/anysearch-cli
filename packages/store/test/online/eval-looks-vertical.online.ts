@@ -13,8 +13,9 @@
 // walk the degraded list, never the red gate (iii).
 // ANS_VERTICAL_DELTA_LIMIT=N caps the corpus slice for smoke runs.
 // Only an unset variable runs the full corpus; any set value must be decimal
-// digits (a positive integer) and anything else fails the run. The check runs
-// after the missing-dist SKIP, so a lane that skips still skips.
+// digits (a positive integer) and anything else fails the run. A missing dist
+// SKIPs the lane, before any of these checks; an invalid limit or an empty live
+// slice FAILs it (exit 1).
 
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
@@ -128,7 +129,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
   const all = golden.entries.filter(
     (e) => isLiveScope(scopes[e.id]) && e.expected?.vertical !== undefined,
   );
-  if (all.length === 0) { console.error("FAIL: no live-scoped vertical entries"); process.exit(1); }
+  if (all.length === 0) { console.error("FAIL: the corpus has no live-scoped vertical entries — restore one (scope live|both with expected.vertical) or the runner has nothing to measure"); process.exit(1); }
   const entries = limitNum > 0 ? all.slice(0, limitNum) : all;
 
   // + (1): instrument-health ordering, no sampling-

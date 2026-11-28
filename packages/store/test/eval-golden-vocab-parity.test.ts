@@ -84,6 +84,7 @@ const declaredKinds = [
   "GOLDEN_STABILITY_CLASSES=string[]",
   "GOLDEN_TOLERATED_SEGMENTS=string[]",
   "goldenShapeProblems=function",
+  "isLiveScope=function",
 ]
   .sort()
   .join(",");

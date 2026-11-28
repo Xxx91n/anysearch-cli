@@ -29,6 +29,7 @@
 // recovery.
 
 import type Database from "better-sqlite3";
+import { isPositiveWholeInt } from "@anysearch-cli/retriever";
 import { containsSecret } from "./secret.js";
 import {
   isSourceCurrent,
@@ -1138,7 +1139,7 @@ export function writeRebuiltSummaryAnchor(
       .prepare("INSERT INTO resume_anchors (session_id, anchor_type, payload) VALUES (?, 'rolling_summary', ?)")
       .run(req.sessionId, json);
     const anchorId = Number(info.lastInsertRowid);
-    if (!Number.isInteger(anchorId) || anchorId <= 0) {
+    if (!isPositiveWholeInt(anchorId)) {
       throw new Error("rebuilt summary anchor insert returned no id");
     }
     recordSummarySources(db, { sessionId: req.sessionId, anchorId, anchorType: "rolling_summary", sources: req.sources });

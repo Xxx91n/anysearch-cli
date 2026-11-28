@@ -471,13 +471,13 @@ const REJECTS = [
     name: "--new rejects a mustHitUrls entry that is not a string",
     file: "eval-badcases.json",
     edit: (b) => { b.badcases[0].expected.mustHitUrls = [42]; },
-    pattern: /mustHitUrl must be http\(s\)/,
+    pattern: /mustHitUrls must be string\[\]/,
   },
   {
     name: "--new rejects a mustHitPaths without tolerate",
     file: "eval-badcases.json",
     edit: (b) => { b.badcases[0].expected.mustHitPaths = [{ path: "/install" }]; },
-    pattern: /tolerate outside locale\|version\|dated/,
+    pattern: /mustHitPaths must be \{path,tolerate\}\[\]/,
   },
   {
     name: "--new rejects a mustHitHosts entry that is not a string",
@@ -570,7 +570,7 @@ test("node too old to strip types refuses instead of writing unvalidated", (t) =
 });
 
 test("a valid --new writes an entry the store validator accepts", async (t) => {
-  // The script skips the validator when node cannot strip types (22.0-22.17
+  // The script refuses to write when node cannot load the validator (22.0-22.17
   // reports the .ts import as an unknown extension), so this test can only claim
   // the strong thing on a node that loads it.
   let docs;
@@ -584,8 +584,8 @@ test("a valid --new writes an entry the store validator accepts", async (t) => {
   const dir = tree(t);
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
-  // Exit 0 also comes from a skipped validator, so the skip line must be absent.
-  assert.doesNotMatch(r.stderr, /skipped the store validator/, "the real validator must have run, not been skipped");
+  // The refusal path must not have fired: this run loaded the validator.
+  assert.doesNotMatch(r.stderr, /cannot load the store validator/, "the real validator must have run, not been refused");
   const { crossCheckDocsGolden, validateCoverageManifest, validateDocsGoldenEntry } = docs;
   const written = readJson(dir, "eval-golden.json");
   const manifest = readJson(dir, "eval-looks.coverage.json");
@@ -648,8 +648,7 @@ test("a validator that cannot load stops the run before anything is written", (t
   const r = run(dir, ["--id", "docs-bc0001", "--new"], [], {
     ANS_BACKFILL_VALIDATOR: pathToFileURL(join(dir, "no-such-validator.ts")).href,
   });
-  // Only an unloadable .ts on an old node may be skipped; a validator that is
-  // missing for any other reason must stop the write.
+  // A missing or unloadable validator stops the write on every node.
   assert.notEqual(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stderr, /ERR_MODULE_NOT_FOUND|Cannot find module/);
   LEDGERS.forEach((file, i) => {

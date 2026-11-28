@@ -17,8 +17,7 @@ export type SearchOutcome = (typeof SEARCH_OUTCOMES)[number];
  * that merges several rounds decides the call-level answer itself.
  */
 export function isPartialPool(providersCancelled: readonly string[]): boolean {
-  // The list is required: a hand-built envelope that omits it is refused at the
-  // host boundary (envelopeArmLists), not read here as "no arm was cut".
+  // An arm was cut, so the pool is short.
   return providersCancelled.length > 0;
 }
 

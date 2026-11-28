@@ -11,6 +11,12 @@ export const GOLDEN_FILE = "eval-golden.json";
 export const GOLDEN_SCHEMA = "anysearch/docs-golden@1";
 export const GOLDEN_COVERAGE_SCHEMA = "anysearch/eval-looks-coverage@1";
 export const GOLDEN_SCOPE_VALUES = ["stub", "live", "both"];
+
+// What every live-only reader filters on, in one place: a scope vocabulary
+// change must not leave a script filtering on a stale pair.
+export function isLiveScope(scope) {
+  return scope === "live" || scope === "both";
+}
 export const GOLDEN_STABILITY_CLASSES = ["controlled", "frozen-spec", "external"];
 export const GOLDEN_TOLERATED_SEGMENTS = ["locale", "version", "dated"];
 // Mirrors DOCS_GOLDEN_DIMENSION_VALUES: the eight slices a golden row may tag.
@@ -30,12 +36,20 @@ export const GOLDEN_DIMENSION_VALUES = {
 export function goldenShapeProblems(doc) {
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return ["root must be an object"];
   const problems = [];
+  // One predicate per shape, shared by the field errors below and by the
+  // pairing gate at the end, so the two halves cannot disagree about what is
+  // readable and silently skip the pairing checks.
+  const isObjectEntry = (e) => !!e && typeof e === "object" && !Array.isArray(e);
+  const hasId = (e) => typeof e.id === "string" && e.id.length > 0;
+  const entriesReadable = Array.isArray(doc.entries) && doc.entries.length > 0 && doc.entries.every(isObjectEntry);
+  const idsReadable = entriesReadable && doc.entries.every(hasId);
+  const scopesReadable = !!doc.scopes && typeof doc.scopes === "object" && !Array.isArray(doc.scopes);
   if (doc.schema !== GOLDEN_SCHEMA) problems.push("schema must be " + GOLDEN_SCHEMA);
   if (!Array.isArray(doc.entries)) {
     problems.push("entries must be an array");
   } else if (doc.entries.length === 0) {
     problems.push("has no entries");
-  } else if (!doc.entries.every((e) => e && typeof e === "object" && !Array.isArray(e))) {
+  } else if (!entriesReadable) {
     problems.push("entries must contain objects");
   } else {
     // readGoldenFile rejects a non-string or repeated id; without the same two
@@ -43,7 +57,7 @@ export function goldenShapeProblems(doc) {
     // opens the file, and ship-gate's anchor lookup silently takes the first.
     const seen = new Set();
     for (const e of doc.entries) {
-      if (typeof e.id !== "string" || e.id.length === 0) {
+      if (!hasId(e)) {
         problems.push("entry id must be a non-empty string");
         continue;
       }
@@ -51,7 +65,7 @@ export function goldenShapeProblems(doc) {
       seen.add(e.id);
     }
   }
-  if (!doc.scopes || typeof doc.scopes !== "object" || Array.isArray(doc.scopes)) {
+  if (!scopesReadable) {
     problems.push("scopes must be an object");
   } else if (Object.keys(doc.scopes).length === 0) {
     problems.push("scopes must not be empty");
@@ -63,12 +77,9 @@ export function goldenShapeProblems(doc) {
     }
   }
   // Same pairing readGoldenFile makes: a tombstoned row has no scope, every
-  // other row has exactly one. Gated on ids and scopes being readable rather
+  // other row has exactly one. Gated on the two shapes being readable rather
   // than on "no problems at all": a bad schema or one wrong scope value must
   // not hide every pairing and anchor error behind a second run.
-  const idsReadable = Array.isArray(doc.entries) && doc.entries.length > 0 &&
-    doc.entries.every((e) => e && typeof e === "object" && !Array.isArray(e) && typeof e.id === "string" && e.id.length > 0);
-  const scopesReadable = !!doc.scopes && typeof doc.scopes === "object" && !Array.isArray(doc.scopes);
   if (idsReadable && scopesReadable) {
     const scopes = doc.scopes;
     const ids = new Set(doc.entries.map((e) => e.id));

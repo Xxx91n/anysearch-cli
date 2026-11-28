@@ -232,7 +232,7 @@ export function suspendSummaries(
   const newlySuspended: DependentSummary[] = [];
   const seen = new Set<number>();
   for (const s of summaries ?? []) {
-    if (!s || !Number.isInteger(s.anchorId) || s.anchorId <= 0) continue;
+    if (!s || !isPositiveWholeInt(s.anchorId)) continue;
     if (seen.has(s.anchorId)) continue;
     seen.add(s.anchorId);
     // Only a row this call actually INSERTED counts. A summary suspended by an
@@ -425,7 +425,7 @@ export function resolveSummarySourcesFromReads(
     // A knowledge citation is recognized by its URL, so it needs one.
     if (typeof url === "string" && url.startsWith(KNOWLEDGE_PREFIX)) {
       const id = Number(url.slice(KNOWLEDGE_PREFIX.length));
-      if (!Number.isInteger(id) || id <= 0) continue;
+      if (!isPositiveWholeInt(id)) continue;
       if (!knowledgeStmt.get(id)) continue;
       push("knowledge", id);
       continue;
@@ -435,7 +435,7 @@ export function resolveSummarySourcesFromReads(
     // to "" (and a secret-free one is still archived), so requiring a non-empty
     // URL here would silently drop the dependency — the summary would be stored
     // as valid and a later correction could not find it.
-    if (typeof rowId === "number" && Number.isInteger(rowId) && rowId > 0) {
+    if (isPositiveWholeInt(rowId)) {
       if (materialStmt.get(rowId)) push("material", rowId);
       continue;
     }

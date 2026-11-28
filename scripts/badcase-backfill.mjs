@@ -10,7 +10,8 @@
 //
 // 禁合成护栏：badcase 必须带 observed + evidence.command，否则拒绝回灌。
 // 写盘前先挡掉 schema、词表、domain、expected、mustHit* 配对、runAt 这些坏输入，
-// 再交给 packages/store/src/eval/docs-golden.ts 的真校验器。
+// 再交给 packages/store/src/eval/docs-golden.ts 的真校验器。这里的副本只为在报错
+// 里点名是哪条 badcase；规则本身以 validator 为准。
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -167,6 +168,9 @@ if (into) {
     dimensions: tags,
     ...(bc.stability_class ? { stability_class: bc.stability_class } : {}),
     provenance: { type: "internal-dogfood", ref: "eval-badcases.json", harvestedAt },
+    // store's eval-docs-golden test tells a backfilled row from a hand-written
+    // one by "from badcase <id>" in these notes (ref is the shared file name);
+    // changing this wording means changing that assertion.
     notes: "backfilled from badcase " + id + "; observed " + bc.observed.results + " results via '" + bc.evidence.command + "'",
   };
   const expected = entry.expected;
@@ -182,13 +186,18 @@ if (into) {
   const mustHitUrls = expected.mustHitUrls ?? [];
   const mustHitHosts = expected.mustHitHosts ?? [];
   const mustHitPaths = expected.mustHitPaths ?? [];
+  // Element types here, before the verdict/stability gates below: otherwise a
+  // null URL is first reported as "carries mustHitUrls but no stability_class"
+  // and the real field error waits for the next run.
+  if (mustHitHosts.some((h) => typeof h !== "string")) fail(id + " mustHitHosts must be string[]");
+  if (mustHitUrls.some((u) => typeof u !== "string")) fail(id + " mustHitUrls must be string[]");
+  if (mustHitPaths.some((pm) => !pm || typeof pm.path !== "string" || !Array.isArray(pm.tolerate))) {
+    fail(id + " mustHitPaths must be {path,tolerate}[]");
+  }
   const mustHit = mustHitHosts.length > 0 || mustHitUrls.length > 0 || mustHitPaths.length > 0;
   if (!(expected.verdict === "answer" && mustHit)) {
     fail("--new can only auto-scope an answer+mustHit* row (live); " + next + " needs the stub lane, which needs a kernel scenario fixture this script cannot invent — add the row and fixture by hand");
   }
-  // Element type before the allowlist lookup, or a non-string host is reported
-  // as a host outside the allowlist.
-  if (mustHitHosts.some((h) => typeof h !== "string")) fail(id + " mustHitHosts must be string[]");
   // ship-gate only lets a byte-exact URL anchor sit on a controlled|frozen-spec
   // target; "external" is a legal stability_class but not a controllable one.
   if (mustHitUrls.length > 0) {

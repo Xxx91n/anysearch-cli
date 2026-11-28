@@ -28,7 +28,7 @@ import { verifyInstalledProduct } from "./verify-installed-product.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
-import { GOLDEN_FILE, goldenShapeProblems } from "./golden-shape.mjs";
+import { GOLDEN_FILE, goldenShapeProblems, isLiveScope } from "./golden-shape.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import { discoverAllLocalActions, classifyLocalUsesRef, resolveYaml } from "./check-workflows.mjs";
 import { LANES } from "./ci-changes.mjs";
@@ -561,7 +561,7 @@ function stepStaticAssertions() {
     // (d) every migrated case keeps its migration provenance block
     // (promote physically deletes ledger entries — the golden entry is
     // the only durable carrier).
-    const liveIds = new Set(Object.entries(evalGolden.scopes).filter(([, sc]) => sc === "live" || sc === "both").map(([id]) => id));
+    const liveIds = new Set(Object.entries(evalGolden.scopes).filter(([, sc]) => isLiveScope(sc)).map(([id]) => id));
     const liveEntries = ge.filter((e) => liveIds.has(e.id));
     const exactHolders = liveEntries.filter((e) => (e.expected?.mustHitUrls?.length ?? 0) > 0);
     if (exactHolders.length < 2)

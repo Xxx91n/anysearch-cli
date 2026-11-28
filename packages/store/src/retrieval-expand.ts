@@ -2,7 +2,7 @@
 // unit SQLite's substr/length use, so an emoji cannot shift the next offset.
 
 import type Database from "better-sqlite3";
-import { sanitizeText } from "@anysearch-cli/retriever";
+import { isPositiveWholeInt, sanitizeText } from "@anysearch-cli/retriever";
 import { HAS_PAGE_BODY_EXPR } from "./retrieval-content.js";
 import { LIVE_PAGE_SQL, sectionsForPages, type MemorySection } from "./retrieval-chunks.js";
 import { sqliteTimestampToIso } from "./sqlite-time.js";
@@ -82,7 +82,7 @@ function sectionKey(input: MemoryExpandRequest["sectionId"]): { ids: number[]; b
   const ids: number[] = [];
   const bad: number[] = [];
   for (const id of raw) {
-    if (!Number.isInteger(id) || id <= 0) { bad.push(id); continue; }
+    if (!isPositiveWholeInt(id)) { bad.push(id); continue; }
     if (seen.has(id)) continue;
     seen.add(id);
     ids.push(id);
@@ -114,7 +114,7 @@ function containingSection(sections: MemorySection[], offset: number): MemorySec
  * correct: a knowledge row, no body, an out-of-range offset, an unknown section.
  */
 export function expandMemoryRow(db: Database.Database, req: MemoryExpandRequest): MemoryExpandResult {
-  if (!Number.isInteger(req.rowid) || req.rowid <= 0) {
+  if (!isPositiveWholeInt(req.rowid)) {
     return { ok: false, rowid: req.rowid, error: req.rowid < 0 ? "knowledge_row" : "not_found" };
   }
   const row = db.prepare(
