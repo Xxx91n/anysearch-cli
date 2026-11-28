@@ -114,8 +114,6 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
 
 (async () => {
   if (!existsSync(dist)) { console.log("SKIP: dist/index.js missing — run pnpm -C apps/cli build first"); process.exit(0); }
-  // The limit check comes after the SKIP branch: a lane that skips must skip
-  // for every environment reason, not fail on a leftover variable.
   if (limitSet && (!Number.isInteger(limitNum) || limitNum <= 0)) {
     console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (got " + rawLimit + "; unset or empty means full run)");
     process.exit(1);
