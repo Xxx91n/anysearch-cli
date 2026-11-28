@@ -773,8 +773,8 @@ async function main() {
       });
       assert(rawText(second).includes("没有同意") && asked === 1,
         "a declined host is not asked twice in the same run");
-      assert(!rawText(second).includes("整批网址都没被放行"),
-        "a trust refusal does not count toward the rejected-batch stop");
+      assert(!rawText(second).includes("这轮抓页已经停了"),
+        "one repeat of a declined host is not yet the rejected-batch stop");
       assert(!store.hasFetchTicket(session.id, "tofu", "docs.no.example"), "a decline writes no ticket");
 
       // A decline must not block the rest of the run: a URL the user pasted is
@@ -861,34 +861,43 @@ async function main() {
 
       // A plain no-ticket read must stop inviting requestTrustFor too, or the
       // model retries the call this refusal just turned down.
+      await store.saveFetchTickets(session.id, "user", ["https://readable.example/page"]);
+      const readable = await tool.execute("t25t-read", { handles: ["https://readable.example/page"] });
+      assert(envelope(readable).pages.length === 1,
+        "a ticketed URL is still readable after the trust allowance ran out");
       const plain = await tool.execute("t25t-plain", { handles: ["https://docs.five.example/a"] });
       assert(rawText(plain).includes("别再带 requestTrustFor"),
         "a no-ticket refusal after the allowance stops suggesting a trust request");
+      assert(!rawText(plain).includes("这轮抓页已经停了"),
+        "one over-limit refusal plus one plain no-ticket is still under the stop");
 
-      // Running out of questions is not a verdict on the host: the refusal must
-      // not feed the rejected-batch stop and strand readable URLs.
-      await tool.execute("t25t-over2", {
+      // Running out of questions says nothing about the host, but the refusal
+      // counts: inventing a new host name each time must not spin forever.
+      const spin = await tool.execute("t25t-spin", {
         handles: ["https://docs.six.example/a"], requestTrustFor: "docs.six.example",
       });
-      await store.saveFetchTickets(session.id, "user", ["https://readable.example/page"]);
-      const readable = await tool.execute("t25t-read", { handles: ["https://readable.example/page"] });
-      assert(!rawText(readable).includes("这轮抓页已经停了"),
-        "a prompt-limit refusal does not stop the run");
-      assert(envelope(readable).pages.length === 1 && provider.calls.length === 1,
-        "a ticketed URL is still readable after the trust allowance ran out");
-
-      // Repeating the same dead trust request must still be able to stop the run:
-      // the first refusal is a limit, the repeats are the model spinning.
-      const repeat = async () => tool.execute("t25t-rep", {
+      assert(rawText(spin).includes("这轮抓页已经停了"),
+        "an over-limit refusal counts, so a fresh host each time reaches the stop");
+      const afterStop = await tool.execute("t25t-after", {
         handles: ["https://docs.seven.example/a"], requestTrustFor: "docs.seven.example",
       });
-      const firstRepeat = await repeat();
-      assert(!rawText(firstRepeat).includes("这轮抓页已经停了"),
-        "the first over-limit refusal leaves the run alone");
-      await repeat();
-      const thirdRepeat = await repeat();
-      assert(rawText(thirdRepeat).includes("这轮抓页已经停了"),
-        "repeating a dead trust request still reaches the rejected-batch stop");
+      assert(asked === 3 && rawText(afterStop).includes("这轮抓页已经停了"),
+        "once stopped, no further trust request is even considered");
+    }
+
+    {
+      // A host the user already answered must not become a free infinite retry.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
+      await tool.execute("t25u1", { handles: ["https://docs.settled.example/a"], requestTrustFor: "docs.settled.example" });
+      const repeat1 = await tool.execute("t25u2", { handles: ["https://docs.settled.example/b"], requestTrustFor: "docs.settled.example" });
+      assert(rawText(repeat1).includes("没有同意") && !rawText(repeat1).includes("这轮抓页已经停了"),
+        "the first repeat of a declined host is refused in-band");
+      const repeat2 = await tool.execute("t25u3", { handles: ["https://docs.settled.example/c"], requestTrustFor: "docs.settled.example" });
+      assert(rawText(repeat2).includes("这轮抓页已经停了"),
+        "a host the user already answered stops the run when asked again and again");
+      assert(asked === 1, "a settled host is never asked twice");
     }
 
     store.close();

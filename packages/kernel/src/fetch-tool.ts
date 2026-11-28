@@ -123,12 +123,13 @@ interface Target {
  *
  * `emptyStreak` counts batches that returned no new page. `rejectedStreak`
  * counts batches that got nothing admitted: gate refusals (address, deny,
- * allowlist, credential) and batches of nothing but `no_ticket`,
- * `stale_handle` or `invalid_handle`. A batch the user's own trust answer
- * settled does not count (see rejectTrustSettled); neither does the first
- * refusal for spending the run's trust-question allowance, which says nothing
- * about the host; a repeat for that same host does count. `trustPrompts` is the
- * allowance, `overLimitTrust` the hosts that already used their free refusal.
+ * allowlist, credential), batches of nothing but `no_ticket`, `stale_handle` or
+ * `invalid_handle`, a trust request headless/MCP cannot answer, an over-limit
+ * trust request, and a repeat for a host the user already answered.
+ * What does not count is the one refusal that answers a fresh trust question
+ * (see rejectTrustSettled): a human decided, that host is closed, and the run
+ * got no page out of it. `trustPrompts` is the run's allowance of trust
+ * questions.
  */
 class FetchRunState {
   pagesRead = 0;
@@ -144,8 +145,6 @@ class FetchRunState {
   readonly declinedTrust = new Set<string>();
   /** Hosts the user agreed to but the ticket could not be written; no re-prompt. */
   readonly failedTrust = new Set<string>();
-  /** Hosts already turned down because the run's question allowance was gone. */
-  readonly overLimitTrust = new Set<string>();
 
   noteCall(provider: string): void {
     this.calls.set(provider, (this.calls.get(provider) ?? 0) + 1);
@@ -391,8 +390,10 @@ function rejectTrustGate(
 
 /**
  * Reject a host the user already answered for (declined, or the ticket could not
- * be written). The question is settled, so this path never counts toward the
- * rejected-batch stop and never asks again.
+ * be written). The refusal that answers a fresh question does not count: a
+ * human decided, so the run is not failing on its own. A repeat for a host that
+ * was already settled is the model spinning, so that one counts. Either way the
+ * host is never asked about again.
  */
 function rejectTrustSettled(
   options: FetchToolOptions,
@@ -401,8 +402,12 @@ function rejectTrustSettled(
   domain: string,
   host: string,
 ): ReturnType<typeof textResult> {
+  const alreadySettled = state.declinedTrust.has(host) || state.failedTrust.has(host);
   (reason === "trust_declined" ? state.declinedTrust : state.failedTrust).add(host);
-  return trustRefusal(options, fetchRejectMessage(reason, { host }), reason, domain, host);
+  const message = fetchRejectMessage(reason, { host });
+  return alreadySettled
+    ? rejectTrustGate(options, state, message, reason, domain, host)
+    : trustRefusal(options, message, reason, domain, host);
 }
 
 /**
@@ -454,16 +459,10 @@ async function handleTrustRequest(
   if (state.declinedTrust.has(address.host)) {
     return rejectTrustSettled(options, state, "trust_declined", domain, address.host);
   }
-  // The allowance is per run, not this host: running out says nothing about the
-  // host, so the first refusal must not count toward the rejected-batch stop.
-  // A second ask for the same host is the model spinning, though, and that has
-  // to be able to stop the run.
+  // The allowance is per run. Running out says nothing bad about this host, so
+  // the text stays neutral, but the refusal counts: letting each new host name
+  // through uncounted would leave the run with no stop at all.
   if (!state.claimTrustPromptSlot()) {
-    const firstTime = !state.overLimitTrust.has(address.host);
-    state.overLimitTrust.add(address.host);
-    if (firstTime) {
-      return trustRefusal(options, fetchRejectMessage("trust_prompt_limit"), "trust_prompt_limit", domain, address.host);
-    }
     return rejectTrustGate(options, state, fetchRejectMessage("trust_prompt_limit"), "trust_prompt_limit", domain, address.host);
   }
   // The model followed the documented escape hatch and a human is about to

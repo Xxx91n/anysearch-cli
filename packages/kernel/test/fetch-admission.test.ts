@@ -181,6 +181,8 @@ assert(fetchRejectMessage("trust_write_failed", { host: "docs.example.com" }).in
   "a failed ticket write tells the model not to ask again");
 assert(fetchRejectMessage("trust_prompt_limit").includes("不再弹确认"),
   "a trust prompt over the run allowance says no more prompts");
+assert(fetchRejectMessage("trust_prompt_limit").includes("换个主机名也一样"),
+  "the prompt-limit refusal does not invite a different host instead");
 assert(fetchRejectMessage("trust_prompt_limit").includes(String(FETCH_LIMITS.maxTrustPrompts)),
   "the prompt-limit refusal names how many questions the run allowed");
 

@@ -83,7 +83,7 @@ export function fetchRejectMessage(reason: FetchRejectReason, context: FetchReje
       return "用户同意了，但" + (context.host ? " " + context.host + " 的" : "这个主机的") +
         "信任票没写进本会话，别再问了。这次没读页；先用已有材料回答，或者让用户把网页正文贴进来。";
     case "trust_prompt_limit":
-      return "这次提问已经问过 " + FETCH_LIMITS.maxTrustPrompts + " 次信任了，不再弹确认。先用已有材料回答；要读别的主机，让用户把网页正文贴进来。";
+      return "这次提问已经问过 " + FETCH_LIMITS.maxTrustPrompts + " 次信任了，不再弹确认，换个主机名也一样。先用已有材料回答；要读别的网页，让用户把正文贴进来。";
     default:
       return assertNever(reason);
   }
