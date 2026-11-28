@@ -544,10 +544,8 @@ export function buildAnsChatConsolidateResult(
       ? "\nno conclusion: " + report.noConclusion +
         " cluster(s) answered without one (empty <conclusion>, or only a quote block) — nothing was written"
       : "") +
-    // These three are per-cluster and independent: one cluster can appear under
-    // more than one of them. add/update/skip stay exclusive and the material
-    // counters count rows, so this note names its counters instead of saying
-    // "these counts" for the whole summary.
+    // These three count per cluster and overlap; add/update/skip stay exclusive
+    // and the material counters count rows.
     ([
       (report.quotesMissing ?? 0) > 0,
       (report.quotesMalformed ?? 0) > 0,
