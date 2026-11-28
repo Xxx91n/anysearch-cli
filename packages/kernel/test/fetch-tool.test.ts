@@ -695,7 +695,7 @@ async function main() {
       const wrong = await tool.execute("t25p0", {
         handles: [handle], requestTrustFor: "www.http-tofu.example",
       });
-      assert(rawText(wrong).includes("只能配合同一个主机") && asked === 0,
+      assert(rawText(wrong).includes("只能有同一个主机下的网址") && asked === 0,
         "an http handle without an http ticket is trusted under the effective https host");
       const grant = await tool.execute("t25p1", { handles: [handle], requestTrustFor: "http-tofu.example" });
       assert(rawText(grant).includes("已信任") && asked === 1 && shown[0] === "https://http-tofu.example/guide",

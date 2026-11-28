@@ -424,6 +424,12 @@ function rejectTrustSettled(
   );
 }
 
+/** The one sentence for a malformed trust request, naming the handle that broke it. */
+function invalidTrustMessage(handle?: string): string {
+  const rule = fetchRejectMessage("trust_request_invalid");
+  return handle === undefined ? rule : rule + " 这一条不行：" + handle;
+}
+
 /**
  * Handle an explicit `requestTrustFor`: ask the user, write one ticket, and tell
  * the model to retry. This call reads no page, so a headless host refuses
@@ -452,7 +458,7 @@ async function handleTrustRequest(
   // A shape error asks nobody anything, so it closes the trust path like the other
   // spins instead of leaving a wrong host name to be retried forever.
   if (!domain) {
-    return rejectTrust(options, state, "spin", fetchRejectMessage("trust_request_invalid"), "trust_request_invalid", String(raw ?? ""));
+    return rejectTrust(options, state, "spin", invalidTrustMessage(), "trust_request_invalid", String(raw ?? ""));
   }
 
   const urls: string[] = [];
@@ -461,7 +467,7 @@ async function handleTrustRequest(
     // as a page that was refused: a wrong host name retried forever must still
     // reach a stop somewhere.
     if (/^m:/i.test(handle.trim())) {
-      return rejectTrust(options, state, "spin", fetchRejectMessage("trust_request_invalid") + " 这个不行：" + handle, "trust_request_invalid", handle);
+      return rejectTrust(options, state, "spin", invalidTrustMessage(handle), "trust_request_invalid", handle);
     }
     const { identity, requestUrl } = effectiveRequestUrl(options.store, options.sessionId, handle);
     const address = checkFetchAddress(requestUrl, identity);
@@ -470,7 +476,7 @@ async function handleTrustRequest(
       return rejectTrust(options, state, "page-gate", fetchRejectMessage("credential"), "credential", handle, address.host, address.port);
     }
     if (address.host !== domain) {
-      return rejectTrust(options, state, "spin", fetchRejectMessage("trust_request_invalid") + " 这个不行：" + handle, "trust_request_invalid", handle);
+      return rejectTrust(options, state, "spin", invalidTrustMessage(handle), "trust_request_invalid", handle);
     }
     urls.push(requestUrl);
   }
