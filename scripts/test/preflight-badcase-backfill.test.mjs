@@ -510,6 +510,9 @@ test("a valid --new writes an entry the store validator accepts", async (t) => {
   const dir = tree(t);
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
+  // Exit 0 alone would also be produced by a skipped validator (older node, a
+  // broken import path), which is the opposite of what this test claims.
+  assert.doesNotMatch(r.stderr, /skipped the store validator/, "the real validator must have run, not been skipped");
   const { crossCheckDocsGolden, validateCoverageManifest, validateDocsGoldenEntry } = await import(
     "../../packages/store/src/eval/docs-golden.ts"
   );
