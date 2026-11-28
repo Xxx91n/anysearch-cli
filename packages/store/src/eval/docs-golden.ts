@@ -1,12 +1,14 @@
 // The docs-domain golden corpus lives in its own repo-root file,
 // eval-golden.json. This module owns the entry schema, the eight-dimension
-// slice vocabulary, and the eval-looks.coverage.json contract.
+// slice vocabulary, the scope values, and the eval-looks.coverage.json contract.
+//
+// It takes no imports at all: scripts/badcase-backfill.mjs loads this file with
+// plain node, and an import without a file extension fails to resolve there.
 
 export const DOCS_GOLDEN_SCHEMA = "anysearch/docs-golden@1";
 export const DOCS_GOLDEN_COVERAGE_SCHEMA = "anysearch/eval-looks-coverage@1";
 
 // The only values `scopes` may use; readGoldenFile rejects anything else.
-// Kept import-free at run time: plain-node callers load this file directly.
 export const GOLDEN_SCOPE_VALUES = ["stub", "live", "both"] as const;
 export type GoldenScope = (typeof GOLDEN_SCOPE_VALUES)[number];
 

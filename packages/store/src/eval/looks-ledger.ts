@@ -54,9 +54,7 @@ type CorpusCheck =
   | { ok: true; entryIds: Set<string> }
   | { ok: false; reason: string };
 
-// The reader decides whether a corpus can replace the ledger's `golden` block: a
-// hand-rolled shape check here once accepted a corpus whose schema was wrong and
-// dropped the only copy of that block.
+// The corpus's entry ids when readGoldenFile accepts the file, else its reason.
 function checkCorpus(file: string): CorpusCheck {
   try {
     return { ok: true, entryIds: new Set(readGoldenFile(file).entries.map((e) => e.id)) };
@@ -109,7 +107,7 @@ export function readLooksLedger(file: string): LooksLedger {
       } else {
         const { golden: _stale, ...rest } = parsedRoot;
         j = rest;
-        writeStderr("[eval] dropping the stale golden block in " + file + " — " + corpus + " is the copy\n");
+        writeStderr("[eval] ignoring the stale golden block in " + file + " — the corpus lives in " + corpus + "\n");
       }
     }
   }

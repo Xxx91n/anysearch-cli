@@ -4,8 +4,9 @@
 // packages/store/test/eval-golden-vocab-parity.test.ts compares the two by value.
 // This is the outermost layer only: schema, entries/scopes shape (ids present and
 // unique), scope vocabulary and the tombstone-vs-scope pairing. The per-entry
-// rules — id format, intent, expected — stay in the store validator that the gate
-// and the backfill run afterwards.
+// rules — id format, intent, expected — live in the store validator, which the
+// backfill runs itself and ship-gate only runs through step 3's test suite
+// (--quick skips that step).
 export const GOLDEN_FILE = "eval-golden.json";
 export const GOLDEN_SCHEMA = "anysearch/docs-golden@1";
 export const GOLDEN_SCOPE_VALUES = ["stub", "live", "both"];

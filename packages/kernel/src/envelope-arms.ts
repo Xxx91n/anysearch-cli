@@ -1,4 +1,5 @@
 // The three arm lists every fanout writes, read by the CLI and both web tools.
+// docs/mcp-server.md states the contract for host implementers.
 // A host that implements RetrieverPort itself can leave one out, and an absent
 // list is not neutral: `failed: []` reads as "no arm failed", so a total outage
 // would come back as a success naming no failed providers, and `cancelled: []`

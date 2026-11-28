@@ -118,7 +118,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T, i: number) => Promise<v
 (async () => {
   if (!existsSync(dist)) { console.log("SKIP: dist/index.js missing — run pnpm -C apps/cli build first"); process.exit(0); }
   if (limitSet && (!Number.isInteger(limitNum) || limitNum <= 0)) {
-    console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (got " + rawLimit + "; unset or empty means full run)");
+    console.error("FAIL: ANS_VERTICAL_DELTA_LIMIT must be a positive integer (got " + JSON.stringify(rawLimit) + "; unset or empty means full run)");
     process.exit(1);
   }
   const golden = readGoldenFile(join(root, GOLDEN_FILE));

@@ -147,8 +147,8 @@ function sourceNote(id: string, sources: Extract<CredentialSources, { status: "r
  * Providers cancelled 那一行：引擎真问了、到点没等回来的臂。不是失败，也不是
  * 没问。空表返回 undefined，所以健康路径一个字都不多。
  *
- * 文案只写「到时限了」：`ans search` 不传 caller signal，引擎里也没有第二个掐臂
- * 的原因。
+ * 文案只写「到时限了」：`ans search` 不传 caller signal，所以这条命令里被切只
+ * 会来自到时限（引擎另有一条 caller signal 的路，这条命令不走）。
  */
 export function formatProvidersCancelledLine(providersCancelled: readonly string[]): string | undefined {
   if (providersCancelled.length === 0) return undefined;

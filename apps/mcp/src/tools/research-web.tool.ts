@@ -7,7 +7,7 @@
 
 import type { McpServer, ServerContext } from "@modelcontextprotocol/server";
 import { fromJsonSchema } from "@modelcontextprotocol/server";
-import { KernelJsonSchemas, KernelToolDescriptions, isDomainConstraintError, isTaskBudgetRejectedError, reportedDeadlineMs, type CompositionResult } from "@anysearch-cli/kernel";
+import { KernelJsonSchemas, KernelToolDescriptions, envelopeArmLists, isDomainConstraintError, isTaskBudgetRejectedError, reportedDeadlineMs, type CompositionResult } from "@anysearch-cli/kernel";
 import { buildVerticalSpec, isPartialPool, pickUnseenUrlResults, type ProviderErrorClass } from "@anysearch-cli/retriever";
 import { observeTool } from "./observation.js";
 import { requestSignal } from "./signal.js";
@@ -15,7 +15,6 @@ import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.j
 import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailedText,
-  envelopeArmLists,
   isInterrupted,
   outcomeOf,
   providerFailureMetadata,

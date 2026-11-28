@@ -10,10 +10,6 @@ import type { CompositionResult } from "@anysearch-cli/kernel";
 import type { ProviderErrorClass, SearchOutcome } from "@anysearch-cli/retriever";
 import { providerErrorHints } from "@anysearch-cli/kernel";
 
-// The arm-list guard is shared with the CLI, so both hosts refuse the same
-// envelope. docs/mcp-server.md states the contract for host implementers.
-export { envelopeArmLists } from "@anysearch-cli/kernel";
-
 /** Execution-failure result: isError true, text content, no structuredContent. */
 export function toolFailure(text: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text }] };

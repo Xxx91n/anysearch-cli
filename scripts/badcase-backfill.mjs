@@ -64,6 +64,7 @@ const id = arg("id");
 const into = arg("into");
 const create = process.argv.includes("--new");
 if (!id || (!into && !create)) fail("usage: --id <docs-bcNNNN> (--into <docs-gNNNN> | --new)");
+if (into && create) fail("usage: --into and --new are exclusive — pick one");
 
 const badcases = readJson(BADCASES, "eval-badcases.json");
 // JSON.parse("null") hands back null; name that instead of a bare TypeError.
@@ -182,9 +183,11 @@ if (into) {
   // fixtures instead of the field that is wrong.
   if (expected.mustHitUrls !== undefined && !Array.isArray(expected.mustHitUrls)) fail(id + " mustHitUrls must be an array");
   if (expected.mustHitHosts !== undefined && !Array.isArray(expected.mustHitHosts)) fail(id + " mustHitHosts must be an array");
+  if (expected.mustHitPaths !== undefined && !Array.isArray(expected.mustHitPaths)) fail(id + " mustHitPaths must be {path,tolerate}[]");
   const mustHitUrls = expected.mustHitUrls ?? [];
   const mustHitHosts = expected.mustHitHosts ?? [];
-  const mustHit = mustHitHosts.length > 0 || mustHitUrls.length > 0 || (expected.mustHitPaths?.length ?? 0) > 0;
+  const mustHitPaths = expected.mustHitPaths ?? [];
+  const mustHit = mustHitHosts.length > 0 || mustHitUrls.length > 0 || mustHitPaths.length > 0;
   if (!(expected.verdict === "answer" && mustHit)) {
     fail("--new can only auto-scope an answer+mustHit* row (live); " + next + " needs the stub lane, which needs a kernel scenario fixture this script cannot invent — add the row and fixture by hand");
   }
@@ -230,8 +233,6 @@ if (into) {
     try { host = new URL(url).hostname; } catch { fail(id + " mustHitUrl unparseable: " + url); }
     if (!allow.has(host)) fail(id + " mustHitUrl host " + host + " outside domains/docs.toml urlAllowlist");
   }
-  const mustHitPaths = expected.mustHitPaths ?? [];
-  if (!Array.isArray(mustHitPaths)) fail(id + " mustHitPaths must be {path,tolerate}[]");
   for (const pm of mustHitPaths) {
     if (!pm || typeof pm.path !== "string" || !pm.path.startsWith("/")) fail(id + " mustHitPaths pattern must start with /");
     if (!Array.isArray(pm.tolerate) || pm.tolerate.some((t) => !GOLDEN_TOLERATED_SEGMENTS.includes(t))) {
@@ -303,4 +304,4 @@ function atomicWrite(path, content) {
 atomicWrite(GOLDEN, JSON.stringify(golden, null, 2) + "\n");
 atomicWrite(BADCASES, JSON.stringify(badcases, null, 2) + "\n");
 atomicWrite(COVERAGE, JSON.stringify(cov, null, 2) + "\n");
-console.log("badcase-backfill: " + id + " promoted (" + (into ? "attach" : "create") + "); coverage recounted; run packages/store/test/eval-docs-golden.test.ts to verify");
+console.log("badcase-backfill: " + id + " promoted (" + (into ? "attach" : "create") + ") under " + ROOT + "; coverage recounted; run packages/store/test/eval-docs-golden.test.ts to verify");

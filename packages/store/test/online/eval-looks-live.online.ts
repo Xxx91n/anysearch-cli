@@ -14,8 +14,8 @@
 // - Evidence mode (ANS_EVAL_EVIDENCE=1) executes quarantined entries instead of
 //   skipping them. Each executed entry appends id / verdict / ISO timestamp /
 //   run ref to ANS_EVAL_EVIDENCE_LOG (default .scratch/eval-evidence.log).
-//   A run whose only failures are quarantined exits 0. An entry that is red in
-//   consecutive evidence runs prints RETIRE_CANDIDATE for reviewDue().
+//   A run whose only failures are quarantined exits 0. A quarantined entry that is
+//   red in two consecutive evidence runs prints RETIRE_CANDIDATE for reviewDue().
 // - mustHitPaths/mustNotHitPaths add a page-family check: pathname substring
 //   match, limited to the entry's mustHitHosts when declared.
 // - watch:true entries print their post-promote observation mark.

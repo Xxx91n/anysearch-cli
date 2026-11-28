@@ -127,8 +127,8 @@ function run(dir, args, nodeArgs = [], env = {}) {
   // A timeout or a missing node leaves status null; name that instead of
   // letting "expected null to equal 2" point at the script logic.
   assert.equal(r.error, undefined, String(r.error));
-  // A child killed by a signal leaves status null and error undefined; name it
-  // here instead of letting the next status assertion read as a logic bug.
+  // A child killed by a signal leaves status null and error undefined; assert the
+  // signal so a killed run says so instead of looking like a logic bug.
   assert.equal(r.signal, null, "badcase-backfill killed by " + r.signal);
   return r;
 }
@@ -448,6 +448,12 @@ const REJECTS = [
     pattern: /mustHitUrls must be an array/,
   },
   {
+    name: "--new rejects mustHitPaths that are not an array",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitPaths = { path: "/install" }; },
+    pattern: /mustHitPaths must be \{path,tolerate\}\[\]/,
+  },
+  {
     name: "--new rejects a mustHitHosts entry that is not a string",
     file: "eval-badcases.json",
     edit: (b) => { b.badcases[0].expected.mustHitHosts = ["docs.example.com", 42]; },
@@ -553,8 +559,7 @@ test("a valid --new writes an entry the store validator accepts", async (t) => {
   const dir = tree(t);
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
-  // Exit 0 alone would also be produced by a skipped validator (older node, a
-  // broken import path), which is the opposite of what this test claims.
+  // Exit 0 also comes from a skipped validator, so the skip line must be absent.
   assert.doesNotMatch(r.stderr, /skipped the store validator/, "the real validator must have run, not been skipped");
   const { crossCheckDocsGolden, validateCoverageManifest, validateDocsGoldenEntry } = docs;
   const written = readJson(dir, "eval-golden.json");
@@ -569,8 +574,7 @@ test("a valid --new writes an entry the store validator accepts", async (t) => {
 });
 
 test("--new rejects a question already in the golden corpus", (t) => {
-  // expectFail also proves the three ledgers stayed byte-identical, which a
-  // hand-written status check here used to skip.
+  // expectFail also asserts the three ledgers are byte-identical after the refusal.
   expectFail(t, () => {}, /use --into/, ["--id", "docs-bc0001", "--new"], { goldenQuestion: QUESTION });
 });
 
@@ -587,6 +591,30 @@ test("--new starts at docs-g0001 when the corpus has no docs rows", (t) => {
   const g = readJson(dir, "eval-golden.json");
   assert.equal(g.entries.at(-1).id, "docs-g0001");
   assert.equal(g.scopes["docs-g0001"], "live");
+});
+
+test("--into and --new together are a usage error", (t) => {
+  expectFail(t, () => {}, /--into and --new are exclusive/, ["--id", "docs-bc0001", "--into", "docs-g0001", "--new"]);
+});
+
+test("a validator that reports problems stops the write", (t) => {
+  const dir = tree(t);
+  writeFileSync(
+    join(dir, "forced-validator.mjs"),
+    "export function validateDocsGoldenEntry() { return ['forced problem']; }\n",
+    "utf8",
+  );
+  const before = LEDGERS.map((file) => ledgerText(dir, file));
+  const r = run(dir, ["--id", "docs-bc0001", "--new"], [], {
+    ANS_BACKFILL_VALIDATOR: pathToFileURL(join(dir, "forced-validator.mjs")).href,
+  });
+  // The script's own checks are looser than the store validator, so this refusal
+  // is the only thing standing between a bad row and the corpus.
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /would fail the store validator: forced problem/);
+  LEDGERS.forEach((file, i) => {
+    assert.equal(ledgerText(dir, file), before[i], file + " changed despite the validator refusal");
+  });
 });
 
 test("a validator that cannot load stops the run before anything is written", (t) => {

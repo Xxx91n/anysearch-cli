@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { envelopeArmLists } from "../src/tools/failure.js";
+import { envelopeArmLists } from "@anysearch-cli/kernel";
 
 const full = { providersQueried: ["tavily"], providersCancelled: ["exa"], providersFailed: ["brave"] };
 const FIELDS = ["providersQueried", "providersCancelled", "providersFailed"] as const;

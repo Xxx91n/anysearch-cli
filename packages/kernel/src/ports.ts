@@ -46,8 +46,9 @@ export type Query = SearchRequest & {
 // RetrieverPort: the kernel calls this to search.
 export interface RetrieverPort {
   search(q: Query): Promise<FusedEnvelope>;
-  // The wait this retriever enforces, when it knows it: forward the inner one, or
-  // report your own timer's budget. reportedDeadlineMs reads it first.
+  // The wait this retriever enforces, when it knows it. Fill it only when this
+  // object runs its own timer; a wrapper that delegates leaves it out, and the
+  // reported budget then comes from the CompositionResult.
   readonly requestTimeoutMs?: number;
 }
 

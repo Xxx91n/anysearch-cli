@@ -71,6 +71,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writ
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { probePid, type PidLiveness } from "@anysearch-cli/store/process-liveness";
+import { isPositiveWholeInt } from "./num";
 
 /**
  * Reclaim window for an owner this machine has no pid evidence about — another
@@ -256,7 +257,7 @@ function readSessionLockHolder(lockPath: string): SessionLockHolder | undefined 
   }
   try {
     const raw = JSON.parse(text) as Partial<SessionLockHolder> & { startedAt?: unknown };
-    if (!Number.isInteger(raw.pid) || (raw.pid as number) <= 0 || typeof raw.host !== "string") {
+    if (!isPositiveWholeInt(raw.pid) || typeof raw.host !== "string") {
       throw new UnreadableOwnerError("owner.json has no usable identity");
     }
     // Best effort, unlike the identity above: a missing or unusable time only
