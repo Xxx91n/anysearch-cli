@@ -47,10 +47,11 @@ export type Query = SearchRequest & {
 export interface RetrieverPort {
   search(q: Query): Promise<FusedEnvelope>;
   // The wait this retriever actually enforces, when it knows it: the engine
-  // exposes its own, and a wrapper that runs its own timer reports that timer's
-  // budget. reportedDeadlineMs reads this value first, then the composition
-  // result's own copy, and only then the 4s default — a wrapper that enforces a
-  // different wait and leaves this out is reported as the result's budget.
+  // exposes its own, and a wrapper forwards it (pi-runtime's scoped retriever
+  // does) or, when it runs its own timer, reports that timer's budget instead.
+  // reportedDeadlineMs reads this value first, then the composition result's
+  // own copy, and only then the 4s default — so a wrapper that enforces a
+  // different wait and leaves this out is reported under the result's budget.
   readonly requestTimeoutMs?: number;
 }
 
