@@ -381,8 +381,11 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   }
   if (!verbose && notable.length < r.materialsFed.length) {
     process.stdout.write(
-      "materials: " + r.materialsFed.length + " fed, " + notable.length +
-        " shown (only those that need attention; --verbose lists every material and quote)\n",
+      "materials: " + r.materialsFed.length + " fed, " + notable.length + " shown (" +
+        (notable.length === 0
+          ? "none needed attention; --verbose lists every material and quote"
+          : "only those that need attention; --verbose lists every material and quote") +
+        ")\n",
     );
   }
   // The verbatim quotes the summarizer selected. They are not persisted in

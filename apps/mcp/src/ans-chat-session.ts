@@ -67,6 +67,13 @@ const HANDLE_PATTERN = /^[\x21-\x7E]+$/;
 // attention-needing materials when there are more than this many.
 const MATERIAL_LINES_IN_TEXT = 20;
 
+/** The count line's tail: were the shown materials picked out, and why. */
+function attentionNote(notable: number): string {
+  if (notable === 0) return "";
+  if (notable > MATERIAL_LINES_IN_TEXT) return ", and more than this list can show still need attention";
+  return ", the ones that need attention first";
+}
+
 export function isValidSessionHandle(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -636,20 +643,15 @@ export function buildAnsChatConsolidateResult(
   const notableSet = new Set(notableFed);
   const orderedFed = [...notableFed, ...fed.filter((m) => !notableSet.has(m))];
   const shownFed = orderedFed.slice(0, MATERIAL_LINES_IN_TEXT);
-  const feedText = shownFed.length === 0
-    ? ""
-    : "\n" + shownFed.map(formatConsolidateMaterialFeed).join("\n") +
-      (shownFed.length < fed.length
-        ? "\n  (" + shownFed.length + " of " + fed.length + " materials shown" +
-          (notableFed.length === 0
-            ? ""
-            : notableFed.length > MATERIAL_LINES_IN_TEXT
-              // The attention list itself was cut: saying "attention first" here
-              // would read as "the hidden ones are fine".
-              ? ", and more than this list can show still need attention"
-              : ", the ones that need attention first") +
-          "; the rest are in structuredContent.report.materialsFed)"
-        : "");
+  let feedText = "";
+  if (shownFed.length > 0) {
+    feedText = "\n" + shownFed.map(formatConsolidateMaterialFeed).join("\n");
+    if (shownFed.length < fed.length) {
+      feedText += "\n  (" + shownFed.length + " of " + fed.length + " materials shown" +
+        attentionNote(notableFed.length) +
+        "; the rest are in structuredContent.report.materialsFed)";
+    }
+  }
   // The quotes are report-only; semantic memory never stores them.
   const quotesText = (report.quotes ?? []).length === 0
     ? ""
