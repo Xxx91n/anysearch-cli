@@ -180,7 +180,7 @@
 - **活材料**:同时满足没有被纠正替代、也没有被重新抓取作废的材料（`superseded_by IS NULL AND valid_until IS NULL`）。整理只用活材料；整簇材料都作废时报告计数后跳过，不静默当成没发生（代码里叫 isLiveMaterial / supersededClusterSkipped）。
   _Avoid_: current material、有效材料
 
-- **引文**:摘要模型从材料里挑出的原句，先写进 `<quotes>` 再写 `<conclusion>`；落库只存结论，引文只给校正判官和整理报告。格式没遵守时整段回复当结论，报告标 `quotesMissing`（代码里叫 quotes）。
+- **引文**:摘要模型从材料里挑出的原句，先写进 `<quotes>` 再写 `<conclusion>`；落库只存结论，引文只给校正判官和整理报告。形状不对时整段回复当结论，报告把这一条记为 `quotesMalformed`；形状对但 `<quotes>` 是空的，结论照用，只记 `quotesMissing`（代码里叫 quotes）。
   _Avoid_: 摘录、原文片段、citation
 
 - **整理材料预算**:一簇材料进摘要前最多 2.4 万估算 token；没超就整页全喂，超了才按节挑，并报告每条材料喂了多少、为什么（代码里叫 CONSOLIDATION_CLUSTER_TOKEN_BUDGET / clusterTokenBudget）。
