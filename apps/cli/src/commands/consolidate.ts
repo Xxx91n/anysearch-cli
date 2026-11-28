@@ -33,6 +33,7 @@ import {
   ConsolidateScopeError,
   formatConsolidateScope,
   formatConsolidateMaterialFeed,
+  notableMaterialFeeds,
   formatConsolidateQuotes,
   toBudgetCaps,
   type BudgetConfig,
@@ -371,11 +372,10 @@ export async function runConsolidate(argv: string[]): Promise<number> {
         "before an apply can make the apply differ.\n",
     );
   }
-  // Material detail: by default only what needs attention prints — a material
-  // that got no room, was cut short, or was planned by section. `overBudget` is
-  // a cluster flag, so it would print every material of an over-budget cluster
-  // and defeat the filter on a full-archive run. --verbose prints them all.
-  const notable = r.materialsFed.filter((m) => m.fedChars === 0 || m.truncated || m.sections.length > 0);
+  // Material detail: by default only what needs attention prints; --verbose
+  // prints them all. The rule itself lives in the store so the MCP host cannot
+  // drift from it.
+  const notable = notableMaterialFeeds(r.materialsFed);
   for (const m of verbose ? r.materialsFed : notable) {
     process.stdout.write(formatConsolidateMaterialFeed(m) + "\n");
   }

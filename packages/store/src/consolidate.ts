@@ -192,6 +192,17 @@ export function formatConsolidateMaterialFeed(m: ConsolidateMaterialFeed): strin
       : "");
 }
 
+/**
+ * The materials that need a line in a report's text half: fed nothing, cut
+ * short, or planned by section. `overBudget` is a cluster flag, so it cannot be
+ * the per-material test — an over-budget cluster would print every row.
+ */
+export function notableMaterialFeeds(
+  feeds: readonly ConsolidateMaterialFeed[],
+): ConsolidateMaterialFeed[] {
+  return feeds.filter((m) => m.fedChars === 0 || m.truncated || m.sections.length > 0);
+}
+
 /** The verbatim quote block; report-only, never persisted in semantic memory. */
 export function formatConsolidateQuotes(q: ConsolidateQuoteReport): string {
   return "quotes (cluster " + q.cluster + ")\n" +
@@ -202,7 +213,7 @@ export function formatConsolidateQuotes(q: ConsolidateQuoteReport): string {
 export interface ConsolidateSummaryText {
   conclusion: string;
   quotes: string | null;
-  /** No usable quotes at all: either the shape was wrong, or <quotes> was empty. */
+  /** No usable quotes came back at all: the block was empty or missing. */
   quotesMissing: boolean;
   /**
    * Nothing worth persisting: the reply stated no conclusion, so the caller must
@@ -298,12 +309,12 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
     raw.slice(conclusionCloseEnd).trim() === "";
   if (!wellFormed) {
     // An intact <conclusion> block still says what the model concluded, even
-    // when the quote block was left open — preferring it saves the cluster
-    // instead of running a model call for nothing. Only when it sits after the
-    // quote block, never inside it: a page that prints its own
-    // <conclusion> tag must not become the conclusion.
-    const afterQuotes = quotesClose === null || conclusionStart >= quotesCloseEnd;
-    const declared = conclusionOpen && conclusionClose && afterQuotes
+    // when the shape around it was wrong. Only when it sits AFTER a closed
+    // quote block: with <quotes> left open, everything that follows it is page
+    // text as far as we can tell, and trusting a <conclusion> tag found there
+    // would let a page write its own fact into long-term knowledge.
+    const afterClosedQuotes = quotesClose !== null && conclusionStart >= quotesCloseEnd;
+    const declared = conclusionOpen && conclusionClose && afterClosedQuotes
       ? raw.slice(conclusionEnd, conclusionClose.start).trim()
       : "";
     const kept = declared || stripSummaryTags(withoutQuotesBlock(raw));
@@ -314,7 +325,7 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
       // was nothing but a quote block yields "" and the caller drops it.
       conclusion: kept,
       quotes: reportedQuotes.length > 0 ? reportedQuotes : null,
-      quotesMissing: true,
+      quotesMissing: reportedQuotes.length === 0,
       quotesMalformed: true,
       conclusionMissing: kept.length === 0,
     };
@@ -598,12 +609,12 @@ export interface ConsolidateReport {
   // the <quotes> block each cluster returned, verbatim. Only the
   // conclusion is persisted; quotes exist for the judges and this audit trail.
   quotes: ConsolidateQuoteReport[];
-  // Clusters whose reply had no usable <quotes>: the shape was wrong (the
-  // reply's own prose was kept, the quote block dropped) or the block was
-  // empty. Hosts that need to tell those apart read quotesMalformed.
+  // Clusters whose reply carried no usable <quotes> at all — the block was
+  // empty, or none of it could be read. Independent of quotesMalformed: a reply
+  // can come back in the wrong shape and still carry a readable quote block.
   quotesMissing: number;
-  // The subset of quotesMissing where the reply was malformed, not merely
-  // quote-less. quotesMissing - quotesMalformed is the empty-block count.
+  // Clusters whose reply ignored the `<quotes>` + `<conclusion>` shape. Their
+  // own prose was kept and the quote block dropped (see splitConsolidateSummary).
   quotesMalformed: number;
   // token cap for one cluster's material block (24,000).
   clusterTokenBudget: number;

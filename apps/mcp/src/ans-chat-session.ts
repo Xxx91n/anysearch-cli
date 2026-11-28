@@ -35,6 +35,7 @@ import type {
 import {
   formatConsolidateScope,
   formatConsolidateMaterialFeed,
+  notableMaterialFeeds,
   formatConsolidateQuotes,
   toBudgetCaps,
   type BudgetConfig,
@@ -527,11 +528,15 @@ export function buildAnsChatConsolidateResult(
       ? "\nmaterial budget: " + report.clusterTokenBudget + " tokens per cluster; " + report.clustersOverBudget +
         " cluster(s) over budget (planned by section; details in materialsFed)"
       : "") +
-    ((report.quotesMissing ?? 0) > 0
-      ? "\nquotes missing: " + report.quotesMissing + " cluster(s)\n" +
-        "  " + (report.quotesMalformed ?? 0) + ": wrong shape, so the reply's own prose (not the quoted page) was kept as the conclusion\n" +
-        "  " + (report.quotesMissing - (report.quotesMalformed ?? 0)) + ": shaped reply, empty <quotes>\n" +
-        "  treat corrections from these clusters as unverified"
+    ((report.quotesMissing ?? 0) > 0 || (report.quotesMalformed ?? 0) > 0
+      ? "\nquote evidence:" +
+        ((report.quotesMissing ?? 0) > 0
+          ? "\n  " + report.quotesMissing + " cluster(s) came back with no usable <quotes>"
+          : "") +
+        ((report.quotesMalformed ?? 0) > 0
+          ? "\n  " + report.quotesMalformed + " cluster(s) ignored the <quotes>/<conclusion> shape (their own prose was kept, the quote block dropped)"
+          : "") +
+        "\n  treat corrections from those clusters as unverified"
       : "") +
     ((report.noConclusion ?? 0) > 0
       ? "\nno conclusion: " + report.noConclusion +
@@ -607,12 +612,11 @@ export function buildAnsChatConsolidateResult(
         "; re-judge retries=" + d.retries + ", sameFact=" + d.sameFact + ", reliable=" + d.reliable +
         (d.reason ? "; " + d.reason : "") + ")",
       ).join("\n");
-  // Same rule as the CLI: the text half names only the materials that need
-  // attention — fed nothing, cut short, or planned by section. A full-archive
-  // run would otherwise bury the counts under a thousand lines. The complete
-  // list stays in structuredContent.report.materialsFed.
+  // The text half names only the materials that need attention; the complete
+  // list stays in structuredContent.report.materialsFed. The rule is shared with
+  // the CLI (store's notableMaterialFeeds) so the two cannot drift.
   const fed = report.materialsFed ?? [];
-  const notableFed = fed.filter((m) => m.fedChars === 0 || m.truncated || m.sections.length > 0);
+  const notableFed = notableMaterialFeeds(fed);
   const feedText = notableFed.length === 0
     ? ""
     : "\n" + notableFed.map(formatConsolidateMaterialFeed).join("\n") +

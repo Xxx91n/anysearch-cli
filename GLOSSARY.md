@@ -180,7 +180,7 @@
 - **活材料**:同时满足没有被纠正替代、也没有被重新抓取作废的材料（`superseded_by IS NULL AND valid_until IS NULL`）。整理只用活材料；整簇材料都作废时报告计数后跳过，不静默当成没发生（代码里叫 isLiveMaterial / supersededClusterSkipped）。
   _Avoid_: current material、有效材料
 
-- **引文**:摘要模型从材料里挑出的原句，先写进 `<quotes>` 再写 `<conclusion>`；落库只存结论，引文只给校正判官和整理报告。结论里只可能是模型自己写的散文：形状不对时把 `<quotes>` 块整块去掉、再剥标签，引文永远不会被当成结论；模型没给结论（`<conclusion>` 为空）就记 `noConclusion`，本轮不落库。形状不对记 `quotesMalformed`，形状对但 `<quotes>` 空记 `quotesMissing`。判官读引文前会核对每一句是否真的出现在本轮喂进去的材料里，对不上就整体退回逐条材料，不让被审的模型自己提供证据。
+- **引文**:摘要模型从材料里挑出的原句，先写进 `<quotes>` 再写 `<conclusion>`；落库只存结论，引文只给校正判官和整理报告。结论里只可能是模型自己写的散文：形状不对时把 `<quotes>` 块整块去掉、再剥标签，引文永远不会被当成结论；模型没给结论（`<conclusion>` 为空）就记 `noConclusion`，本轮不落库。形状不对（含标签不分大小写、只有开标签）记 `quotesMalformed`，一个能用的 `<quotes>` 都没拿到才记 `quotesMissing`；两者独立，形状不对但引文读得出来时 `quotesMissing` 仍是 0。判官读引文前会核对每一句是否真的出现在本轮喂进去的材料里，对不上就整体退回逐条材料，不让被审的模型自己提供证据。
   _Avoid_: 摘录、原文片段、citation
 
 - **整理材料预算**:一簇材料进摘要前最多 2.4 万估算 token；没超就整页全喂，超了才按节挑，并报告每条材料喂了多少、为什么（代码里叫 CONSOLIDATION_CLUSTER_TOKEN_BUDGET / clusterTokenBudget）。

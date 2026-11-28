@@ -184,9 +184,10 @@ export const CONSOLIDATION_SUMMARY_PROMPT = [
   "keep every fact it states unless a new material explicitly corrects that same fact.",
   "",
   // The reply shape is the contract. Only <conclusion> is persisted;
-  // <quotes> goes to the correction judges and the run report. A reply without
-  // both tags is kept whole by the store and flagged quotesMissing, so a model
-  // that ignores this instruction cannot silently lose the facts it stated.
+  // <quotes> goes to the correction judges and the run report. A reply that
+  // ignores the shape keeps its own prose (tags stripped, quote block dropped)
+  // and is flagged quotesMalformed, so a model that ignores this instruction
+  // cannot silently lose a fact it stated — or promote a quoted page to one.
   "Reply in exactly this shape, with no text outside the two blocks:",
   "<quotes>",
   "[n] <heading path> [@<section offset>] \"<verbatim sentence from that material>\"",
