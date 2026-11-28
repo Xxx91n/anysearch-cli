@@ -213,7 +213,10 @@ export function formatConsolidateQuotes(q: ConsolidateQuoteReport): string {
 export interface ConsolidateSummaryText {
   conclusion: string;
   quotes: string | null;
-  /** No usable quotes came back at all: the block was empty or missing. */
+  /**
+   * No usable quotes came back at all: the block was empty, missing, or
+   * unreadable (an opening tag with no closing one counts as unreadable).
+   */
   quotesMissing: boolean;
   /**
    * Nothing worth persisting: the reply stated no conclusion, so the caller must
@@ -609,8 +612,9 @@ export interface ConsolidateReport {
   // conclusion is persisted; quotes exist for the judges and this audit trail.
   quotes: ConsolidateQuoteReport[];
   // Clusters whose reply carried no usable <quotes> at all — the block was
-  // empty, or none of it could be read. Independent of quotesMalformed: a reply
-  // can come back in the wrong shape and still carry a readable quote block.
+  // empty, missing, or unreadable. Independent of quotesMalformed: a reply can
+  // come back in the wrong shape and still carry a readable quote block, so one
+  // cluster may be counted in both.
   quotesMissing: number;
   // Clusters whose reply ignored the `<quotes>` + `<conclusion>` shape. Their
   // conclusion was taken from the reply's own prose (or from a complete

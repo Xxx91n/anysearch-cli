@@ -313,6 +313,44 @@ async function callConsolidate(args: Record<string, unknown>) {
     "the full conflict detail travels in structuredContent");
 }
 
+// --- 11. the material count line stands on its own ------------------------
+// A run whose materials all fitted has nothing to flag, but it must still be
+// distinguishable from a run that fed nothing at all.
+{
+  const { buildAnsChatConsolidateResult } = await import("../src/ans-chat-session.js");
+  const base = {
+    dryRun: false, clustersScanned: 1, clustersTriggered: 1, llmUnavailable: 0, noConclusion: 0,
+    gateRejected: 0, add: 1, noop: 0, update: 0, embeddingAbsent: 0,
+    scope: { by: "memory", sessionIds: [], memoryIds: [9], sessionIdNotApplied: false, requestedMaterials: 1, materialsRead: 1 },
+    budgetRejected: 0, singleEvidenceSkipped: 0, verifyRejected: 0, verifyDetails: [],
+    verifiedCorrections: [], correctionsIncomplete: 0, incompleteDetails: [], conflicts: 0,
+    conflictDetails: [], resolvedCollisions: [], semanticIds: [], updates: [],
+    quotes: [], quotesMissing: 0, quotesMalformed: 0, clusterTokenBudget: 24_000, clustersOverBudget: 0,
+  };
+  const feed = {
+    cluster: 1, materialId: 7, url: "https://a.example/full", title: "Official notice",
+    originalChars: 40, fedChars: 40, estimatedTokens: 10, sections: [],
+    overBudget: false, truncated: false, cacheHit: false, source: "content" as const,
+  };
+  const usage = { calls: 1, inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 2, costUsd: 0, costBasis: "unknown" as const, missing: ["consolidation cost"] };
+
+  const allGood = buildAnsChatConsolidateResult({ ...base, materialsFed: [feed] } as never, usage as never, {});
+  const allGoodText = allGood.content[0]!.text;
+  assert(/\(0 of 1 materials shown; the rest are in the structured report\)/.test(allGoodText),
+    "materials all fitted: the count line still says how many were fed");
+  assert(!allGoodText.includes("material (cluster"), "materials all fitted: no per-material line is printed");
+
+  const noneFed = buildAnsChatConsolidateResult({ ...base, materialsFed: [] } as never, usage as never, {});
+  assert(!/materials shown/.test(noneFed.content[0]!.text),
+    "no materials fed: no count line at all");
+
+  const needsAttention = { ...feed, fedChars: 0 };
+  const trimmed = buildAnsChatConsolidateResult({ ...base, materialsFed: [feed, needsAttention] } as never, usage as never, {});
+  const trimmedText = trimmed.content[0]!.text;
+  assert(trimmedText.includes("material (cluster 1"), "one material got nothing: it is listed");
+  assert(/\(1 of 2 materials shown/.test(trimmedText), "one material got nothing: the count line says 1 of 2");
+}
+
 await server.close();
 store.close();
 rmSync(dir, { recursive: true, force: true });

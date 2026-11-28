@@ -531,11 +531,13 @@ export function buildAnsChatConsolidateResult(
     ((report.quotesMissing ?? 0) > 0 || (report.quotesMalformed ?? 0) > 0
       ? "\nquote evidence:" +
         ((report.quotesMissing ?? 0) > 0
-          ? "\n  " + report.quotesMissing + " cluster(s) came back with no usable <quotes>"
+          ? "\n  " + report.quotesMissing + " cluster(s) came back with no usable <quotes> (empty, missing, or unreadable)"
           : "") +
         ((report.quotesMalformed ?? 0) > 0
-          ? "\n  " + report.quotesMalformed + " cluster(s) ignored the <quotes>/<conclusion> shape (their own prose was kept, the quote block dropped)"
+          ? "\n  " + report.quotesMalformed + " cluster(s) ignored the <quotes>/<conclusion> shape" +
+            " (the conclusion was taken from the reply's own prose or a complete <conclusion> block; a closed <quotes> block is still reported)"
           : "") +
+        "\n  the two counts can overlap: do not add them up as a cluster count" +
         "\n  treat corrections from those clusters as unverified"
       : "") +
     ((report.noConclusion ?? 0) > 0
@@ -619,12 +621,13 @@ export function buildAnsChatConsolidateResult(
   // and the count line says how many were left out.
   const fed = report.materialsFed ?? [];
   const notableFed = notableMaterialFeeds(fed);
-  const feedText = notableFed.length === 0
-    ? ""
-    : "\n" + notableFed.map(formatConsolidateMaterialFeed).join("\n") +
-      (notableFed.length < fed.length
-        ? "\n  (" + notableFed.length + " of " + fed.length + " materials shown; the rest are in the structured report)"
-        : "");
+  // The count line stands on its own: a run whose materials all fitted still
+  // has to be distinguishable from a run that fed none.
+  const feedText =
+    (notableFed.length === 0 ? "" : "\n" + notableFed.map(formatConsolidateMaterialFeed).join("\n")) +
+    (fed.length > 0 && notableFed.length < fed.length
+      ? "\n  (" + notableFed.length + " of " + fed.length + " materials shown; the rest are in the structured report)"
+      : "");
   // The quotes are report-only; semantic memory never stores them.
   const quotesText = (report.quotes ?? []).length === 0
     ? ""
