@@ -71,7 +71,8 @@ function legacySchema(): string {
     /CREATE TABLE IF NOT EXISTS store_meta \([\s\S]*?\);/,
     "",
   );
-  if (out.includes("store_meta")) {
+  // Comments legitimately name the table; only the DDL has to be gone.
+  if (/CREATE TABLE[^;]*store_meta/.test(out)) {
     throw new Error("legacySchema: store_meta DDL pattern not found — refusing a silently-current fixture");
   }
   return out;

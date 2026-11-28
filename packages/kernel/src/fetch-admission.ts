@@ -12,6 +12,10 @@ export const FETCH_LIMITS = {
   maxUrlsPerCall: FETCH_MAX_URLS_PER_CALL,
   maxEmptyBatches: 2,
   maxRejectedBatches: 2,
+  /** Trust questions one run may show a human; later requests are refused in-band. */
+  maxTrustPrompts: 3,
+  /** Trust requests in a row that ask nobody anything; then the trust path closes for the run. */
+  maxTrustSpins: 2,
   maxCharacters: 4000,
 } as const;
 
@@ -27,15 +31,41 @@ export type FetchRejectReason =
   | "bad_address"
   | "denied"
   | "not_allowlisted"
-  | "credential";
+  | "credential"
+  | "trust_unavailable"
+  | "trust_declined"
+  | "trust_write_failed"
+  | "trust_prompt_limit"
+  | "trust_request_invalid";
+
+/** Extra facts a refusal sentence may use, so the model gets a concrete next move. */
+export interface FetchRejectContext {
+  host?: string;
+  /** True when an interactive CLI can ask the user to trust a site this session. */
+  trustAvailable?: boolean;
+  /** True when this host was already asked and refused, its ticket could not be written, or the run's question allowance is gone. */
+  trustRefused?: boolean;
+}
 
 export type FetchTicketSource = FetchTicketKind;
 
 /** The sentence the model reads for a refusal. Each one names the next move. */
-export function fetchRejectMessage(reason: FetchRejectReason): string {
+export function fetchRejectMessage(reason: FetchRejectReason, context: FetchRejectContext = {}): string {
   switch (reason) {
-    case "no_ticket":
-      return "这个网址不在本会话的搜索结果或用户消息里，抓不了。先按标题或站点搜索，或者让用户把链接贴进来；不要换写法重试。";
+    case "no_ticket": {
+      const site = context.host
+        ? "先做站点限定搜索：在 search 的查询里写 `site:" + context.host + " 关键词`，"
+        : "先按标题或站点搜索，";
+      let trust: string;
+      if (context.trustRefused) {
+        trust = "信任这条路已经用完了（这个主机问过了，或者这次提问的额度到顶），别再带 requestTrustFor；让用户把网页正文贴进来，或者换一个站点。";
+      } else if (context.trustAvailable) {
+        trust = "还搜不到的话，带 requestTrustFor: \"" + (context.host ?? "域名") + "\" 再调一次，用户会看清网址后决定信不信任这个网站；";
+      } else {
+        trust = "当前是非交互模式，不能弹确认；让用户把链接贴进对话，";
+      }
+      return "这个网址不在本会话的搜索结果或用户消息里，抓不了。" + site + "搜到了用 m: 句柄读。" + trust + "不要换 URL 写法重试。";
+    }
     case "stale_handle":
       return "这个 m: 句柄对应的搜索结果不在本会话里，抓不了。重新搜一次，拿新的 m: 句柄。";
     case "invalid_handle":
@@ -48,6 +78,17 @@ export function fetchRejectMessage(reason: FetchRejectReason): string {
       return "这个域名不在当前领域白名单里，抓不了。先做 site: 搜索，或者让用户贴链接。";
     case "credential":
       return "这个网址里带着疑似密钥或令牌，不能发给上游。让用户确认链接，不要重试。";
+    case "trust_unavailable":
+      return "这个网址不在本会话的搜索结果或用户消息里，抓不了。当前是非交互模式（headless/MCP），不能弹「信任这个网站」的确认；先做站点限定搜索，还搜不到就让用户把链接贴进对话。";
+    case "trust_declined":
+      return "用户没有同意信任" + (context.host ? " " + context.host : "这个网站") + "，这次先不读它。先用已有材料回答；要读的话让用户把网页正文贴进来。";
+    case "trust_write_failed":
+      return "用户同意了，但" + (context.host ? " " + context.host + " 的" : "这个主机的") +
+        "信任票没写进本会话，别再问了。这次没读页；先用已有材料回答，或者让用户把网页正文贴进来。";
+    case "trust_prompt_limit":
+      return "这次提问的信任确认已经用完了（问够了，或者一直在空问），不再弹确认，换个主机名也一样。先用已有材料回答；要读别的网页，让用户把正文贴进来。";
+    case "trust_request_invalid":
+      return "requestTrustFor 只收一个主机名（比如 example.com），不要带 http://、端口、路径或空格；handles 里只能有同一个主机下的网址，不能有 m: 句柄，也不能有别的网站的网址。";
     default:
       return assertNever(reason);
   }
@@ -271,6 +312,18 @@ export function extractUserUrlTickets(text: string): string[] {
 export function makeRequestUrl(identity: string, scheme: "http" | "https" = "https"): string {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(identity)) return identity;
   return scheme + "://" + identity;
+}
+
+/**
+ * The URL a handle will really request. An explicit https URL keeps its
+ * spelling; an http URL keeps http only when a user ticket recorded that
+ * scheme; anything else is rebuilt on https from the identity.
+ */
+export function requestUrlFor(raw: string, identity: string, hasHttpTicket: boolean): string {
+  const rawUserUrl = raw.trim();
+  if (/^http:\/\//i.test(rawUserUrl) && hasHttpTicket) return rawUserUrl;
+  if (/^https:\/\//i.test(rawUserUrl)) return rawUserUrl;
+  return makeRequestUrl(identity, "https");
 }
 
 /** The canonical search-result handle. */

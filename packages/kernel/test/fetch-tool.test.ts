@@ -85,13 +85,21 @@ async function main() {
     // that fact for the tool's narrower port.
     const fetchStore = store as unknown as FetchStorePort;
 
-    const makeTool = (provider: FetchProvider, allow: string[] = [], deny: string[] = [], ledger?: BudgetLedgerPort) =>
+    const makeTool = (
+      provider: FetchProvider,
+      allow: string[] = [],
+      deny: string[] = [],
+      ledger?: BudgetLedgerPort,
+      confirmTrust?: (request: { domain: string; urls: readonly string[] }, signal?: AbortSignal) => Promise<boolean>,
+      storePort: FetchStorePort = fetchStore,
+    ) =>
       createFetchTool({
-        store: fetchStore,
+        store: storePort,
         sessionId: session.id,
         providers: [provider],
         policy: () => ({ allow, deny }),
         ...(ledger ? { ledger, budgetId: session.id } : {}),
+        ...(confirmTrust ? { confirmTrust } : {}),
       });
 
     const tickets = async (kind: "search" | "user", values: string[]) =>
@@ -598,6 +606,319 @@ async function main() {
       });
       assert(rawText(tooMany).includes("1–5 个"), "more than five handles is rejected");
       assert(provider.calls.length === 0, "invalid parameters never reach upstream");
+    }
+
+    // ---- 9. site-limited guidance + session TOFU ---------------------------
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls, "DOC BODY"));
+      const plain = makeTool(provider);
+      const missing = await plain.execute("t25a", { handles: ["https://docs.headless.example/guide"] });
+      assert(rawText(missing).includes("site:docs.headless.example"),
+        "a no-ticket refusal teaches a site: query with the host");
+      assert(rawText(missing).includes("非交互模式"),
+        "a no-ticket refusal without a prompt says it cannot ask");
+      assert(provider.calls.length === 0, "a no-ticket refusal never reaches a provider");
+    }
+
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls, "DOC BODY"));
+      const asked: Array<{ domain: string; urls: readonly string[] }> = [];
+      const tool = makeTool(provider, [], [], undefined, async (request) => {
+        asked.push(request);
+        return true;
+      });
+      const url = "https://docs.tofu.example/guide";
+      const grant = await tool.execute("t25b", { handles: [url], requestTrustFor: "docs.tofu.example" });
+      assert(rawText(grant).includes("已信任"), "the interactive prompt grants the exact host");
+      assert(asked.length === 1 && asked[0]!.domain === "docs.tofu.example",
+        "the user sees the normalized host");
+      assert(asked[0]!.urls[0] === url, "the user sees the full URL before consenting");
+      assert(provider.calls.length === 0, "the trust grant reads no page");
+      assert(store.hasFetchTicket(session.id, "tofu", "docs.tofu.example"),
+        "the grant writes one session tofu ticket");
+
+      const read = envelope(await tool.execute("t25c", { handles: [url] }));
+      assert(provider.calls.length === 1 && read.pages.length === 1,
+        "the retry reads the same URL through the session ticket");
+      assert(asked.length === 1, "the retry does not ask again");
+
+      const sibling = await tool.execute("t25d", {
+        handles: ["https://api.tofu.example/other"],
+      });
+      assert(rawText(sibling).includes("不在本会话的搜索结果或用户消息里") && asked.length === 1,
+        "a sibling subdomain is a different host and is not covered by the ticket");
+      const siblingGrant = await tool.execute("t25d2", {
+        handles: ["https://api.tofu.example/other"], requestTrustFor: "api.tofu.example",
+      });
+      assert(rawText(siblingGrant).includes("已信任") && asked.length === 2,
+        "the sibling host needs its own prompt");
+      const siblingRead = envelope(await tool.execute("t25d3", {
+        handles: ["https://api.tofu.example/other"],
+      }));
+      assert(siblingRead.pages.length === 1, "the sibling ticket reads the sibling host");
+
+      const repeat = envelope(await tool.execute("t25e", {
+        handles: [url], requestTrustFor: "docs.tofu.example",
+      }));
+      assert(repeat.pages.length === 1 && asked.length === 2,
+        "a trust parameter on an already-trusted host falls through to reading");
+    }
+
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls, "WWW BODY"));
+      let asked = 0;
+      let shown: readonly string[] = [];
+      const tool = makeTool(provider, [], [], undefined, async (request) => {
+        asked++;
+        shown = request.urls;
+        return true;
+      });
+      const bare = "www.wwwtofu.example/guide";
+      const grant = await tool.execute("t25n", { handles: [bare], requestTrustFor: "wwwtofu.example" });
+      assert(rawText(grant).includes("已信任") && asked === 1 && shown[0] === "https://wwwtofu.example/guide",
+        "a bare www handle is trusted under the host the read will use");
+      const read = envelope(await tool.execute("t25o", { handles: [bare] }));
+      assert(read.pages.length === 1 && provider.calls.length === 1,
+        "the retry reads the same effective host");
+    }
+
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls, "HTTP BODY"));
+      let asked = 0;
+      let shown: readonly string[] = [];
+      const tool = makeTool(provider, [], [], undefined, async (request) => {
+        asked++;
+        shown = request.urls;
+        return true;
+      });
+      const handle = "http://www.http-tofu.example/guide";
+      const wrong = await tool.execute("t25p0", {
+        handles: [handle], requestTrustFor: "www.http-tofu.example",
+      });
+      assert(rawText(wrong).includes("只能有同一个主机下的网址") && asked === 0,
+        "an http handle without an http ticket is trusted under the effective https host");
+      const grant = await tool.execute("t25p1", { handles: [handle], requestTrustFor: "http-tofu.example" });
+      assert(rawText(grant).includes("已信任") && asked === 1 && shown[0] === "https://http-tofu.example/guide",
+        "the prompt shows the https URL the read will use");
+      const read = envelope(await tool.execute("t25p2", { handles: [handle] }));
+      assert(read.pages.length === 1 && provider.calls.length === 1,
+        "the retry reads the effective https URL through the ticket");
+    }
+
+    {
+      // Each malformed request is its own run: one costs a trust spin, so two in
+      // the same run would close the path before the next case could be checked.
+      const badTrust = async (id: string, params: Record<string, unknown>, expected: string) => {
+        const provider = new FakeProvider((urls) => pageEnvelope(urls));
+        let asked = 0;
+        const tool = makeTool(provider, [], [], undefined, async () => { asked++; return true; });
+        const result = await tool.execute(id, params);
+        assert(rawText(result).includes(expected), expected);
+        assert(asked === 0 && provider.calls.length === 0, "a parameter mistake neither prompts nor reads");
+      };
+      await badTrust("t25f", {
+        handles: ["https://other.example/page"], requestTrustFor: "tofu2.example",
+      }, "只能有同一个主机下的网址");
+      await badTrust("t25f2", {
+        handles: ["https://docs.tofu2.example/page"], requestTrustFor: "tofu2.example",
+      }, "只能有同一个主机下的网址");
+      await badTrust("t25f3", {
+        handles: ["https://docs.example.co.uk/page"], requestTrustFor: "co.uk",
+      }, "只能有同一个主机下的网址");
+      await badTrust("t25g", {
+        handles: ["https://docs.tofu2.example/page"], requestTrustFor: "https://tofu2.example",
+      }, "只收一个主机名");
+      await badTrust("t25h", {
+        handles: ["m:1"], requestTrustFor: "tofu2.example",
+      }, "不能有 m: 句柄");
+
+      // Two malformed requests in one run close the trust path: retrying a wrong
+      // host name forever must reach a stop somewhere.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return true; });
+      await tool.execute("t25h2", { handles: ["m:1"], requestTrustFor: "tofu2.example" });
+      const secondBad = await tool.execute("t25h3", { handles: ["https://other.example/p"], requestTrustFor: "tofu2.example" });
+      assert(rawText(secondBad).includes("不再受理 requestTrustFor"),
+        "a second malformed trust request closes the trust path");
+      const ignored = await tool.execute("t25h4", { handles: ["https://docs.tofu2.example/page"], requestTrustFor: "tofu2.example" });
+      assert(asked === 0 && rawText(ignored).includes("别再带 requestTrustFor"),
+        "once closed, a well-formed request is ignored and the handle is judged normally");
+    }
+
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const confirm = async () => { asked++; return true; };
+      const denyTool = makeTool(provider, [], ["docs.deny.example"], undefined, confirm);
+      const denied = await denyTool.execute("t25i", {
+        handles: ["https://docs.deny.example/page"], requestTrustFor: "docs.deny.example",
+      });
+      assert(rawText(denied).includes("禁止列表"), "a deny-listed domain cannot be trusted");
+      const allowTool = makeTool(provider, ["allowed.example"], [], undefined, confirm);
+      const notAllowed = await allowTool.execute("t25j", {
+        handles: ["https://docs.gated.example/page"], requestTrustFor: "docs.gated.example",
+      });
+      assert(rawText(notAllowed).includes("不在当前领域白名单"), "an allowlist is a hard cap for TOFU too");
+      const privateTool = makeTool(provider, [], [], undefined, confirm);
+      const privateUrl = await privateTool.execute("t25k", {
+        handles: ["http://127.0.0.1/private"], requestTrustFor: "127.0.0.1",
+      });
+      assert(rawText(privateUrl).includes("只收一个主机名") || rawText(privateUrl).includes("这个地址不能抓"),
+        "a private host never becomes a trust question");
+      assert(asked === 0 && provider.calls.length === 0, "policy refusals never prompt or read");
+      assert(!store.hasFetchTicket(session.id, "tofu", "docs.deny.example"),
+        "a refused domain writes no ticket");
+    }
+
+    {
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
+      const first = await tool.execute("t25l", {
+        handles: ["https://docs.no.example/page"], requestTrustFor: "docs.no.example",
+      });
+      assert(rawText(first).includes("没有同意"), "a declined prompt refuses in-band");
+      const second = await tool.execute("t25m", {
+        handles: ["https://docs.no.example/other"], requestTrustFor: "docs.no.example",
+      });
+      assert(rawText(second).includes("没有同意") && asked === 1,
+        "a declined host is not asked twice in the same run");
+      assert(!rawText(second).includes("这轮抓页已经停了"),
+        "one repeat of a declined host is not yet the rejected-batch stop");
+      assert(!store.hasFetchTicket(session.id, "tofu", "docs.no.example"), "a decline writes no ticket");
+
+      // A decline must not block the rest of the run: a URL the user pasted is
+      // still readable, and a different host can still be asked about.
+      const pasted = envelope(await tool.execute("t25m2", { handles: ["example.com/user-pasted"] }));
+      assert(pasted.pages.length === 1 && !rawText(first).includes("这轮抓页已经停了"),
+        "a trust refusal does not stop the run");
+      const noTicket = await tool.execute("t25m3", { handles: ["https://docs.other.example/page"] });
+      assert(rawText(noTicket).includes("还搜不到的话") && !rawText(noTicket).includes("别再带 requestTrustFor"),
+        "a host nobody answered still invites a trust request");
+    }
+
+    {
+      // The run must count a real policy refusal, but not the human's answer.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
+      await tool.execute("t25r1", { handles: ["https://docs.deny2.example/a"], requestTrustFor: "docs.deny2.example" });
+      const again = await tool.execute("t25r2", { handles: ["https://docs.deny2.example/b"] });
+      assert(rawText(again).includes("信任这条路已经用完了") && !rawText(again).includes("还搜不到的话"),
+        "an answered host is not invited to ask again");
+      assert(asked === 1, "an answered host prompts exactly once");
+    }
+
+    {
+      // A store that cannot write a ticket must not turn one consent into a
+      // re-prompt loop.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const failingStore: FetchStorePort = {
+        saveFetchTickets: async () => { throw new Error("disk full"); },
+        savePage: (sessionId, input) => store.savePage(sessionId, input),
+        hasFetchTicket: (sessionId, kind, value) => store.hasFetchTicket(sessionId, kind, value),
+        searchRowForFetch: (sessionId, rowId) => store.searchRowForFetch(sessionId, rowId),
+      };
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return true; }, failingStore);
+      const handle = "https://docs.broke.example/page";
+      const first = await tool.execute("t25q1", { handles: [handle], requestTrustFor: "docs.broke.example" });
+      assert(rawText(first).includes("别再问了") && asked === 1,
+        "a failed ticket write says the ticket is missing and not to ask again");
+      const second = await tool.execute("t25q2", { handles: [handle], requestTrustFor: "docs.broke.example" });
+      assert(rawText(second).includes("别再问了") && asked === 1,
+        "a retry after a failed write does not prompt the user again");
+      assert(provider.calls.length === 0, "neither call reads a page");
+    }
+
+    {
+      // Ctrl-C must end the prompt wait instead of leaving it stuck.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      const controller = new AbortController();
+      let received: AbortSignal | undefined;
+      const tool = makeTool(provider, [], [], undefined, (_request, signal) => {
+        received = signal;
+        return new Promise<boolean>((resolve) => {
+          signal?.addEventListener("abort", () => resolve(false), { once: true });
+        });
+      });
+      const pending = tool.execute("t25s1", { handles: ["https://docs.abort.example/a"], requestTrustFor: "docs.abort.example" }, controller.signal);
+      assert(received !== undefined && received === controller.signal, "the prompt receives the caller's abort signal");
+      controller.abort();
+      const result = await pending;
+      assert(rawText(result).includes("没有同意"), "an aborted prompt counts as a decline");
+      assert(provider.calls.length === 0, "an aborted prompt reads no page");
+    }
+
+    {
+      // One run may only show so many trust questions: a model steered by page
+      // text must not turn the user into a y/N machine.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
+      for (const host of ["one", "two", "three"]) {
+        await tool.execute("t25t-" + host, {
+          handles: ["https://docs." + host + ".example/a"], requestTrustFor: "docs." + host + ".example",
+        });
+      }
+      assert(asked === 3, "the run shows the allowed number of trust questions");
+      const overLimit = await tool.execute("t25t-over", {
+        handles: ["https://docs.four.example/a"], requestTrustFor: "docs.four.example",
+      });
+      assert(rawText(overLimit).includes("不再弹确认") && asked === 3,
+        "a trust question past the allowance is refused without prompting");
+      assert(!store.hasFetchTicket(session.id, "tofu", "docs.four.example"), "the refusal writes no ticket");
+
+      // Not closing the trust path on one refusal keeps a real page readable.
+      await store.saveFetchTickets(session.id, "user", ["https://readable.example/page"]);
+      const readable = await tool.execute("t25t-read", { handles: ["https://readable.example/page"] });
+      assert(envelope(readable).pages.length === 1,
+        "a ticketed URL is still readable after the trust allowance ran out");
+      const plain = await tool.execute("t25t-plain", { handles: ["https://docs.five.example/a"] });
+      assert(rawText(plain).includes("别再带 requestTrustFor"),
+        "a no-ticket refusal after the allowance stops suggesting a trust request");
+
+      // Asking for trust over and over asks nobody anything, so it closes the
+      // trust path alone — page reading keeps its own budget.
+      const spin = await tool.execute("t25t-spin", {
+        handles: ["https://docs.six.example/a"], requestTrustFor: "docs.six.example",
+      });
+      assert(!rawText(spin).includes("整批网址都没被放行") && asked === 3,
+        "an over-limit trust request is refused without touching the page budget");
+      assert(rawText(spin).includes("不再受理 requestTrustFor"),
+        "the second refused trust request closes the trust path for the run");
+
+      // Closed means the parameter is ignored, not that the whole call dies: a
+      // handle this session can already read must still read.
+      const afterCloseRead = await tool.execute("t25t-after-read", {
+        handles: ["https://readable.example/page"], requestTrustFor: "docs.seven.example",
+      });
+      assert(envelope(afterCloseRead).pages.length === 1,
+        "a closed trust path does not block a ticketed handle in the same call");
+      const afterClose = await tool.execute("t25t-after", {
+        handles: ["https://docs.seven.example/a"], requestTrustFor: "docs.seven.example",
+      });
+      assert(rawText(afterClose).includes("别再带 requestTrustFor") && asked === 3,
+        "a closed trust path falls back to the ordinary no-ticket refusal");
+    }
+
+    {
+      // A host the user already answered must not become a free infinite retry.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
+      await tool.execute("t25u1", { handles: ["https://docs.settled.example/a"], requestTrustFor: "docs.settled.example" });
+      const repeat1 = await tool.execute("t25u2", { handles: ["https://docs.settled.example/b"], requestTrustFor: "docs.settled.example" });
+      assert(rawText(repeat1).includes("没有同意") && !rawText(repeat1).includes("不再受理 requestTrustFor"),
+        "the first repeat of a declined host is refused in-band");
+      const repeat2 = await tool.execute("t25u2b", { handles: ["https://docs.settled.example/b2"], requestTrustFor: "docs.settled.example" });
+      assert(rawText(repeat2).includes("不再受理 requestTrustFor"),
+        "asking a settled host over and over closes the trust path");
+      const repeat3 = await tool.execute("t25u3", { handles: ["https://docs.settled.example/c"], requestTrustFor: "docs.settled.example" });
+      assert(rawText(repeat3).includes("别再带 requestTrustFor"),
+        "after that the parameter is ignored and the handle is refused as a plain no-ticket read");
+      assert(asked === 1, "a settled host is never asked twice");
     }
 
     store.close();

@@ -85,6 +85,32 @@ export function parseWebUrl(raw: string): URL | null {
 }
 
 /**
+ * A trust request names a bare host, never a URL: no scheme, path, port,
+ * userinfo, query, fragment, whitespace or IP literal. Returns the normalized
+ * lowercase host without a trailing dot, or undefined when the value is not a
+ * bare domain.
+ */
+export function normalizeTrustDomain(raw: string): string | undefined {
+  if (!raw || /\s/.test(raw)) return undefined;
+  // A colon would mean a scheme, a port or an IPv6 literal; none of those is a
+  // domain the user can recognize and approve.
+  if (/[/?#@\\]/.test(raw) || raw.includes(":")) return undefined;
+  const host = raw.toLowerCase().replace(/\.$/, "");
+  if (!host.includes(".") || host.length > 253 || host.startsWith(".") || host.includes("..")) return undefined;
+  if (!/^[a-z0-9.-]+$/.test(host)) return undefined;
+  const labels = host.split(".");
+  if (labels.some((label) => !label || label.length > 63 || label.startsWith("-") || label.endsWith("-"))) return undefined;
+  // A dotted decimal would be an IP literal, not a domain.
+  if (!/^[a-z]{2,63}$/.test(labels[labels.length - 1]!)) return undefined;
+  const parsed = parseWebUrl("https://" + host + "/");
+  if (!parsed) return undefined;
+  // The rest of the URL is already known from the checks above; this one guards
+  // against the parser rewriting the host (a relaxed rule above would need more).
+  if (parsed.hostname.replace(/\.$/, "") !== host) return undefined;
+  return host;
+}
+
+/**
  * The identity of a web URL: scheme-insensitive, no `www.`, no trailing host
  * dot, no standard web port, no tracking parameters, no fragment.
  *

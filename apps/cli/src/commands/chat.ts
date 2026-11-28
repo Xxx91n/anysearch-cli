@@ -8,7 +8,7 @@
 // finished, so the paths named here are the defaults, not the only answer.
 // baseUrl shape: chat/responses include the version path (..../v1); messages excludes it (anthropic SDK appends /v1/messages).
 
-import { PiAgentRuntime, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, chatAttemptBusyText, isDomainConstraintError, fallbackAgentDomain } from "@anysearch-cli/kernel";
+import { PiAgentRuntime, askFetchTrust, createLlmSession, parseContextWindow, piSessionOptions, formatSummaryRebuildLine, resolvePiSessionDir, runChatAttempt, ChatAttemptBusyError, chatAttemptBusyText, isDomainConstraintError, fallbackAgentDomain } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import type { DomainConfigPort, CompositionResult } from "@anysearch-cli/kernel";
 import { createPersistentEngine, domainSearchDirs, searchCredentialSeam } from "../db";
@@ -267,6 +267,7 @@ export async function runChat(argv: string[]): Promise<number> {
       };
       // Construct PiAgentRuntime and run.
       // models undefined fix — session.models is now properly initialized.
+      const interactive = !printOnly && !process.env.ANS_NO_INTERACTIVE;
       const runtime = new PiAgentRuntime({
         signal: cancellation.signal,
         retriever,
@@ -284,7 +285,10 @@ export async function runChat(argv: string[]): Promise<number> {
         // reloader can still resolve inherited base TOMLs.
         domainsDirs: engine.domainsDirs,
         // CLI is the place that decides TTY; kernel decides isInteractive itself.
-        interactive: !printOnly && !process.env.ANS_NO_INTERACTIVE,
+        interactive,
+        // Only an interactive CLI can really ask a human; the prompt re-checks
+        // the TTY, so a redirected stdin still refuses.
+        ...(interactive ? { confirmFetchTrust: askFetchTrust } : {}),
         model: session.model,
         // #113: real window for the L0 watermark; undefined for an unconfigured
         // custom endpoint -> absolute 128000 fallback.

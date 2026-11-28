@@ -1,3 +1,22 @@
+## Unreleased — #612: 官方文档搜不到时，先 site: 搜索，再问一次信不信任这个网站
+
+一句话说清：**以前模型只能读本会话搜索结果和用户贴过的网址，官方文档的页面常常搜不到、也读不了。现在拒绝文案会先让模型用 `site:` 搜索；还搜不到时，交互式 CLI 可以带 `requestTrustFor` 问用户一次，用户看清完整网址并同意后，本会话就信任这个主机名，模型重试即可读，同一个主机的页面不再重复问；子域是另一个主机，要单独问。信任票不读页、不占页数/网址数、不写 TOML、不跨会话；headless/MCP 直接拒，让用户贴链接。**
+
+### Changed
+
+- **拒绝文案**（`packages/kernel/src/fetch-admission.ts`）：没票时明确教 `site:<域名> 关键词`；交互式环境下再提 `requestTrustFor`，headless/MCP 说明不能弹确认、让用户贴链接。新增 `trust_unavailable` / `trust_declined` / `trust_write_failed` / `trust_prompt_limit` / `trust_request_invalid` 五种理由：票写不进库时文案直接说别再问；一次提问最多问 `maxTrustPrompts`（3）次信任确认，超过就不再问，`no_ticket` 也跟着不再劝重试。信任另有一条自己的线：连续 `maxTrustSpins`（2）次问出去却谁都没问（额度用完、这个主机答过了、headless 问不了、`requestTrustFor` 写错或主机对不上），这一轮就不再受理 `requestTrustFor`——这个参数被忽略，同一次调用的 handles 照常走普通放行，已经能读的网址照读。读页的软停只数「一批没放行」，不被信任空转牵连；但信任路上被地址门、deny、白名单、凭据门拒的主机照常计入，那些门本来就在判断这个主机。用户刚答完的那一次拒绝仍不计入任何软停。
+- **信任票**（`packages/kernel/src/fetch-tool.ts`、`packages/retriever/src/url-identity.ts`）：`fetch` 多一个可选 `requestTrustFor`，只收裸主机名（不带协议、端口、路径、空格、IP）。它先按地址门和域名门校验所有 handles 与主机名，交互式下弹一次确认，用户同意后写本会话 `tofu` 票；这次调用不读页、不占页数和网址数，模型重试时按主机名精确匹配放行。同一次运行里，用户答过的主机（拒绝或票写不进库）不会被再问一次；拒绝文案也不再劝模型再带 `requestTrustFor`。用户答完那一次拒绝不计入整批被拒软停——否则「没票 → 问一次 → 用户说不」这条正常路会直接把整轮抓页停掉，连手里能读的句柄都一起停；同一主机答完再问就改记信任空转，连着两次就关掉信任这条路，而不是停读页。真正的地址门/域名门/凭据门拒绝照旧累计。
+- **交互接线**（`packages/kernel/src/pi-runtime.ts`、`apps/cli/src/commands/chat.ts`）：runtime 新增 `confirmFetchTrust`，只有 `interactive` 且 stdin 真是 TTY 才交给 fetch；CLI 只在交互模式传 `askFetchTrust`，提示逐条列出完整网址和域名，默认否。MCP 不传，因此不会弹确认。
+- **票的种类**（`packages/store/src/schema.sql`、`packages/store/src/session-store.ts`）：`fetch_tickets.kind` 增加 `tofu`；旧库启动时重建一次表（CHECK 不能原地改），保留原有行和级联删除。重建前会先按 #310 拍快照：布局探测把旧 CHECK 也算成「不在当前布局」，已经拍过快照的库沿用旧那份，重建本身在一个事务里完成。这个判断和重建共用 `fetchTicketsSqlIsCurrent`，不会一处认得出、一处认不出。
+
+### Tests
+
+- `packages/retriever/test/url-identity.test.ts`：裸主机名归一化（大小写/尾点/协议/端口/路径/IP/下划线）。
+- `packages/kernel/test/fetch-admission.test.ts`：交互与 headless 的拒绝文案。
+- `packages/kernel/test/fetch-tool.test.ts`：交互确认→写票→重试读页；同一个主机不再问，子域要单独信任；答过的拒绝/写票失败不重复问、也不计入软停，后面别的网址照常读；没答过的主机仍会提 `requestTrustFor`；一次提问问到次数上限后不再弹；中止的确认当拒绝；deny/allowlist/私网不给信任；`requestTrustFor` 只收主机名、handle 必须在同一主机；信任调用不发上游。
+- `packages/kernel/test/fetch-runtime.test.ts`：用户看到的提示逐条列出网址和域名、去掉控制字符；非交互 runtime 即使传了回调也不接线，模型读到非交互拒绝，库里没有票。
+- `packages/store/test/fetch-tickets.test.ts`：tofu 票按会话隔离、归一化、随会话级联；旧 CHECK 的库重建后保留旧票并接受 tofu。
+
 ## Unreleased — #611: 展开整节：recall_memory 的 expand
 
 一句话说清：**`recall_memory` 多了 `expand`：拿召回命中的正 rowid 加节 id，就能把那一节正文读回来。默认整节；一节超过 8000 字时在空白处切开，给 `hasMore` / `nextOffset` 续读；正文重过一遍净化，标 `untrusted_web`；本地读库，不记 `calls`。**
