@@ -240,8 +240,13 @@ async function realValidatorProblems(entry) {
   try {
     ({ validateDocsGoldenEntry } = await import(new URL("../packages/store/src/eval/docs-golden.ts", import.meta.url)));
   } catch (err) {
-    // Older node cannot strip types; the local checks above still stand.
-    if (err?.code === "ERR_UNKNOWN_FILE_EXTENSION" || err?.code === "ERR_MODULE_NOT_FOUND") return [];
+    // Older node cannot strip types (engines floor is 22.0.0; the default
+    // arrives in 22.18). Say so out loud: a silent skip reads as "the
+    // validator agreed", which is the one thing not to believe at write time.
+    if (err?.code === "ERR_UNKNOWN_FILE_EXTENSION" || err?.code === "ERR_MODULE_NOT_FOUND") {
+      console.error("badcase-backfill: skipped the store validator — node " + process.version + " cannot load the TS module; only this script's own checks ran");
+      return [];
+    }
     throw err;
   }
   return validateDocsGoldenEntry(entry);

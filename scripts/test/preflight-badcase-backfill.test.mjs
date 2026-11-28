@@ -112,8 +112,8 @@ function tree(t, options = {}) {
   return dir;
 }
 
-function run(dir, args) {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args], {
+function run(dir, args, nodeArgs = []) {
+  const r = spawnSync(process.execPath, [...nodeArgs, SCRIPT, ...args], {
     cwd: REPO,
     env: { ...process.env, ANS_BACKFILL_ROOT: dir },
     encoding: "utf8",
@@ -487,6 +487,22 @@ test("a mustHitPaths-only answer row still auto-scopes live", (t) => {
   });
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
+  assert.equal(readJson(dir, "eval-golden.json").scopes["docs-g0002"], "live");
+});
+
+test("node too old to strip types says the store validator was skipped", (t) => {
+  const probe = spawnSync(process.execPath, ["--no-experimental-strip-types", "-e", "0"], { encoding: "utf8" });
+  if (probe.status !== 0) {
+    t.skip("this node predates --no-experimental-strip-types");
+    return;
+  }
+  const dir = tree(t);
+  const r = run(dir, ["--id", "docs-bc0001", "--new"], ["--no-experimental-strip-types"]);
+  // The write still goes through on this script's own checks; the point is that
+  // the skip is announced instead of reading as a pass.
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /badcase-backfill: skipped the store validator/);
+  assert.match(r.stderr, /cannot load the TS module/);
   assert.equal(readJson(dir, "eval-golden.json").scopes["docs-g0002"], "live");
 });
 
