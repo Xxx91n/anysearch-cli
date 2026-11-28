@@ -103,6 +103,10 @@ function help(): string {
     "",
     "Without an LLM configured the run reports llmUnavailable and writes nothing (exit 1).",
     "",
+    "Per-material detail prints only what needs attention (a material got no room, was",
+    "truncated, or was planned by section). --verbose prints every material and every",
+    "quote block, which is what a full-archive run should not do by default.",
+    "",
   ].join("\n");
 }
 
@@ -128,7 +132,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // THIS command's own options. A session id may legitimately start with `--`
   // (the scope rule accepts any visible ASCII), and the old prefix test made the
   // CLI refuse handles the MCP entry accepts.
-  const KNOWN_FLAGS = new Set(["--session", "--memory", "--limit", "--dry-run", "--apply", "--single-evidence"]);
+  const KNOWN_FLAGS = new Set(["--session", "--memory", "--limit", "--dry-run", "--apply", "--single-evidence", "--verbose"]);
   const sessionIds: string[] = [];
   const memoryIds: number[] = [];
   for (let i = 0; i < args.length; i++) {
@@ -155,7 +159,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       i++;
       continue;
     }
-    if (a !== "--dry-run" && a !== "--apply" && a !== "--single-evidence") {
+    if (a !== "--dry-run" && a !== "--apply" && a !== "--single-evidence" && a !== "--verbose") {
       process.stderr.write("ans consolidate: unknown flag " + a + "\n");
       return 2;
     }
@@ -163,6 +167,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
 
   const dryRun = args.includes("--dry-run");
   const allowSingleEvidence = args.includes("--single-evidence");
+  const verbose = args.includes("--verbose");
   const li = args.indexOf("--limit");
   const limit = li >= 0 ? Number(args[li + 1]) : undefined;
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
@@ -349,6 +354,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
         : "") +
       (r.quotesMissing > 0 ? ", quotesMissing " + r.quotesMissing : "") +
       (r.quotesMalformed > 0 ? ", quotesMalformed " + r.quotesMalformed : "") +
+      (r.noConclusion > 0 ? ", noConclusion " + r.noConclusion : "") +
       // #277: how the cross-script pass went. Printed only when it did
       // something, so a run over same-language material reads exactly as before.
       (r.crossScriptDeclared > 0 ? ", crossScriptDeclared " + r.crossScriptDeclared : "") +
@@ -358,23 +364,35 @@ export async function runConsolidate(argv: string[]): Promise<number> {
 
   // The scope that was really used, not the one the caller thinks it passed.
   process.stdout.write("scope: " + formatConsolidateScope(r.scope) + "\n");
-  // What each material actually contributed. fedChars is the code-point
-  // count placed in the prompt, originalChars the source size, estimatedTokens
-  // the language-aware estimate (not a tokenizer). A material with fedChars 0
-  // did not fit the 24k budget and is reported instead of silently dropped.
-  for (const m of r.materialsFed) {
-    process.stdout.write(formatConsolidateMaterialFeed(m) + "\n");
-  }
-  // The verbatim quotes the summarizer selected. They are not persisted
-  // in semantic memory; the report is the only place they survive.
-  for (const q of r.quotes) {
-    process.stdout.write(formatConsolidateQuotes(q) + "\n");
-  }
+  // Dry-run says so before the detail, not after a thousand material lines.
   if (dryRun) {
     process.stdout.write(
       "dry-run: nothing saved. The counts describe the state read now; a concurrent write\n" +
         "before an apply can make the apply differ.\n",
     );
+  }
+  // What each material actually contributed. fedChars is the code-point count
+  // placed in the prompt, originalChars the source size, estimatedTokens the
+  // language-aware estimate (not a tokenizer). An archive run can feed a
+  // thousand materials, so by default only the ones that need attention print:
+  // fed nothing, cut short, or planned by section. --verbose prints them all.
+  const notable = r.materialsFed.filter((m) => m.fedChars === 0 || m.truncated || m.overBudget);
+  for (const m of verbose ? r.materialsFed : notable) {
+    process.stdout.write(formatConsolidateMaterialFeed(m) + "\n");
+  }
+  if (!verbose && notable.length < r.materialsFed.length) {
+    process.stdout.write(
+      "materials: " + r.materialsFed.length + " fed, " + notable.length +
+        " shown (only those that need attention; --verbose lists every material and quote)\n",
+    );
+  }
+  // The verbatim quotes the summarizer selected. They are not persisted in
+  // semantic memory; the report is the only place they survive, so they print
+  // only when the caller asked for the full report.
+  if (verbose) {
+    for (const q of r.quotes) {
+      process.stdout.write(formatConsolidateQuotes(q) + "\n");
+    }
   }
   if (r.semanticIds.length > 0) {
     process.stdout.write("semantic ids: " + r.semanticIds.join(", ") + "\n");
@@ -527,5 +545,8 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     );
     return 1;
   }
-  return r.llmUnavailable > 0 && r.add === 0 && r.update === 0 ? 1 : 0;
+  // A cluster that answered without a conclusion wrote nothing, the same as a
+  // missing model. It is counted separately so the operator looks in the right
+  // place, but the exit code still says "this run finished nothing".
+  return (r.llmUnavailable > 0 || r.noConclusion > 0) && r.add === 0 && r.update === 0 ? 1 : 0;
 }

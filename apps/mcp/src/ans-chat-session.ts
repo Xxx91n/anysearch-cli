@@ -528,11 +528,14 @@ export function buildAnsChatConsolidateResult(
         " cluster(s) over budget (planned by section; details in materialsFed)"
       : "") +
     ((report.quotesMissing ?? 0) > 0
-      ? "\nquotes missing: " + report.quotesMissing +
-        " cluster(s) had no usable <quotes> (" +
-        (report.quotesMalformed ?? 0) + " reply/replies came back in the wrong shape, so the whole text was kept as the conclusion; " +
-        ((report.quotesMissing - (report.quotesMalformed ?? 0))) + " had a readable conclusion but an empty <quotes>);" +
-        " check the quote report before trusting a correction from those clusters"
+      ? "\nquotes missing: " + report.quotesMissing + " cluster(s)\n" +
+        "  " + (report.quotesMalformed ?? 0) + ": wrong shape, so the reply's own prose (not the quoted page) was kept as the conclusion\n" +
+        "  " + (report.quotesMissing - (report.quotesMalformed ?? 0)) + ": shaped reply, empty <quotes>\n" +
+        "  treat corrections from these clusters as unverified"
+      : "") +
+    ((report.noConclusion ?? 0) > 0
+      ? "\nno conclusion: " + report.noConclusion +
+        " cluster(s) answered without one (empty <conclusion>, or only a quote block) — nothing was written"
       : "");
   // #261 (D6): one readable line per refused correction, so a content-only
   // proxy still sees the old knowledge, the candidate, the sources, the
@@ -645,6 +648,7 @@ export function buildAnsChatConsolidateResult(
         clustersOverBudget: report.clustersOverBudget,
         quotesMissing: report.quotesMissing,
         quotesMalformed: report.quotesMalformed ?? 0,
+        noConclusion: report.noConclusion ?? 0,
         quotesReported: (report.quotes ?? []).length,
         materialsReported: (report.materialsFed ?? []).length,
       },

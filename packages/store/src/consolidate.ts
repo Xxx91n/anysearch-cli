@@ -11,6 +11,7 @@ import { embedText, cosineSimilarity } from "./embedding-arm.js";
 import { classifyTier, TAU_TIER } from "./time-decay.js";
 import { suspendSummariesForCorrection, liveHeadOf } from "./summary-sources.js";
 import { sectionsForPages, type MemorySection } from "./retrieval-chunks.js";
+import { hasPageBody, HAS_PAGE_BODY_EXPR } from "./retrieval-content.js";
 import { applyStatedPairAsAlias, crossScriptPairsInText, loadLiveEntities, queueProposedAlias, resolveQueryObject, type AliasJudgeFn, type AliasJudgeVerdict } from "./entity-alias.js";
 import { parseSqliteUtc } from "./sqlite-time.js";
 
@@ -73,6 +74,15 @@ interface EpisodeRow {
   // history, not a live material for the summary feed.
   valid_until: string | null;
 }
+
+/** A scanned cluster row: body columns come from the query, `content` is loaded later. */
+type ClusterScanRow = Omit<EpisodeRow, "content" | "hasBody"> & { hasBody: number };
+
+/** Columns the archive scan reads. No body, no `valid_until` — do not widen this. */
+type ArchiveScanRow = Pick<
+  EpisodeRow,
+  "id" | "entity" | "title" | "snippet" | "url" | "created_at" | "last_accessed" | "access_count"
+>;
 
 interface SemanticRow {
   id: number;
@@ -195,20 +205,29 @@ export interface ConsolidateSummaryText {
   /** No usable quotes at all: either the shape was wrong, or <quotes> was empty. */
   quotesMissing: boolean;
   /**
-   * The reply was not shaped as <quotes> + <conclusion>. The reply's text is
-   * still kept as the conclusion, with the tag names stripped, because a model
-   * that ignored the format may still have stated a fact; what must not happen
-   * is a stored conclusion that starts with `<quotes>`. False when only the
-   * `<quotes>` block came back empty.
+   * Nothing worth persisting: the reply stated no conclusion, so the caller must
+   * drop the cluster instead of writing the quoted page text as the distilled
+   * fact.
+   */
+  conclusionMissing: boolean;
+  /**
+   * The reply was not shaped as <quotes> + <conclusion>. Its own prose is still
+   * kept as the conclusion, with the tag names stripped and the quote block
+   * dropped, because a model that ignored the format may still have stated a
+   * fact; what must not happen is a stored conclusion that carries `<quotes>` or
+   * repeats the quoted page. False when only the `<quotes>` block came back
+   * empty.
    */
   quotesMalformed: boolean;
 }
 
 /** Remove the reply's markup so a stored conclusion never carries the tags. */
 function stripSummaryTags(text: string): string {
+  // A closing tag ends a block, so it becomes a line break; an opening tag adds
+  // nothing. Without that, two blocks written on one line would run together.
   const withoutTags = text
-    .replace(/<\/?quotes>/g, "")
-    .replace(/<\/?conclusion>/g, "");
+    .replace(/<\/(?:quotes|conclusion)>/g, "\n")
+    .replace(/<(?:quotes|conclusion)>/g, "");
   return withoutTags
     .split("\n")
     .map((line) => line.trim())
@@ -218,14 +237,25 @@ function stripSummaryTags(text: string): string {
 }
 
 /**
+ * The reply with any <quotes> block removed, tags and text alike. Used where the
+ * shape was not understood: quoted page text must never become the conclusion.
+ */
+function withoutQuotesBlock(text: string): string {
+  return text
+    .replace(/<quotes>[\s\S]*?<\/quotes>/g, "\n")
+    .replace(/<\/?quotes>/g, "\n");
+}
+
+/**
  * Split a shaped summarizer reply into <quotes> and <conclusion>.
  *
  * Only <conclusion> is persisted; <quotes> goes to the judges and the report.
  * A malformed reply is not thrown away — an older or sloppy model may still
  * have said something true — but it is never persisted with its markup: the
- * known tags are stripped, and `quotesMalformed` records that the reply ignored
- * the format. An empty <quotes> block with a readable conclusion is a different
- * case: the conclusion is used as written and only the evidence is missing.
+ * known tags are stripped and the <quotes> block dropped, and `quotesMalformed`
+ * records that the reply ignored the format. The quoted page text is never used
+ * as a conclusion: a reply that only quoted has no conclusion to store, and
+ * `conclusionMissing` says so.
  */
 export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
   const raw = text.trim();
@@ -250,27 +280,30 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
     conclusionClose >= 0 &&
     raw.slice(conclusionClose + CONCLUSION_CLOSE.length).trim() === "";
   if (!wellFormed) {
+    const kept = stripSummaryTags(withoutQuotesBlock(raw));
     return {
       // Never persist markup as knowledge: a reply that ignored the shape still
-      // has a chance of holding a fact, so its text is kept, its tags are not.
-      // A reply that was nothing but tags yields "" and the caller drops it.
-      conclusion: stripSummaryTags(raw),
+      // has a chance of holding a fact, so its own prose is kept. A reply that
+      // was nothing but a quote block yields "" and the caller drops it.
+      conclusion: kept,
       quotes: null,
       quotesMissing: true,
       quotesMalformed: true,
+      conclusionMissing: kept.length === 0,
     };
   }
   const quotes = raw.slice(quotesOpen + QUOTES_OPEN.length, quotesClose).trim();
   const conclusion = raw.slice(conclusionOpen + CONCLUSION_OPEN.length, conclusionClose).trim();
   if (!conclusion) {
-    // A shaped reply with an empty conclusion states nothing to persist. Its
-    // text is kept without the tags — the quoted part is the only content it
-    // has — and the flags say the shape was unusable.
+    // A shaped reply that states no conclusion produces nothing to persist. The
+    // quotes still go to the report and the judges; leaving the text empty is
+    // what stops the quoted page from being stored as the distilled fact.
     return {
-      conclusion: stripSummaryTags(raw),
+      conclusion: "",
       quotes: quotes.length > 0 ? quotes : null,
-      quotesMissing: true,
-      quotesMalformed: true,
+      quotesMissing: quotes.length === 0,
+      quotesMalformed: false,
+      conclusionMissing: true,
     };
   }
   return {
@@ -281,6 +314,7 @@ export function splitConsolidateSummary(text: string): ConsolidateSummaryText {
     // not malformed, though — the conclusion was read as written.
     quotesMissing: quotes.length === 0,
     quotesMalformed: false,
+    conclusionMissing: false,
   };
 }
 
@@ -478,6 +512,8 @@ interface PendingCollision {
   evidence: ConsolidateEvidence[];
   /** quotes from the summarizer call that produced the candidate. */
   quotes?: string;
+  /** 1-based cluster ordinal, so a re-merge can add its quotes to the report. */
+  cluster?: number;
   epsIds: number[];
   /** Design: #262 (D11) — the update-kind insert parameters from plan time
    * travel with the pending op; the merged TEXT the first attempt produced
@@ -551,6 +587,9 @@ export interface ConsolidateReport {
   // Counted so "three fetches became one material" is visible, not silent.
   duplicateMaterialSkipped: number;
   llmUnavailable: number;
+  // The model answered but produced no conclusion (empty <conclusion>, or a
+  // reply that was only a quote block). Nothing was written; the call worked.
+  noConclusion: number;
   gateRejected: number;
   add: number;
   noop: number;
@@ -976,20 +1015,16 @@ export function canonicalEntityKeys(
   return out;
 }
 
-// Design: a live material is current on BOTH axes — not replaced by a
-// correction, and not closed by a re-fetch of the same entity. The scan still
-// reads the closed rows (the update chain and the all-superseded counter need
-// the history), but only live rows may feed a summary or satisfy CLUSTER_MIN.
+// Live material: not replaced by a correction, and not closed by a re-fetch.
+// The scan still reads closed rows — the update chain needs the history.
 function isLiveMaterial(e: EpisodeRow): boolean {
   return e.superseded_by === null && e.valid_until === null;
 }
 
-// Design: keep one live row per exact URL. A re-fetch and a correction's closed
-// predecessor can repeat the same page in one cluster; a body beats a snippet
-// because it is the stronger tier, otherwise the newer row wins.
+// One live row per exact URL: a body beats a snippet, otherwise the newer wins.
 function preferMaterialVersion(a: EpisodeRow, b: EpisodeRow): EpisodeRow {
-  const aBody = a.hasBody === true || (typeof a.content === "string" && a.content.trim().length > 0);
-  const bBody = b.hasBody === true || (typeof b.content === "string" && b.content.trim().length > 0);
+  const aBody = a.hasBody === true || hasPageBody(a);
+  const bBody = b.hasBody === true || hasPageBody(b);
   if (aBody !== bBody) return bBody ? b : a;
   if (a.created_at !== b.created_at) return b.created_at > a.created_at ? b : a;
   return b.id > a.id ? b : a;
@@ -1047,13 +1082,13 @@ function reportEvidence(rows: readonly ConsolidateEvidence[]): ConsolidateEviden
  */
 function evidenceForCluster(db: Database.Database, rows: readonly EpisodeRow[]): ConsolidateEvidence[] {
   const pageIds = rows
-    .filter((r) => typeof r.content === "string" && r.content.trim().length > 0)
+    .filter((r) => hasPageBody(r))
     .map((r) => r.id);
   // `content` above is only set by loadEpisodeContent, which runs for the
   // deduped rows of a triggered cluster — never for the whole scan.
   const byPage = pageIds.length > 0 ? sectionsForPages(db, pageIds) : new Map<number, MemorySection[]>();
   return rows.map((r) => {
-    const hasBody = typeof r.content === "string" && r.content.trim().length > 0;
+    const hasBody = hasPageBody(r);
     const sections = hasBody ? byPage.get(r.id) ?? [] : [];
     return {
       title: r.title ?? "",
@@ -1152,6 +1187,7 @@ export async function consolidateMemoryRun(
     clusterTokenBudget: CONSOLIDATION_CLUSTER_TOKEN_BUDGET, clustersOverBudget: 0,
     duplicateMaterialSkipped: 0,
     llmUnavailable: 0,
+    noConclusion: 0,
     gateRejected: 0, add: 0, noop: 0, update: 0, embeddingAbsent: 0,
     scope: {
       by: scope.by,
@@ -1249,6 +1285,7 @@ export async function consolidateMemoryRun(
       epsIds: number[];
       confidence?: number;
       salience?: number;
+      cluster?: number;
     },
   ): void => {
     if (replacedRowIds.has(row.id)) {
@@ -1265,6 +1302,7 @@ export async function consolidateMemoryRun(
       epsIds: info.epsIds,
       ...(info.confidence !== undefined ? { confidence: info.confidence } : {}),
       ...(info.salience !== undefined ? { salience: info.salience } : {}),
+      ...(info.cluster !== undefined ? { cluster: info.cluster } : {}),
     });
   };
 
@@ -1424,11 +1462,12 @@ export async function consolidateMemoryRun(
     }
     const rows = (db
       .prepare(
-        "SELECT id, entity, title, snippet, url, created_at, last_accessed, access_count, superseded_by, valid_until, " +
-          "CASE WHEN content IS NOT NULL AND length(trim(content)) > 0 THEN 1 ELSE 0 END AS hasBody " +
-          "FROM retrieval_results WHERE " + where.join(" AND ") + " ORDER BY entity, id",
+        "SELECT r.id, r.entity, r.title, r.snippet, r.url, r.created_at, r.last_accessed, r.access_count, " +
+          "r.superseded_by, r.valid_until, " +
+          "CASE WHEN " + HAS_PAGE_BODY_EXPR + " THEN 1 ELSE 0 END AS hasBody " +
+          "FROM retrieval_results r WHERE " + where.join(" AND ") + " ORDER BY entity, id",
       )
-      .all(...params) as Array<Omit<EpisodeRow, "content" | "hasBody"> & { hasBody: number }>)
+      .all(...params) as ClusterScanRow[])
       .map((r) => ({ ...r, content: null, hasBody: r.hasBody === 1 }));
     report.scope.materialsRead = rows.length;
     // "In scope" means "this run read it", not "it belongs to the cluster being
@@ -1601,11 +1640,10 @@ export async function consolidateMemoryRun(
         }
       }
       if (summarized.overBudget) report.clustersOverBudget++;
-      // A reply that was nothing but markup has no conclusion to persist. Count
-      // it as no answer (fail-open, nothing written) instead of inserting an
-      // empty knowledge row; the quote counters above already say what came
-      // back.
-      if (!summary.trim()) { report.llmUnavailable++; continue; }
+      // A reply that was nothing but markup has no conclusion to persist. That
+      // is not a model fault: count it separately, so llmUnavailable keeps
+      // meaning "the model was not called or did not work".
+      if (!summary.trim()) { report.noConclusion++; continue; }
 
       // D4 fidelity gate (kernel classifyClaim shape, injected). Row verdict = worst claim:
       // any unsupported -> reject the whole consolidation; any uncertain -> LOW_CONFIDENCE row.
@@ -1697,7 +1735,7 @@ export async function consolidateMemoryRun(
           const current = currentSources(row);
           // #262: a same-run closure routes to reportRunCollision; a cross-run
           // one queues for the resolution phase with this op's plan context.
-          if (!current) { noteRowCollision(row, { candidate: summary, evidence, quotes: quotes ?? undefined, epsIds }); return; }
+          if (!current) { noteRowCollision(row, { candidate: summary, evidence, quotes: quotes ?? undefined, epsIds, cluster: clusterOrdinal }); return; }
           // #273 review: the materials that produced this restatement must join
           // the row's source set. Otherwise a later correction only retires the
           // OLD sources, and these stay live with the stale text still in them —
@@ -1849,7 +1887,7 @@ export async function consolidateMemoryRun(
           const current = currentSources(row);
           // #262: same-run replacement keeps this run's conflict report; a
           // cross-run replacement goes to the resolution phase.
-          if (!current) { noteRowCollision(row, { candidate: summary, evidence, quotes: quotes ?? undefined, epsIds, confidence, salience }); return; }
+          if (!current) { noteRowCollision(row, { candidate: summary, evidence, quotes: quotes ?? undefined, epsIds, cluster: clusterOrdinal, confidence, salience }); return; }
           // #273 review: the materials that produced this restatement must join
           // the row's source set. Otherwise a later correction only retires the
           // OLD sources, and these stay live with the stale text still in them —
@@ -1984,7 +2022,7 @@ export async function consolidateMemoryRun(
           // review). `currentSources` also carries the liveness check.
           const prev = currentSources(row);
           if (!prev) {
-            noteRowCollision(row, { candidate: summary, evidence, quotes: quotes ?? undefined, epsIds, confidence, salience });
+            noteRowCollision(row, { candidate: summary, evidence, quotes: quotes ?? undefined, epsIds, cluster: clusterOrdinal, confidence, salience });
             return;
           }
           const { newId, retiredNow } = writeUpdateRow(row.id, finalSummary, finalEmbBuf, {
@@ -2232,6 +2270,9 @@ export async function consolidateMemoryRun(
       }
       const finalSummary = mergedShape.conclusion.trim();
       const finalQuotes = pending.quotes ?? mergedShape.quotes ?? undefined;
+      // The re-merge's quotes belong to the cluster the plan phase counted; the
+      // primary summarizer's quotes win if it already supplied any.
+      if (pending.cluster !== undefined) recordQuotes(pending.cluster, finalQuotes);
       const mergedEmb = await embedText(finalSummary, "passage");
       const finalEmbBuf = mergedEmb ? Buffer.from(mergedEmb.buffer, mergedEmb.byteOffset, mergedEmb.byteLength) : null;
       // Design: #262 — insert parameters: update-kind pendings carry the
@@ -2373,7 +2414,7 @@ export function scanArchiveCandidates(
         "FROM retrieval_results WHERE archived = 0 AND valid_until IS NULL AND quarantine IS NULL " +
         "AND COALESCE(pinned, 0) = 0 ORDER BY id",
     )
-    .all() as EpisodeRow[];
+    .all() as ArchiveScanRow[];
   const out: ArchiveCandidate[] = [];
   for (const r of rows) {
     const tier = classifyTier(r.title ?? "", r.url ?? "");

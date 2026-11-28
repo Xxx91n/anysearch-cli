@@ -1,9 +1,10 @@
 // #613 — the summary reply shape: <quotes> first, then <conclusion>.
 //
-// Only the conclusion is persisted. A reply that does not follow the exact
-// shape is kept whole and flagged, so no stated fact can vanish into a
-// discarded fragment. An empty <quotes> block still counts as missing
-// evidence: the judges must not receive an empty string with no alarm.
+// Only the conclusion is persisted, and only the reply's own prose can become
+// it: quoted page text is never promoted to a conclusion. A reply that does not
+// follow the exact shape is kept without its tags and flagged. An empty
+// <quotes> block still counts as missing evidence: the judges must not receive
+// an empty string with no alarm.
 //
 // Run: pnpm --filter @anysearch-cli/store run test
 
@@ -35,13 +36,16 @@ function assert(cond: boolean, msg: string): void {
 
 {
   const reversed = splitConsolidateSummary("<conclusion>done</conclusion><quotes>q</quotes>");
-  assert(reversed.conclusion === "done\nq",
-    "reversed order: malformed, the reply text is kept without its tags");
+  assert(reversed.conclusion === "done",
+    "reversed order: malformed, the reply's own prose is kept without its tags");
+  assert(!reversed.conclusion.includes("q"),
+    "reversed order: the quoted page text never becomes the conclusion");
   assert(!/<\/?conclusion>|<\/?quotes>/.test(reversed.conclusion),
     "reversed order: no markup reaches stored knowledge");
   assert(reversed.quotesMissing === true, "reversed order: flagged");
   assert(reversed.quotesMalformed === true,
     "reversed order: the shape was wrong, so it counts as malformed, not quote-less");
+  assert(reversed.conclusionMissing === false, "reversed order: it did state a conclusion");
 }
 
 {
@@ -61,11 +65,21 @@ function assert(cond: boolean, msg: string): void {
 
 {
   const emptyConclusion = splitConsolidateSummary("<quotes>q</quotes><conclusion> </conclusion>");
-  assert(emptyConclusion.conclusion === "q", "empty conclusion: the reply text is kept without tags");
-  assert(!/<\/?conclusion>|<\/?quotes>/.test(emptyConclusion.conclusion),
-    "empty conclusion: no markup reaches stored knowledge");
-  assert(emptyConclusion.quotes === "q" && emptyConclusion.quotesMissing === true,
-    "empty conclusion: quotes retained for the report, flagged");
+  assert(emptyConclusion.conclusion === "",
+    "empty conclusion: nothing to persist, so the quotes do not become the conclusion");
+  assert(emptyConclusion.quotes === "q", "empty conclusion: quotes retained for the report");
+  assert(emptyConclusion.quotesMissing === false,
+    "empty conclusion: the quotes exist, so evidence is not missing");
+  assert(emptyConclusion.quotesMalformed === false,
+    "empty conclusion: the shape was fine, so it is not reported as malformed");
+  assert(emptyConclusion.conclusionMissing === true,
+    "empty conclusion: reported as no-conclusion, not as a missing model");
+}
+
+{
+  const onlyQuotes = splitConsolidateSummary("<quotes>q</quotes>");
+  assert(onlyQuotes.conclusion === "" && onlyQuotes.conclusionMissing === true,
+    "only a quote block: no conclusion to persist");
 }
 
 console.log("consolidate-summary-shape: " + passed + " passed, " + failed + " failed");

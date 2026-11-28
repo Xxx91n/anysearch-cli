@@ -84,8 +84,14 @@ function recordingLedger(opts: { rejectCall?: boolean } = {}) {
   return ledger;
 }
 
+const OTHER_SENTENCE = "The phone line still closes at 18:00 on holidays.";
 const EVIDENCE: ConsolidateEvidence[] = [
-  { title: "Official notice", snippet: "Support hours changed to 24x7 on 2026-11-01.", url: "https://a.example/notice" },
+  {
+    title: "Official notice",
+    snippet: "Support hours changed to 24x7 on 2026-11-01.",
+    url: "https://a.example/notice",
+    content: "Support hours changed to 24x7 on 2026-11-01. " + OTHER_SENTENCE,
+  },
 ];
 
 // --- #613: the judges read the quotes, not the full material block -------
@@ -98,12 +104,12 @@ const EVIDENCE: ConsolidateEvidence[] = [
   }));
   await seams.verify({
     oldContent: "Support runs weekdays 9-17.", summary: "Support is 24x7.",
-    quotes: "QUOTE-ONLY: support is 24x7 from 2026-11-01", evidence: EVIDENCE,
+    quotes: '[1] Official notice @0 "Support hours changed to 24x7 on 2026-11-01."', evidence: EVIDENCE,
   });
-  assert(prompt.includes("QUOTE-ONLY: support is 24x7 from 2026-11-01"),
+  assert(prompt.includes('"Support hours changed to 24x7 on 2026-11-01."'),
     "verify: the check receives the summarizer quotes");
-  assert(!prompt.includes("Support hours changed to 24x7 on 2026-11-01."),
-    "verify: the full material snippet is not sent alongside the quotes");
+  assert(!prompt.includes(OTHER_SENTENCE),
+    "verify: the rest of the material body is not sent alongside the quotes");
 }
 
 {
@@ -114,11 +120,32 @@ const EVIDENCE: ConsolidateEvidence[] = [
   }));
   await seams.verifyFinal({
     oldContent: "old", finalContent: "merged", correctedContent: "new",
-    quotes: "QUOTE-ONLY-FINAL", evidence: EVIDENCE,
+    quotes: '[1] Official notice @0 "Support hours changed to 24x7 on 2026-11-01."', evidence: EVIDENCE,
   });
-  assert(prompt.includes("QUOTE-ONLY-FINAL"), "verifyFinal: the check receives the quotes");
-  assert(!prompt.includes("Support hours changed to 24x7 on 2026-11-01."),
-    "verifyFinal: the full material snippet is not sent alongside the quotes");
+  assert(prompt.includes('"Support hours changed to 24x7 on 2026-11-01."'),
+    "verifyFinal: the check receives the quotes");
+  assert(!prompt.includes(OTHER_SENTENCE),
+    "verifyFinal: the rest of the material body is not sent alongside the quotes");
+}
+
+{
+  // A model can write a confident quote that no page contains. The judge must
+  // not read it as evidence of its own claim: the quotes are dropped and the
+  // material text is used instead.
+  let prompt = "";
+  const seams = createConsolidationSeams(fakeSession({
+    text: '{"sameFact": true, "reliable": true, "relation": "correction"}',
+    onPrompt: (p) => { prompt = p; },
+  }));
+  await seams.verify({
+    oldContent: "old", summary: "new",
+    quotes: '[1] Official notice @0 "Support hours are now 24x7 and free of charge."',
+    evidence: EVIDENCE,
+  });
+  assert(!prompt.includes("free of charge"),
+    "verify: an invented quote never reaches the judge");
+  assert(prompt.includes("Support hours changed to 24x7 on 2026-11-01."),
+    "verify: ungrounded quotes fall back to the material text");
 }
 
 {
