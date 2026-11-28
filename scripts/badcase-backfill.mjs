@@ -241,13 +241,13 @@ async function realValidatorProblems(entry) {
     ({ validateDocsGoldenEntry } = await import(new URL("../packages/store/src/eval/docs-golden.ts", import.meta.url)));
   } catch (err) {
     // Older node cannot strip types (engines floor is 22.0.0; the default
-    // arrives in 22.18). Say so out loud: a silent skip reads as "the
-    // validator agreed", which is the one thing not to believe at write time.
-    if (err?.code === "ERR_UNKNOWN_FILE_EXTENSION" || err?.code === "ERR_MODULE_NOT_FOUND") {
-      console.error("badcase-backfill: skipped the store validator — node " + process.version + " cannot load the TS module; only this script's own checks ran");
-      return [];
-    }
-    throw err;
+    // arrives in 22.18) and reports the .ts import itself as an unknown
+    // extension. Anything else means the validator could not run at all — a
+    // moved or renamed module, a missing dependency inside it — so fail
+    // instead of writing a row the authoritative check never saw.
+    if (err?.code !== "ERR_UNKNOWN_FILE_EXTENSION") throw err;
+    console.error("badcase-backfill: skipped the store validator — node " + process.version + " cannot load the TS module; only this script's own checks ran");
+    return [];
   }
   return validateDocsGoldenEntry(entry);
 }
