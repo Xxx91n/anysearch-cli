@@ -544,14 +544,27 @@ function stepStaticAssertions() {
     // That module mirrors the TS vocabularies, so pin each block back to the
     // file that declares it: a TS-side bump then fails here instead of showing
     // up as a "schema must be ..." error at run time. Compare whole blocks
-    // against whitespace-stripped source — single-value substring checks pass
-    // when a value also lives in another vocabulary.
-    const compact = (src) => src.replace(/\s+/g, "");
+    // against comment-stripped source: a declaration deleted but left behind as
+    // a comment must not satisfy a pin, and single-value substrings pass when a
+    // value also lives in another vocabulary. Block comments and whole-line `//`
+    // comments are dropped; a trailing comment keeps its line's code, which is
+    // what a pin can match.
+    const stripComments = (src) =>
+      src
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .split("\n")
+        .map((line) => line.replace(/^\s*\/\/.*$/, ""))
+        .join("\n");
+    const compact = (src) => stripComments(src).replace(/\s+/g, "");
     const dgShape = compact(fs.readFileSync(path.join(ROOT, "packages/store/src/eval/docs-golden.ts"), "utf8"));
     const leafShape = compact(fs.readFileSync(path.join(ROOT, "packages/store/src/eval/corpus-files.ts"), "utf8"));
     const blockPins = [
       ["docs-golden.ts", dgShape, "DOCS_GOLDEN_SCHEMA=" + JSON.stringify(GOLDEN_SCHEMA)],
       ["docs-golden.ts", dgShape, "GOLDEN_SCOPE_VALUES=[" + GOLDEN_SCOPE_VALUES.map((v) => JSON.stringify(v)).join(",") + "]"],
+      // entry.intent is judged against DOCS_GOLDEN_INTENTS, a second list beside
+      // the dimension table: a value added only there would pass the dimension
+      // pins while the backfill silently refuses the new tag.
+      ["docs-golden.ts", dgShape, "DOCS_GOLDEN_INTENTS=[" + GOLDEN_DIMENSION_VALUES.intent.map((v) => JSON.stringify(v)).join(",") + "]"],
       ["docs-golden.ts", dgShape, "DOCS_GOLDEN_STABILITY_CLASSES=[" + GOLDEN_STABILITY_CLASSES.map((v) => JSON.stringify(v)).join(",") + "]"],
       ["docs-golden.ts", dgShape, "DOCS_GOLDEN_TOLERATED_SEGMENTS=[" + GOLDEN_TOLERATED_SEGMENTS.map((v) => JSON.stringify(v)).join(",") + "]"],
       // GOLDEN_FILE's TS original sits in the leaf module, not the validator.
@@ -564,6 +577,21 @@ function stepStaticAssertions() {
     }
     for (const [file, src, needle] of blockPins) {
       if (!src.includes(needle)) fail(file + " no longer declares " + needle + " — sync scripts/golden-shape.mjs");
+    }
+    // The pins above prove every mirrored dimension still exists in TS; they
+    // cannot see a ninth dimension added there, which the backfill would then
+    // reject as unknown. Compare the key sets both ways.
+    const dimsStart = dgShape.indexOf("DOCS_GOLDEN_DIMENSION_VALUES");
+    const dimsOpen = dimsStart < 0 ? -1 : dgShape.indexOf("{", dimsStart);
+    const dimsClose = dimsOpen < 0 ? -1 : dgShape.indexOf("}", dimsOpen);
+    const dimsBlock = dimsClose < 0 ? "" : dgShape.slice(dimsOpen + 1, dimsClose);
+    const tsDims = new Set([...dimsBlock.matchAll(/(?:^|,)(?:"([^"]+)"|([A-Za-z_$][\w$]*)):\[/g)].map((m) => m[1] ?? m[2]));
+    for (const dim of Object.keys(GOLDEN_DIMENSION_VALUES)) {
+      if (!tsDims.has(dim)) fail("docs-golden.ts DOCS_GOLDEN_DIMENSION_VALUES lacks dimension " + dim);
+    }
+    for (const dim of tsDims) {
+      if (!Object.prototype.hasOwnProperty.call(GOLDEN_DIMENSION_VALUES, dim))
+        fail("docs-golden.ts declares dimension " + dim + " that scripts/golden-shape.mjs does not — mirror it there and in the backfill");
     }
     // Anchor lookup covers every entry, not only the live slice: the c1 abstain
     // anchor lives in the stub lane.
