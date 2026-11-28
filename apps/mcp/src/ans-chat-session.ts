@@ -62,9 +62,9 @@ export interface AnsChatSessionWiring {
 const HANDLE_MAX_CHARS = 128;
 const HANDLE_PATTERN = /^[\x21-\x7E]+$/;
 
-// How many material lines the consolidate answer lists; the rest are only in
-// structuredContent. Materials that need attention are printed first, so the
-// cap reaches them before it truncates anything else.
+// The answer's text half lists at most this many materials, attention-needing
+// ones first; anything past it is only in structuredContent — including
+// attention-needing materials when there are more than this many.
 const MATERIAL_LINES_IN_TEXT = 20;
 
 export function isValidSessionHandle(value: unknown): value is string {
@@ -630,8 +630,7 @@ export function buildAnsChatConsolidateResult(
         (d.reason ? "; " + d.reason : "") + ")",
       ).join("\n");
   // This half lists materials because a content-only host has no other channel
-  // for the feed. The list stops at MATERIAL_LINES_IN_TEXT, with the materials
-  // that need attention first; everything else stays in structuredContent.
+  // for the feed (the cap and its ordering are documented at the constant).
   const fed = report.materialsFed ?? [];
   const notableFed = notableMaterialFeeds(fed);
   const notableSet = new Set(notableFed);
@@ -642,7 +641,13 @@ export function buildAnsChatConsolidateResult(
     : "\n" + shownFed.map(formatConsolidateMaterialFeed).join("\n") +
       (shownFed.length < fed.length
         ? "\n  (" + shownFed.length + " of " + fed.length + " materials shown" +
-          (notableFed.length > 0 ? ", the ones that need attention first" : "") +
+          (notableFed.length === 0
+            ? ""
+            : notableFed.length > MATERIAL_LINES_IN_TEXT
+              // The attention list itself was cut: saying "attention first" here
+              // would read as "the hidden ones are fine".
+              ? ", and more than this list can show still need attention"
+              : ", the ones that need attention first") +
           "; the rest are in structuredContent.report.materialsFed)"
         : "");
   // The quotes are report-only; semantic memory never stores them.

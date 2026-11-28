@@ -377,6 +377,17 @@ async function callConsolidate(args: Record<string, unknown>) {
   assert(!/need attention first/.test(noAttentionText),
     "over the cap with nothing notable: no false 'attention first' claim");
 
+  // More materials need attention than the list can show: the count line must
+  // not read as "the hidden ones are fine".
+  const starvedMany = Array.from({ length: 24 }, (_, i) => ({
+    ...feed, materialId: 300 + i, url: "https://c.example/" + i, fedChars: 0,
+  }));
+  const starvedText = buildAnsChatConsolidateResult(
+    { ...base, materialsFed: starvedMany } as never, usage as never, {},
+  ).content[0]!.text;
+  assert(/more than this list can show still need attention/.test(starvedText),
+    "attention list itself capped: the count line says so");
+
   // The counters are per cluster and independent: the note appears only when
   // two of them are non-zero, because one cluster can land under both.
   const oneCounter = buildAnsChatConsolidateResult(
