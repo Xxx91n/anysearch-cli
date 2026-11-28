@@ -84,12 +84,16 @@ supports answer mode, `answersAvailable` is `false`.
 ### Result shape
 
 Every tool returns MCP `content: [{type:"text", ...}]`. Search results are a
-pretty-printed JSON document in that text block. Its keys are `query`,
+pretty-printed JSON document in that text block. Always present: `query`,
 `totalResults` (the full fused count), `showing` (how many made it into
 `results`, at most 10), `results`, `answers`, `answersAvailable`,
 `providerAnswers`, `providersQueried`, `providersCancelled`, `partial`,
-`deadlineMs`, `credentialSources`, `attribution`, `abstain`, `outcome`,
-`vertical`, and `sufficiency` when the gate produced one. It carries `outcome`
+`deadlineMs`, `providerElapsedMs`, `credentialSources`, `attribution` (null when
+the search carried none), `abstain` (null when the run did not abstain),
+`outcome`, and `vertical` (null when no vertical was routed). When the data
+exists it also carries `sufficiency` and the provider-failure fields
+(`providersFailed`, `providerErrorClasses`, `providerErrorHints`,
+`providerBuildErrors`). It carries `outcome`
 and, when set, the `abstain` marker, so a text-only reader gets the same verdict. For the search tools,
 `structuredContent` carries machine-readable metadata (the `sufficiency`
 verdict, attribution, abstain, outcome, which arms were asked and which were
