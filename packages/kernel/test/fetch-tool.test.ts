@@ -859,8 +859,7 @@ async function main() {
         "a trust question past the allowance is refused without prompting");
       assert(!store.hasFetchTicket(session.id, "tofu", "docs.four.example"), "the refusal writes no ticket");
 
-      // A plain no-ticket read must stop inviting requestTrustFor too, or the
-      // model retries the call this refusal just turned down.
+      // Not closing the trust path on one refusal keeps a real page readable.
       await store.saveFetchTickets(session.id, "user", ["https://readable.example/page"]);
       const readable = await tool.execute("t25t-read", { handles: ["https://readable.example/page"] });
       assert(envelope(readable).pages.length === 1,
@@ -868,21 +867,22 @@ async function main() {
       const plain = await tool.execute("t25t-plain", { handles: ["https://docs.five.example/a"] });
       assert(rawText(plain).includes("别再带 requestTrustFor"),
         "a no-ticket refusal after the allowance stops suggesting a trust request");
-      assert(!rawText(plain).includes("这轮抓页已经停了"),
-        "one over-limit refusal plus one plain no-ticket is still under the stop");
 
-      // Running out of questions says nothing about the host, but the refusal
-      // counts: inventing a new host name each time must not spin forever.
+      // Asking for trust over and over asks nobody anything, so it closes the
+      // trust path alone — page reading keeps its own budget.
       const spin = await tool.execute("t25t-spin", {
         handles: ["https://docs.six.example/a"], requestTrustFor: "docs.six.example",
       });
-      assert(rawText(spin).includes("这轮抓页已经停了"),
-        "an over-limit refusal counts, so a fresh host each time reaches the stop");
-      const afterStop = await tool.execute("t25t-after", {
+      assert(rawText(spin).includes("不再弹确认") && !rawText(spin).includes("整批网址都没被放行"),
+        "an over-limit trust request is refused without touching the page budget");
+      const afterClose = await tool.execute("t25t-after", {
         handles: ["https://docs.seven.example/a"], requestTrustFor: "docs.seven.example",
       });
-      assert(asked === 3 && rawText(afterStop).includes("这轮抓页已经停了"),
-        "once stopped, no further trust request is even considered");
+      assert(asked === 3 && rawText(afterClose).includes("不再接受 requestTrustFor"),
+        "repeating the refusal closes the trust path for the run");
+      const afterCloseRead = await tool.execute("t25t-after-read", { handles: ["https://readable.example/page"] });
+      assert(envelope(afterCloseRead).pages.length === 1,
+        "a closed trust path does not stop reading a ticketed URL");
     }
 
     {
@@ -892,11 +892,12 @@ async function main() {
       const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
       await tool.execute("t25u1", { handles: ["https://docs.settled.example/a"], requestTrustFor: "docs.settled.example" });
       const repeat1 = await tool.execute("t25u2", { handles: ["https://docs.settled.example/b"], requestTrustFor: "docs.settled.example" });
-      assert(rawText(repeat1).includes("没有同意") && !rawText(repeat1).includes("这轮抓页已经停了"),
+      assert(rawText(repeat1).includes("没有同意") && !rawText(repeat1).includes("不再接受 requestTrustFor"),
         "the first repeat of a declined host is refused in-band");
-      const repeat2 = await tool.execute("t25u3", { handles: ["https://docs.settled.example/c"], requestTrustFor: "docs.settled.example" });
-      assert(rawText(repeat2).includes("这轮抓页已经停了"),
-        "a host the user already answered stops the run when asked again and again");
+      await tool.execute("t25u2b", { handles: ["https://docs.settled.example/b2"], requestTrustFor: "docs.settled.example" });
+      const repeat3 = await tool.execute("t25u3", { handles: ["https://docs.settled.example/c"], requestTrustFor: "docs.settled.example" });
+      assert(rawText(repeat3).includes("不再接受 requestTrustFor"),
+        "asking a settled host over and over closes the trust path");
       assert(asked === 1, "a settled host is never asked twice");
     }
 

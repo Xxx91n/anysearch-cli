@@ -2,7 +2,6 @@
 // user-URL ticket extraction, and trust refusal text.
 
 import {
-  FETCH_LIMITS,
   checkFetchAddress,
   checkFetchDomain,
   extractUserUrlTickets,
@@ -183,8 +182,8 @@ assert(fetchRejectMessage("trust_prompt_limit").includes("不再弹确认"),
   "a trust prompt over the run allowance says no more prompts");
 assert(fetchRejectMessage("trust_prompt_limit").includes("换个主机名也一样"),
   "the prompt-limit refusal does not invite a different host instead");
-assert(fetchRejectMessage("trust_prompt_limit").includes(String(FETCH_LIMITS.maxTrustPrompts)),
-  "the prompt-limit refusal names how many questions the run allowed");
+assert(fetchRejectMessage("trust_prompt_limit").includes("问够了") && fetchRejectMessage("trust_prompt_limit").includes("一直在空问"),
+  "the prompt-limit refusal covers both an answered allowance and a spinning one");
 
 assert(makeRequestUrl("example.com/a") === "https://example.com/a", "a stored identity gains https on the wire");
 assert(makeRequestUrl("https://example.com/a") === "https://example.com/a", "an explicit scheme is left alone");

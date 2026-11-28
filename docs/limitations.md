@@ -426,14 +426,14 @@
   pages on that exact host still pass the address, deny and allowlist
   gates, so it cannot override a deny rule. A user declines once, or the ticket
   cannot be written, and that host is not asked again in the same run: the
-  answer itself does not count toward the two-rejected-batches stop, because a
-  human made that call, but asking that same host again does count, so a settled
-  host cannot be retried for free. One question may show at
-  most three trust prompts; after that the request is refused in-band, the
-  no-ticket refusal stops inviting another one, and the refusal counts like any
-  other, because a fresh host name per attempt would otherwise leave the run
-  with no stop at all. Headless/MCP never prompts — it
-  refuses and tells the model to ask the user to paste the link. No TOML is
+  answer itself counts toward neither stop, and a settled host asked again closes
+  the trust path instead of the page budget. One question may show at most three
+  trust prompts; after that the request is refused in-band and the no-ticket
+  refusal stops inviting another one. Trust refusals have their own counter: two
+  in a row that asked nobody anything close `requestTrustFor` for the rest of the
+  run, while pages this session can already read stay readable.
+  Headless/MCP never prompts — it refuses and tells the model to ask the user to
+  paste the link. No TOML is
   written and nothing crosses sessions. This does not open the external
   surfaces: there is still no MCP `fetch_pages`, no `ans fetch`, and no
   plugin/dsh page-read tool. An external host can read only what is already

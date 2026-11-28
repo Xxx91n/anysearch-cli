@@ -4,8 +4,8 @@
 
 ### Changed
 
-- **拒绝文案**（`packages/kernel/src/fetch-admission.ts`）：没票时明确教 `site:<域名> 关键词`；交互式环境下再提 `requestTrustFor`，headless/MCP 说明不能弹确认、让用户贴链接。新增 `trust_unavailable` / `trust_declined` / `trust_write_failed` / `trust_prompt_limit` 四种理由：票写不进库时文案直接说别再问；一次提问最多问 `maxTrustPrompts`（3）次信任，超过就不再弹确认，`no_ticket` 也跟着不再劝重试，而且这类拒绝照常计入整批被拒软停（换个主机名继续问也会停）；用户刚答过的那一次拒绝仍不计数，但同一主机再问一次就算。
-- **信任票**（`packages/kernel/src/fetch-tool.ts`、`packages/retriever/src/url-identity.ts`）：`fetch` 多一个可选 `requestTrustFor`，只收裸主机名（不带协议、端口、路径、空格、IP）。它先按地址门和域名门校验所有 handles 与主机名，交互式下弹一次确认，用户同意后写本会话 `tofu` 票；这次调用不读页、不占页数和网址数，模型重试时按主机名精确匹配放行。同一次运行里，用户答过的主机（拒绝或票写不进库）不会被再问一次；拒绝文案也不再劝模型再带 `requestTrustFor`。用户答完那一次拒绝不计入整批被拒软停——否则「没票 → 问一次 → 用户说不」这条正常路会直接把整轮抓页停掉，连手里能读的句柄都一起停；但同一主机答完再问一次就按普通拒绝累计，免得被当成免费重试口子。真正的地址门/域名门/凭据门拒绝照旧累计。
+- **拒绝文案**（`packages/kernel/src/fetch-admission.ts`）：没票时明确教 `site:<域名> 关键词`；交互式环境下再提 `requestTrustFor`，headless/MCP 说明不能弹确认、让用户贴链接。新增 `trust_unavailable` / `trust_declined` / `trust_write_failed` / `trust_prompt_limit` 四种理由：票写不进库时文案直接说别再问；一次提问最多问 `maxTrustPrompts`（3）次信任确认，超过就不再问，`no_ticket` 也跟着不再劝重试。信任另有一条自己的线：连续 `maxTrustSpins`（2）次问出去却谁都没问（额度用完、或这个主机答过了），这一轮就不再接受 `requestTrustFor`，但已经能读的网址照读——读页的软停只数「一批没放行」，不被信任空转牵连。用户刚答完的那一次拒绝仍不计入任何软停。
+- **信任票**（`packages/kernel/src/fetch-tool.ts`、`packages/retriever/src/url-identity.ts`）：`fetch` 多一个可选 `requestTrustFor`，只收裸主机名（不带协议、端口、路径、空格、IP）。它先按地址门和域名门校验所有 handles 与主机名，交互式下弹一次确认，用户同意后写本会话 `tofu` 票；这次调用不读页、不占页数和网址数，模型重试时按主机名精确匹配放行。同一次运行里，用户答过的主机（拒绝或票写不进库）不会被再问一次；拒绝文案也不再劝模型再带 `requestTrustFor`。用户答完那一次拒绝不计入整批被拒软停——否则「没票 → 问一次 → 用户说不」这条正常路会直接把整轮抓页停掉，连手里能读的句柄都一起停；同一主机答完再问就改记信任空转，连着两次就关掉信任这条路，而不是停读页。真正的地址门/域名门/凭据门拒绝照旧累计。
 - **交互接线**（`packages/kernel/src/pi-runtime.ts`、`apps/cli/src/commands/chat.ts`）：runtime 新增 `confirmFetchTrust`，只有 `interactive` 且 stdin 真是 TTY 才交给 fetch；CLI 只在交互模式传 `askFetchTrust`，提示逐条列出完整网址和域名，默认否。MCP 不传，因此不会弹确认。
 - **票的种类**（`packages/store/src/schema.sql`、`packages/store/src/session-store.ts`）：`fetch_tickets.kind` 增加 `tofu`；旧库启动时重建一次表（CHECK 不能原地改），保留原有行和级联删除。重建前会先按 #310 拍快照：布局探测把旧 CHECK 也算成「不在当前布局」，已经拍过快照的库沿用旧那份，重建本身在一个事务里完成。这个判断和重建共用 `fetchTicketsSqlIsCurrent`，不会一处认得出、一处认不出。
 
