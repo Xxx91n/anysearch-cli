@@ -313,9 +313,10 @@ async function callConsolidate(args: Record<string, unknown>) {
     "the full conflict detail travels in structuredContent");
 }
 
-// --- 11. the material count line stands on its own ------------------------
-// A run whose materials all fitted has nothing to flag, but it must still be
-// distinguishable from a run that fed nothing at all.
+// --- 11. the material report lists every fed material ---------------------
+// The MCP text half is the only feed a content-only host reads, so it must not
+// trim (the CLI does, with --verbose for the rest). The installed acceptance
+// lane asserts these lines too.
 {
   const { buildAnsChatConsolidateResult } = await import("../src/ans-chat-session.js");
   const base = {
@@ -336,19 +337,11 @@ async function callConsolidate(args: Record<string, unknown>) {
 
   const allGood = buildAnsChatConsolidateResult({ ...base, materialsFed: [feed] } as never, usage as never, {});
   const allGoodText = allGood.content[0]!.text;
-  assert(/\(0 of 1 materials shown; the rest are in the structured report\)/.test(allGoodText),
-    "materials all fitted: the count line still says how many were fed");
-  assert(!allGoodText.includes("material (cluster"), "materials all fitted: no per-material line is printed");
+  assert(allGoodText.includes("material (cluster 1"), "a material that fitted is still listed");
+  assert(allGoodText.includes("https://a.example/full"), "the material line names its url");
 
   const noneFed = buildAnsChatConsolidateResult({ ...base, materialsFed: [] } as never, usage as never, {});
-  assert(!/materials shown/.test(noneFed.content[0]!.text),
-    "no materials fed: no count line at all");
-
-  const needsAttention = { ...feed, fedChars: 0 };
-  const trimmed = buildAnsChatConsolidateResult({ ...base, materialsFed: [feed, needsAttention] } as never, usage as never, {});
-  const trimmedText = trimmed.content[0]!.text;
-  assert(trimmedText.includes("material (cluster 1"), "one material got nothing: it is listed");
-  assert(/\(1 of 2 materials shown/.test(trimmedText), "one material got nothing: the count line says 1 of 2");
+  assert(!/material \(cluster/.test(noneFed.content[0]!.text), "no materials fed: no material line at all");
 
   // The counters are per cluster and independent: the note appears only when
   // two of them are non-zero, because one cluster can land under both.

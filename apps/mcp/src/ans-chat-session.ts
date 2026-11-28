@@ -35,7 +35,6 @@ import type {
 import {
   formatConsolidateScope,
   formatConsolidateMaterialFeed,
-  notableMaterialFeeds,
   formatConsolidateQuotes,
   toBudgetCaps,
   type BudgetConfig,
@@ -544,8 +543,8 @@ export function buildAnsChatConsolidateResult(
       ? "\nno conclusion: " + report.noConclusion +
         " cluster(s) answered without one (empty <conclusion>, or only a quote block) — nothing was written"
       : "") +
-    // These three count per cluster and overlap; add/update/skip stay exclusive
-    // and the material counters count rows.
+    // These three count per cluster and overlap; add/update/skip stay exclusive,
+    // and duplicate materials counts rows.
     ([
       (report.quotesMissing ?? 0) > 0,
       (report.quotesMalformed ?? 0) > 0,
@@ -624,20 +623,13 @@ export function buildAnsChatConsolidateResult(
         "; re-judge retries=" + d.retries + ", sameFact=" + d.sameFact + ", reliable=" + d.reliable +
         (d.reason ? "; " + d.reason : "") + ")",
       ).join("\n");
-  // The text half names only the materials that need attention. The rule is
-  // shared with the CLI (store's notableMaterialFeeds) so the two cannot drift.
-  // Consequence for a content-only host: it sees this trimmed list, not the
-  // whole feed — the complete list is in structuredContent.report.materialsFed,
-  // and the count line says how many were left out.
-  const fed = report.materialsFed ?? [];
-  const notableFed = notableMaterialFeeds(fed);
-  // The count line stands on its own: a run whose materials all fitted still
-  // has to be distinguishable from a run that fed none.
-  const feedText =
-    (notableFed.length === 0 ? "" : "\n" + notableFed.map(formatConsolidateMaterialFeed).join("\n")) +
-    (fed.length > 0 && notableFed.length < fed.length
-      ? "\n  (" + notableFed.length + " of " + fed.length + " materials shown; the rest are in the structured report)"
-      : "");
+  // Every material the run fed gets a line. The CLI trims its list (a human
+  // report, with --verbose for the rest); this half does not, because a
+  // content-only host has no other way to read the feed, and the installed
+  // acceptance lane asserts the material lines are here.
+  const feedText = (report.materialsFed ?? []).length === 0
+    ? ""
+    : "\n" + report.materialsFed.map(formatConsolidateMaterialFeed).join("\n");
   // The quotes are report-only; semantic memory never stores them.
   const quotesText = (report.quotes ?? []).length === 0
     ? ""
