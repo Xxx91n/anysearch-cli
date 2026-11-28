@@ -68,7 +68,7 @@ export function readLooksLedger(file: string): LooksLedger {
   // and reported. The input object is left untouched.
   const { golden: staleGolden, ...j } = parsedRoot;
   if (staleGolden !== undefined) {
-    writeStderr("[eval] dropping a stale golden block from " + file + " — the corpus lives in " + GOLDEN_FILE + "\n");
+    writeStderr("[eval] ignoring a stale golden block in " + file + " — the corpus lives in " + GOLDEN_FILE + "\n");
   }
   const looks: LooksLedgerEntry[] = [];
   for (const raw of j.looks as Array<Record<string, unknown>>) {
