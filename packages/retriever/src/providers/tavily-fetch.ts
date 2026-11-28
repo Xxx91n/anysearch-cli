@@ -89,6 +89,7 @@ export class TavilyFetchProvider implements FetchProvider {
             errorClass: "transient" as const,
             message,
             retryable: true,
+            timedOut: true,
           })),
         };
       }

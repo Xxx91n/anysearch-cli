@@ -361,8 +361,8 @@ async function main() {
       "the deadline keeps the pages already read");
     assert(envelope.failures.length === 1 && envelope.failures[0]!.errorClass === "transient",
       "a slow page is a transient page fault");
-    assert(envelope.failures[0]!.armFault !== true,
-      "a slow page does not retire the arm: the next chunk gets a fresh deadline");
+    assert(envelope.failures[0]!.armFault !== true && envelope.failures[0]!.timedOut === true,
+      "a slow page marks timedOut without immediately retiring the arm");
   }
 
   // ---- the session-expired retry also covers extract ----------------------

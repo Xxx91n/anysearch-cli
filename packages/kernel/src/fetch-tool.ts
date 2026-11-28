@@ -56,7 +56,7 @@ const TRUST_CLOSED_MESSAGE = `这轮不再受理 requestTrustFor 了：连续 ${
 const PAGE_BUDGET_MESSAGE = `这轮读页到上限了（一次提问最多 ${FETCH_LIMITS.maxPages} 页），先用已有结果作答。`;
 const PROVIDER_NO_REPLY_MESSAGE = "抓页信息源这次没有回包；先别断定页面没内容，稍后再试。";
 // 本轮所有臂都退场了：再调一次也是一次请求都不发，别让提示引导模型重试。
-const ALL_ARMS_RETIRED_MESSAGE = "本轮的抓页源都退场了（配额、鉴权或回包坏）；这一轮别再试，用已有材料作答。";
+const ALL_ARMS_RETIRED_MESSAGE = "本轮的抓页源都退场了（配额、鉴权、连续超时或回包坏）；这一轮别再试，用已有材料作答。";
 const PARAMETER_ERROR = `handles 要给 1–${FETCH_LIMITS.maxUrlsPerCall} 个（m:<行号> 或用户贴过的网址），不能有空串；maxCharacters 在 1–${FETCH_LIMITS.maxCharacters} 之间。`;
 const TRUST_GRANTED = "已信任这个主机，本会话内有效。现在重新调用 fetch，handles 用同样的网址，就能读了；这次请求没有读页。";
 const NO_FETCH_SOURCE_MESSAGE = "没有可用的抓取信息源";
@@ -693,12 +693,11 @@ async function runProviders(
         pending.delete(identity);
         pages.push({ page: { ...page, url: entry.url }, provider: responseProvider });
       }
-      // 适配器自己吞掉的超时（anysearch 捕获工具墙、tavily 捕获 SDK 15 秒超时）也要算
-      // 进连续超时；只要拿到了页或回了非超时结果，就把连续计数清零。
+      // 只认明确标记（工具超时墙响了，或适配器在失败项上标了 timedOut: true），
+      // 不靠文案猜，免得目标站自己回 504 Gateway Timeout 把整家误摘。
       const batchTimedOut = envelope.pages.length === 0 && (
         deadline.aborted
-        || (envelope.failures.length > 0
-          && envelope.failures.every((f) => f.errorClass === "transient" && /timed?\s*out|timeout|超时/i.test(f.message ?? "")))
+        || (envelope.failures.length > 0 && envelope.failures.every((f) => f.timedOut === true))
       );
       // 逐页失败里带着整家坏的类：同样的请求换个网址也会坏，这家本轮就到此为止。
       // 这一批已经读到的页留着，没读的（包括这一页）交给下一家。

@@ -101,8 +101,9 @@ export class AnySearchFetchProvider implements FetchProvider {
         failures.push({
           ...pageFault(url, text),
           errorClass: timedOut ? "transient" : (providerErrorClassOf(error) ?? classifyProviderError(text)),
-          // 超时只是这一页慢，不让这家退场；其余（握手、回包读不出来）是这家的事。
-          ...(timedOut ? {} : { armFault: true }),
+          // 超时只是这一页慢，不让这家立刻退场，但标上 timedOut 交给工具计连续超时；
+          // 其余（握手、回包读不出来）是这家的事。
+          ...(timedOut ? { timedOut: true } : { armFault: true }),
         });
         break;
       }

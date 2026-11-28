@@ -883,6 +883,72 @@ async function main() {
         "a stalled 1-URL arm retires after 2 consecutive timeouts instead of waiting for every chunk (got " + stalled.calls.length + ")");
       assert(fastFallback.calls.length === 1 && envelope(mcResult).pages.length === 3,
         "all three URLs move to the fallback arm and succeed");
+
+      // A target site's own "504 Gateway Timeout" (without timedOut: true) must
+      // NOT retire the provider even twice in a row; an adapter-marked timedOut
+      // failure DOES count toward the 2-timeout retirement cap.
+      await tickets("user", [
+        "allowed.example/g504a", "allowed.example/g504b", "allowed.example/g504c",
+        "allowed.example/td1", "allowed.example/td2", "allowed.example/td3",
+      ]);
+      const site504 = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: [],
+        failures: urls.map((url) => ({ url, errorClass: "transient", message: "504 Gateway Timeout", retryable: true })),
+      }), "tavily", 1);
+      const site504Backup = new FakeProvider((urls) => ({
+        provider: "anysearch",
+        pages: urls.map((url) => ({ url, text: "backup" })),
+        failures: [],
+      }), "anysearch", 5);
+      const site504Tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [site504, site504Backup],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      await site504Tool.execute("t25h5", {
+        handles: [
+          "https://allowed.example/g504a",
+          "https://allowed.example/g504b",
+          "https://allowed.example/g504c",
+        ],
+      });
+      assert(site504.calls.length === 3,
+        "unmarked 504 Gateway Timeout failures do not retire the arm (got " + site504.calls.length + ")");
+
+      const markedTimeout = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: [],
+        failures: urls.map((url) => ({
+          url,
+          errorClass: "transient",
+          message: "This operation was aborted",
+          retryable: true,
+          timedOut: true,
+        })),
+      }), "tavily", 1);
+      const markedBackup = new FakeProvider((urls) => ({
+        provider: "anysearch",
+        pages: urls.map((url) => ({ url, text: "backup" })),
+        failures: [],
+      }), "anysearch", 5);
+      const markedTool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [markedTimeout, markedBackup],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const markedRes = await markedTool.execute("t25h6", {
+        handles: [
+          "https://allowed.example/td1",
+          "https://allowed.example/td2",
+          "https://allowed.example/td3",
+        ],
+      });
+      assert(markedTimeout.calls.length === 2,
+        "adapter-marked timedOut failures retire the arm after 2 chunks even without 'timeout' in message (got " + markedTimeout.calls.length + ")");
+      assert(envelope(markedRes).pages.length === 3, "all three URLs still succeed via fallback");
     }
 
     // ---- 8. parameter errors are ordinary tool errors ----------------------

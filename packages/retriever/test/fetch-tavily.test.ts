@@ -287,8 +287,8 @@ async function main() {
     );
     assert(envelope.pages.length === 0 && envelope.failures.length === 2,
       "an SDK timeout yields a page failure for every URL in the batch");
-    assert(envelope.failures.every((f) => f.errorClass === "transient" && f.retryable === true && f.armFault !== true),
-      "an SDK timeout stays a retryable transient page fault without retiring the arm");
+    assert(envelope.failures.every((f) => f.errorClass === "transient" && f.retryable === true && f.armFault !== true && f.timedOut === true),
+      "an SDK timeout stays a retryable transient page fault marked timedOut without retiring the arm");
   }
 
   // ---- ETIMEDOUT / bare ECONNABORTED still throw so unreachable arms retire --
@@ -315,6 +315,8 @@ async function main() {
         { url: "https://example.com/g1", error: "410 Gone" },
         { url: "https://example.com/g2", error: "upstream returned status 404" },
         { url: "https://example.com/g2b", error: "upstream said status code 404" },
+        { url: "https://example.com/g2c", error: "status-code 404" },
+        { url: "https://example.com/g2d", error: "status_code: 410" },
         { url: "https://example.com/g3", error: "dial tcp: no such host" },
         { url: "https://example.com/g4", error: "getaddrinfo ENOTFOUND nope.invalid" },
         { url: "https://example.com/g5", error: "unsupported scheme ftp" },
@@ -329,6 +331,8 @@ async function main() {
           "https://example.com/g1",
           "https://example.com/g2",
           "https://example.com/g2b",
+          "https://example.com/g2c",
+          "https://example.com/g2d",
           "https://example.com/g3",
           "https://example.com/g4",
           "https://example.com/g5",
@@ -345,6 +349,8 @@ async function main() {
       "https://example.com/g1",
       "https://example.com/g2",
       "https://example.com/g2b",
+      "https://example.com/g2c",
+      "https://example.com/g2d",
       "https://example.com/g3",
       "https://example.com/g4",
       "https://example.com/g5",

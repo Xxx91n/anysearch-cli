@@ -18,9 +18,9 @@ export const FETCH_EMPTY_BODY_MESSAGE = "该网址没有返回正文";
 
 /**
  * 换一家也没用的失败：地址本身没了——404/410、域名解析不出来、网址不合法。
- * 404/410 只认状态码形状（`HTTP 404`、`status=410`、`404 Not Found`），网址路径里
- * （`/404-guide`）或查询串里（`?id=404`）的数字不算；笼统的 `not found` 也不算
- * （`content not found` 是这家没抽到正文，下一家也许读得到）。
+ * 404/410 只认状态码形状（`HTTP 404`、`status=410`、`status code 404`、`status-code 404`、
+ * `status_code: 404`、`404 Not Found`），网址路径里（`/404-guide`）或查询串里（`?id=404`）
+ * 的数字不算；笼统的 `not found` 也不算（`content not found` 是这家没抽到正文，下一家也许读得到）。
  *
  * ENOTFOUND 归在这里，共享分类器那边是 `transient`：两边答的不是同一个问题——
  * 分类器答「这个请求要不要重试」，这里答「换一家还有没有意义」。
@@ -102,6 +102,11 @@ export interface FetchFailure {
    * 注意工具那道总超时墙不算：那只是这一页慢，按页失败报（`transient`）。
    */
   armFault?: boolean;
+  /**
+   * 这条失败是本次上游调用撞了超时墙（工具 20 秒墙或 SDK 自己的调用超时），
+   * 用来给工具累计「连续超时」次数；跟目标站自己返回的 504 等普通页失败分开。
+   */
+  timedOut?: boolean;
 }
 
 export interface FetchEnvelope {
