@@ -431,7 +431,11 @@
   trust prompts; after that the request is refused in-band and the no-ticket
   refusal stops inviting another one. Trust refusals have their own counter: two
   in a row that asked nobody anything close `requestTrustFor` for the rest of the
-  run, while pages this session can already read stay readable.
+  run. Closed means the parameter is ignored, not that the call dies: the same
+  call's handles go through ordinary admission, so pages this session can already
+  read still read and the rest get the plain no-ticket refusal. A refused address,
+  deny, allowlist or credential on the trust path does count toward the
+  two-rejected-batches stop, because those judged the host exactly as a read would.
   Headless/MCP never prompts — it refuses and tells the model to ask the user to
   paste the link. No TOML is
   written and nothing crosses sessions. This does not open the external

@@ -51,7 +51,7 @@ export const BUILTIN_FETCH_TOOL = "fetch";
 const BUDGET_STOP_MESSAGE = "这轮抓页额度用完了，先用已有结果作答。";
 const SOFT_STOP_MESSAGE = `这轮抓页已经停了：连续 ${FETCH_LIMITS.maxEmptyBatches} 次没拿到新内容。先用已有结果回答，或者让用户把链接贴进来。`;
 const REJECTED_STOP_MESSAGE = `这轮抓页已经停了：连续 ${FETCH_LIMITS.maxRejectedBatches} 次整批网址都没被放行。先用已有材料回答；如果确实要读，让用户确认域名规则，不要换写法重试。`;
-const TRUST_CLOSED_MESSAGE = `这轮不再接受 requestTrustFor 了：连续 ${FETCH_LIMITS.maxTrustSpins} 次信任请求都没真的问过用户。已经能读的网址照常可读；要读新的网站，让用户把网页正文贴进来。`;
+const TRUST_CLOSED_MESSAGE = `这轮不再接受 requestTrustFor 了：连续 ${FETCH_LIMITS.maxTrustSpins} 次信任请求都没真的问过用户。把 requestTrustFor 去掉再调一次，已经能读的网址照常能读；要读新的网站，让用户把网页正文贴进来。`;
 const PAGE_BUDGET_MESSAGE = `这轮读页到上限了（一次提问最多 ${FETCH_LIMITS.maxPages} 页），先用已有结果作答。`;
 const PROVIDER_NO_REPLY_MESSAGE = "抓页信息源这次没有回包；先别断定页面没内容，稍后再试。";
 const PARAMETER_ERROR = `handles 要给 1–${FETCH_LIMITS.maxUrlsPerCall} 个（m:<行号> 或用户贴过的网址），不能有空串；maxCharacters 在 1–${FETCH_LIMITS.maxCharacters} 之间。`;
@@ -124,10 +124,12 @@ interface Target {
  *
  * Page reading stops on its own two counters: a batch with no new page, and a
  * batch nothing was admitted from (gate refusals, `no_ticket`, `stale_handle`,
- * `invalid_handle`). Trust refusals never touch them: the hosts those refused
- * were never read, and the pages this session can already read must stay
- * readable. Trust has its own budget — a run that keeps asking without asking
- * anyone loses that one path.
+ * `invalid_handle`). A gate that refuses a host from the trust entry point counts
+ * too — address, deny, allowlist and credential judged that host exactly as a
+ * read would. What does not count is a trust request nobody answered (allowance
+ * gone, host answered already, headless cannot prompt): those close the trust
+ * path on their own counter instead, and the pages this session can read stay
+ * readable.
  */
 class FetchRunState {
   pagesRead = 0;
@@ -373,43 +375,18 @@ function resolveTicket(
   return { ok: true, target: { identity, requestUrl, ...(title ? { title } : {}) } };
 }
 
-/** Log a trust-path denial and return the refusal text; the caller decides if a counter moves. */
-function trustRefusal(
-  options: FetchToolOptions,
-  message: string,
-  reason: FetchRejectReason,
-  handle: string,
-  host?: string,
-  port?: string,
-): ReturnType<typeof textResult> {
-  reportDenial(options.span, { handle, source: "tofu", reason, ...(host ? { host } : {}), ...(port ? { port } : {}) });
-  return textResult(message, { rejected: [{ handle, reason }], softStopped: false });
-}
-
-/** A trust-path refusal that counts toward the two-rejected-batches stop. */
-function rejectTrustGate(
-  options: FetchToolOptions,
-  state: FetchRunState,
-  message: string,
-  reason: FetchRejectReason,
-  handle: string,
-  host?: string,
-  port?: string,
-): ReturnType<typeof textResult> {
-  reportDenial(options.span, { handle, source: "tofu", reason, ...(host ? { host } : {}), ...(port ? { port } : {}) });
-  const stoppedNow = state.noteRejectedBatch();
-  const text = stoppedNow ? message + "\n" + REJECTED_STOP_MESSAGE : message;
-  return textResult(text, { rejected: [{ handle, reason }], softStopped: stoppedNow });
-}
+/** How one trust-path refusal is costed: which counter moves, which extra line follows. */
+type TrustRefusalKind = "log" | "page-gate" | "spin";
 
 /**
- * A trust request that asked nobody anything — the allowance was gone, the host
- * was answered already, or headless cannot prompt at all. It closes the trust
- * path once it repeats, and leaves page reading alone: no host here was judged.
+ * One refusal shape for the trust path. `kind` says what it costs:
+ * `page-gate` counts toward the two-rejected-batches stop, `spin` toward the
+ * trust-path closure, `log` toward neither (a human just answered).
  */
-function rejectTrustSpin(
+function rejectTrust(
   options: FetchToolOptions,
   state: FetchRunState,
+  kind: TrustRefusalKind,
   message: string,
   reason: FetchRejectReason,
   handle: string,
@@ -417,9 +394,19 @@ function rejectTrustSpin(
   port?: string,
 ): ReturnType<typeof textResult> {
   reportDenial(options.span, { handle, source: "tofu", reason, ...(host ? { host } : {}), ...(port ? { port } : {}) });
-  const closedNow = state.noteTrustSpin();
-  const text = closedNow ? message + "\n" + TRUST_CLOSED_MESSAGE : message;
-  return textResult(text, { rejected: [{ handle, reason }], trustClosed: closedNow });
+  if (kind === "page-gate") {
+    const stoppedNow = state.noteRejectedBatch();
+    return textResult(stoppedNow ? message + "\n" + REJECTED_STOP_MESSAGE : message, {
+      rejected: [{ handle, reason }], softStopped: stoppedNow,
+    });
+  }
+  if (kind === "spin") {
+    const closedNow = state.noteTrustSpin();
+    return textResult(closedNow ? message + "\n" + TRUST_CLOSED_MESSAGE : message, {
+      rejected: [{ handle, reason }], trustClosed: closedNow,
+    });
+  }
+  return textResult(message, { rejected: [{ handle, reason }], softStopped: false });
 }
 
 /**
@@ -435,11 +422,12 @@ function rejectTrustSettled(
   host: string,
   counts: "answered" | "repeat",
 ): ReturnType<typeof textResult> {
-  (reason === "trust_declined" ? state.declinedTrust : state.failedTrust).add(host);
-  const message = fetchRejectMessage(reason, { host });
-  return counts === "repeat"
-    ? rejectTrustSpin(options, state, message, reason, domain, host)
-    : trustRefusal(options, message, reason, domain, host);
+  if (reason === "trust_declined") state.declinedTrust.add(host);
+  else state.failedTrust.add(host);
+  return rejectTrust(
+    options, state, counts === "repeat" ? "spin" : "log",
+    fetchRejectMessage(reason, { host }), reason, domain, host,
+  );
 }
 
 /**
@@ -461,12 +449,13 @@ async function handleTrustRequest(
   const domain = normalizeTrustDomain(raw);
   if (!domain) return textResult(TRUST_DOMAIN_FORMAT);
 
-  // The trust path is closed for this run. A host this session already trusts
-  // still reads normally; anything else is refused here, and the refusal asks
-  // nobody anything, so it does not spend the page budget.
+  // The trust path is closed for this run: stop asking, and read whatever this
+  // call's handles are entitled to. Refusing the whole call here would drop
+  // handles the user already pasted or trusted, and the model cannot tell that
+  // dropping `requestTrustFor` is the way back in.
   if (state.trustClosed) {
-    if (hasTofuTrust(options.store, options.sessionId, domain)) return undefined;
-    return textResult(TRUST_CLOSED_MESSAGE, { rejected: [{ handle: domain, reason: "trust_prompt_limit" }] });
+    options.span?.addEvent("fetch.trust", { "fetch.trust": "closed", "fetch.host": domain });
+    return undefined;
   }
 
   const urls: string[] = [];
@@ -474,9 +463,9 @@ async function handleTrustRequest(
     if (/^m:/i.test(handle.trim())) return textResult(TRUST_HANDLE_MISMATCH + handle);
     const { identity, requestUrl } = effectiveRequestUrl(options.store, options.sessionId, handle);
     const address = checkFetchAddress(requestUrl, identity);
-    if (!address.ok) return rejectTrustGate(options, state, fetchRejectMessage(address.reason), address.reason, handle);
+    if (!address.ok) return rejectTrust(options, state, "page-gate", fetchRejectMessage(address.reason), address.reason, handle);
     if (fetchCredentialHit(handle, identity)) {
-      return rejectTrustGate(options, state, fetchRejectMessage("credential"), "credential", handle, address.host, address.port);
+      return rejectTrust(options, state, "page-gate", fetchRejectMessage("credential"), "credential", handle, address.host, address.port);
     }
     if (address.host !== domain) return textResult(TRUST_HANDLE_MISMATCH + handle);
     urls.push(requestUrl);
@@ -484,14 +473,14 @@ async function handleTrustRequest(
 
   // The host itself gets the same address and domain gates a read would.
   const address = checkFetchAddress("https://" + domain + "/", domain + "/");
-  if (!address.ok) return rejectTrustGate(options, state, fetchRejectMessage(address.reason), address.reason, domain);
+  if (!address.ok) return rejectTrust(options, state, "page-gate", fetchRejectMessage(address.reason), address.reason, domain);
   const gate = checkFetchDomain(address.host, options.policy());
   if (!gate.ok) {
-    return rejectTrustGate(options, state, fetchRejectMessage(gate.reason), gate.reason, domain, address.host, address.port);
+    return rejectTrust(options, state, "page-gate", fetchRejectMessage(gate.reason), gate.reason, domain, address.host, address.port);
   }
   if (hasTofuTrust(options.store, options.sessionId, address.host)) return undefined;
   if (!options.confirmTrust) {
-    return rejectTrustSpin(options, state, fetchRejectMessage("trust_unavailable"), "trust_unavailable", domain, address.host);
+    return rejectTrust(options, state, "spin", fetchRejectMessage("trust_unavailable"), "trust_unavailable", domain, address.host);
   }
   if (state.failedTrust.has(address.host)) {
     return rejectTrustSettled(options, state, "trust_write_failed", domain, address.host, "repeat");
@@ -502,7 +491,7 @@ async function handleTrustRequest(
   // The allowance is per run. Running out says nothing bad about this host, so
   // the text stays neutral; the repeat closes the trust path, not the page budget.
   if (!state.claimTrustPromptSlot()) {
-    return rejectTrustSpin(options, state, fetchRejectMessage("trust_prompt_limit"), "trust_prompt_limit", domain, address.host);
+    return rejectTrust(options, state, "spin", fetchRejectMessage("trust_prompt_limit"), "trust_prompt_limit", domain, address.host);
   }
   // The model followed the documented escape hatch and a human is about to
   // decide. The earlier no_ticket is answered, not repeated.

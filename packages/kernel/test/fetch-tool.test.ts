@@ -873,16 +873,23 @@ async function main() {
       const spin = await tool.execute("t25t-spin", {
         handles: ["https://docs.six.example/a"], requestTrustFor: "docs.six.example",
       });
-      assert(rawText(spin).includes("不再弹确认") && !rawText(spin).includes("整批网址都没被放行"),
+      assert(!rawText(spin).includes("整批网址都没被放行") && asked === 3,
         "an over-limit trust request is refused without touching the page budget");
+      assert(rawText(spin).includes("不再接受 requestTrustFor"),
+        "the second refused trust request closes the trust path for the run");
+
+      // Closed means the parameter is ignored, not that the whole call dies: a
+      // handle this session can already read must still read.
+      const afterCloseRead = await tool.execute("t25t-after-read", {
+        handles: ["https://readable.example/page"], requestTrustFor: "docs.seven.example",
+      });
+      assert(envelope(afterCloseRead).pages.length === 1,
+        "a closed trust path does not block a ticketed handle in the same call");
       const afterClose = await tool.execute("t25t-after", {
         handles: ["https://docs.seven.example/a"], requestTrustFor: "docs.seven.example",
       });
-      assert(asked === 3 && rawText(afterClose).includes("不再接受 requestTrustFor"),
-        "repeating the refusal closes the trust path for the run");
-      const afterCloseRead = await tool.execute("t25t-after-read", { handles: ["https://readable.example/page"] });
-      assert(envelope(afterCloseRead).pages.length === 1,
-        "a closed trust path does not stop reading a ticketed URL");
+      assert(rawText(afterClose).includes("别再带 requestTrustFor") && asked === 3,
+        "a closed trust path falls back to the ordinary no-ticket refusal");
     }
 
     {
@@ -894,10 +901,12 @@ async function main() {
       const repeat1 = await tool.execute("t25u2", { handles: ["https://docs.settled.example/b"], requestTrustFor: "docs.settled.example" });
       assert(rawText(repeat1).includes("没有同意") && !rawText(repeat1).includes("不再接受 requestTrustFor"),
         "the first repeat of a declined host is refused in-band");
-      await tool.execute("t25u2b", { handles: ["https://docs.settled.example/b2"], requestTrustFor: "docs.settled.example" });
-      const repeat3 = await tool.execute("t25u3", { handles: ["https://docs.settled.example/c"], requestTrustFor: "docs.settled.example" });
-      assert(rawText(repeat3).includes("不再接受 requestTrustFor"),
+      const repeat2 = await tool.execute("t25u2b", { handles: ["https://docs.settled.example/b2"], requestTrustFor: "docs.settled.example" });
+      assert(rawText(repeat2).includes("不再接受 requestTrustFor"),
         "asking a settled host over and over closes the trust path");
+      const repeat3 = await tool.execute("t25u3", { handles: ["https://docs.settled.example/c"], requestTrustFor: "docs.settled.example" });
+      assert(rawText(repeat3).includes("别再带 requestTrustFor"),
+        "after that the parameter is ignored and the handle is refused as a plain no-ticket read");
       assert(asked === 1, "a settled host is never asked twice");
     }
 
