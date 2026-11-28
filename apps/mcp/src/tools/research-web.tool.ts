@@ -101,15 +101,15 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
             lastEnvelope = envelope;
 
-            const queriedProviders = envelope.metadata?.providersQueried ?? [];
-            const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
+            const queriedProviders = envelope.metadata.providersQueried;
+            const cancelledProviders = envelope.metadata.providersCancelled;
             // Overwritten every round: the last completed round wins, the same
             // round abstain and sufficiency describe.
             lastRoundQueried = queriedProviders;
             lastRoundCancelled = cancelledProviders;
             partial = partial || isPartialPool(cancelledProviders);
             lastRoundProviderElapsedMs = envelope.metadata?.providerElapsedMs ?? {};
-            const roundFailed = envelope.metadata?.providersFailed ?? [];
+            const roundFailed = envelope.metadata.providersFailed;
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
             // Follows each arm's latest failure: overwrite when it gave a number,

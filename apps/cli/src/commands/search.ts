@@ -289,12 +289,12 @@ export async function runSearch(args: string[]): Promise<number> {
         results: envelope.results,
         // providersFailed exposed so install-smoke's fault leg names the failed
         // arm from a structured field, not a string match on human output.
-        providersFailed: envelope.metadata?.providersFailed ?? [],
+        providersFailed: envelope.metadata.providersFailed,
         // Who was asked, and who we cut off — with providersFailed above, these
         // three answer "what happened to each arm". A source the domain config
         // never enabled, or ANS_PROVIDERS filtered out, is in none of them: it
         // never joins the fanout.
-        providersQueried: envelope.metadata?.providersQueried ?? [],
+        providersQueried: envelope.metadata.providersQueried,
         providersCancelled: cancelledProviders,
         // True when at least one arm was cut, so a script does not have to read
         // three fields to notice the pool was shortened. Always present.

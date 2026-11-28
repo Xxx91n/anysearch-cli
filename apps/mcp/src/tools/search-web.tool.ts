@@ -70,10 +70,10 @@ export function registerSearchWeb(server: McpServer, eng: CompositionResult): vo
           // verdicts are successes with their value named in the output; the
           // engine decides which, this surface never re-judges.
           const outcome = outcomeOf(envelope);
-          const queriedProviders = envelope.metadata?.providersQueried ?? [];
-          const cancelledProviders = envelope.metadata?.providersCancelled ?? [];
+          const queriedProviders = envelope.metadata.providersQueried;
+          const cancelledProviders = envelope.metadata.providersCancelled;
           const providerElapsedMs = envelope.metadata?.providerElapsedMs ?? {};
-          const failedProviders = envelope.metadata?.providersFailed ?? [];
+          const failedProviders = envelope.metadata.providersFailed;
           const providerErrorClasses = envelope.metadata?.providerErrorClasses;
           const providerErrorRetryAfter = envelope.metadata?.providerErrorRetryAfterSeconds;
           if (outcome === "failed") {
