@@ -46,10 +46,10 @@ export type Query = SearchRequest & {
 // RetrieverPort: the kernel calls this to search.
 export interface RetrieverPort {
   search(q: Query): Promise<FusedEnvelope>;
-  // The clock this wrapper runs on, when it runs one; omit it otherwise. A
-  // wrapper that starts its own timer must forward it here: reportedDeadlineMs
-  // otherwise reports the orchestration default, not the wait the wrapper
-  // enforced.
+  // The clock the wrapper reports. A wrapper that just forwards calls passes the
+  // inner retriever's value through; one that runs its own timer reports that
+  // timer's budget. Leaving it out makes reportedDeadlineMs fall back to the
+  // orchestration default, not the wait this wrapper enforced.
   readonly requestTimeoutMs?: number;
 }
 

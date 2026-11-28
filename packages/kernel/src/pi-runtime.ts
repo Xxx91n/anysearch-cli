@@ -771,7 +771,8 @@ export class PiAgentRuntime {
           taskBudget: opts.taskBudget ?? q.taskBudget,
           ...(opts.includeAnswer ? { includeSourceUrls: true } : {}),
         }),
-        // The wrapper is a port of its own: report the clock it forwards.
+        // Also a RetrieverPort: report the clock the inner retriever runs on,
+        // else callers assume the default.
         ...(opts.retriever.requestTimeoutMs !== undefined ? { requestTimeoutMs: opts.retriever.requestTimeoutMs } : {}),
       }
       : opts.retriever;
