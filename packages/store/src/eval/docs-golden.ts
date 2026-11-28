@@ -5,7 +5,10 @@
 export const DOCS_GOLDEN_SCHEMA = "anysearch/docs-golden@1";
 export const DOCS_GOLDEN_COVERAGE_SCHEMA = "anysearch/eval-looks-coverage@1";
 
-// The only values `scopes` may use; readGoldenFile rejects anything else.
+// The only values `scopes` may use; readGoldenFile rejects anything else. This
+// module stays import-free at run time: plain-node callers import it directly
+// (see scripts/test/preflight-badcase-backfill.test.mjs), and an extensionless
+// TS specifier does not resolve outside a bundler.
 export const GOLDEN_SCOPE_VALUES = ["stub", "live", "both"] as const;
 export type GoldenScope = (typeof GOLDEN_SCOPE_VALUES)[number];
 
