@@ -1,7 +1,7 @@
 // Corpus file names and the scope predicates live here, in a leaf module: the
 // look ledger's stale-block notice and kernel's stub executor test must not pull
 // the corpus validator in with them. The predicates spell the vocabulary out
-// themselves; a store test pins them to GOLDEN_SCOPE_VALUES.
+// themselves; a store test pins which value each one claims.
 import type { GoldenScope } from "./docs-golden";
 
 export const GOLDEN_FILE = "eval-golden.json";

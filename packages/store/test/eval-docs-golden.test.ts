@@ -128,15 +128,44 @@ assert(ctrlBatch.length >= 2, "control-class pins exist (got " + ctrlBatch.lengt
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-// --- 1c. the scope predicates cover every value the vocabulary allows --------
+// --- 1c. each scope value is claimed by exactly the predicates that serve it --
 // corpus-files.ts spells the two predicates out instead of importing the value
-// constant (that import would pull the validator in), so pin the pair here.
+// constant (that import would pull the validator in), so pin the ownership here:
+// a swapped or over-broad predicate has to fail this, not just an unclaimed value.
+const scopeClaims: Array<[string, boolean, boolean]> = [
+  ["live", true, false],
+  ["stub", false, true],
+  ["both", true, true],
+];
 for (const value of GOLDEN_SCOPE_VALUES) {
-  assert(isLiveScope(value) || isStubScope(value), "scope value " + value + " is claimed by a predicate");
+  const claim = scopeClaims.find(([scope]) => scope === value);
+  assert(claim !== undefined, "the store test knows which predicates claim " + value);
+  if (!claim) continue;
+  assert(isLiveScope(value) === claim[1], value + ": isLiveScope claim");
+  assert(isStubScope(value) === claim[2], value + ": isStubScope claim");
 }
 assert(
   !isLiveScope("sometimes") && !isStubScope("sometimes"),
   "a value outside the scope vocabulary is claimed by neither predicate"
+);
+
+// --- 1d. the closed vocabularies reject a value outside them ----------------
+// The governance comment on DOCS_GOLDEN_STABILITY_CLASSES points here: without
+// these two, either check could be deleted with every test still green.
+const entryProblemsAfter = (mutate: (entry: Record<string, unknown>) => void): string[] => {
+  const copy = JSON.parse(JSON.stringify(golden.entries[0])) as Record<string, unknown>;
+  mutate(copy);
+  return validateDocsGoldenEntry(copy);
+};
+assert(
+  entryProblemsAfter((e) => {
+    (e.expected as Record<string, unknown>).mustHitPaths = [{ path: "/install", tolerate: ["draft"] }];
+  }).some((problem) => problem.includes("tolerate outside")),
+  "a tolerate class outside locale|version|dated is rejected"
+);
+assert(
+  entryProblemsAfter((e) => { e.stability_class = "whatever"; }).some((problem) => problem.includes("stability_class outside")),
+  "a stability_class outside controlled|frozen-spec|external is rejected"
 );
 
 // --- 2. every entry validates against the entry schema ----------------------
