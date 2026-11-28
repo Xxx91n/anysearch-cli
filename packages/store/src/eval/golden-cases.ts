@@ -643,14 +643,17 @@ export const GOLDEN_CASES: CaseSpec[] = [
   },
   ...buildRelationExpansionR33(),
   // --- Group: consolidate (Phase-1 golden; ops decisions stay LLM-free stubs) ---
+  // Every consolidate case seeds its three pages in three sessions: temporal
+  // supersede is per session, and the URLs differ so URL dedupe does not
+  // collapse them. One session would leave one live material and no cluster.
   {
     id: "con_add_then_noop", group: "consolidate",
     consolidateStub: { summary: "pnpm pins prevent lockfile drift; corepack enforces packageManager", classify: "supported" },
     description: "3-episode cluster consolidates once (ADD), a rerun is a NOOP (theta boundary covered by unit tests)",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pn1", "kikis-delivery theme note", "kiki delivery cohort picks teal oceanic palette", 0.9, "PnpmPinning")], expect: ["accept"] },
-      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pn2", "vector arm telemetry plan", "shadow-mode arm counters land report only", 0.9, "PnpmPinning")], expect: ["supersede"] },
-      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/pn3", "archive undo drill", "reversible archive drills never lose rows", 0.9, "PnpmPinning")], expect: ["supersede"] },
+      { op: "adjudicate", stage: "adjudicate", newSession: true, items: [km("https://ex.com/pn2", "vector arm telemetry plan", "shadow-mode arm counters land report only", 0.9, "PnpmPinning")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", newSession: true, items: [km("https://ex.com/pn3", "archive undo drill", "reversible archive drills never lose rows", 0.9, "PnpmPinning")], expect: ["accept"] },
       { op: "consolidate", stage: "store", expectAdd: 1 },
       { op: "consolidate", stage: "store", expectNoop: 1 },
     ],
@@ -661,8 +664,8 @@ export const GOLDEN_CASES: CaseSpec[] = [
     description: "fidelity gate rejects an unsupported LLM summary — nothing is written (D7-1)",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cg1", "harvest moon schedule", "harvest festival lands on first tuesday", 0.9, "GateProbe")], expect: ["accept"] },
-      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cg2", "turbo task topology", "turbo fans out check tasks across workspaces", 0.9, "GateProbe")], expect: ["supersede"] },
-      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cg3", "quarantine belt review", "candidate belt requires manual review", 0.9, "GateProbe")], expect: ["supersede"] },
+      { op: "adjudicate", stage: "adjudicate", newSession: true, items: [km("https://ex.com/cg2", "turbo task topology", "turbo fans out check tasks across workspaces", 0.9, "GateProbe")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", newSession: true, items: [km("https://ex.com/cg3", "quarantine belt review", "candidate belt requires manual review", 0.9, "GateProbe")], expect: ["accept"] },
       { op: "consolidate", stage: "store", expectRejected: 1, expectAdd: 0 },
     ],
   },
@@ -671,8 +674,8 @@ export const GOLDEN_CASES: CaseSpec[] = [
     description: "no summarize seam wired -> consolidate fails open and writes nothing (D4)",
     ops: [
       { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cu1", "habit tracker cadence", "weekly habit review every sunday", 0.9, "UnavailProbe")], expect: ["accept"] },
-      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cu2", "reading list migration", "move reading list into bookmarks db", 0.9, "UnavailProbe")], expect: ["supersede"] },
-      { op: "adjudicate", stage: "adjudicate", items: [km("https://ex.com/cu3", "office plant watering", "water the monstera on wednesdays", 0.9, "UnavailProbe")], expect: ["supersede"] },
+      { op: "adjudicate", stage: "adjudicate", newSession: true, items: [km("https://ex.com/cu2", "reading list migration", "move reading list into bookmarks db", 0.9, "UnavailProbe")], expect: ["accept"] },
+      { op: "adjudicate", stage: "adjudicate", newSession: true, items: [km("https://ex.com/cu3", "office plant watering", "water the monstera on wednesdays", 0.9, "UnavailProbe")], expect: ["accept"] },
       { op: "consolidate", stage: "store", expectLlmUnavailable: 1, expectAdd: 0 },
     ],
   },

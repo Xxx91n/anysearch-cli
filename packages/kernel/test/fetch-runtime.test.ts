@@ -12,7 +12,7 @@ import { SqliteSessionStore } from "@anysearch-cli/store";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { FetchProvider, FusedEnvelope } from "@anysearch-cli/retriever";
 import { Type } from "@sinclair/typebox";
-import { PiAgentRuntime } from "../src/pi-runtime";
+import { fetchTrustPrompt, PiAgentRuntime } from "../src/pi-runtime";
 import type { DomainConfigPort, RetrieverPort } from "../src/ports";
 
 let passed = 0, failed = 0;
@@ -101,6 +101,18 @@ const searchEnvelope: FusedEnvelope = {
 };
 
 async function main() {
+  // ---- the user-facing TOFU text names the URLs and the domain -----------
+  {
+    const prompt = fetchTrustPrompt({
+      domain: "docs.example.com",
+      urls: ["https://docs.example.com/guide", "https://docs.example.com/\u001b[31mred"],
+    });
+    assert(prompt.includes("https://docs.example.com/guide"), "the prompt shows the full URL");
+    assert(prompt.includes("信任 docs.example.com 这个主机"), "the prompt names the exact host");
+    assert(!prompt.includes("含子域"), "the prompt never claims a subdomain-wide grant");
+    assert(!prompt.includes("\u001b"), "the prompt strips terminal control characters");
+  }
+
   // ---- registration: store + providers make fetch model-visible ----------
   {
     const workDir = mkdtempSync(join(tmpdir(), "ans-fetch-runtime-"));
@@ -215,6 +227,61 @@ async function main() {
       await drain(noFetch.run("读 https://example.com/other"));
       assert(!store.hasFetchTicket(session.id, "user", "example.com/other"),
         "no user ticket is written when fetch does not register");
+      store.close();
+    } finally {
+      try { rmSync(workDir, { recursive: true, force: true }); } catch {}
+    }
+  }
+
+  // ---- #612: without interactive, a supplied trust prompt is never wired ----
+  {
+    const workDir = mkdtempSync(join(tmpdir(), "ans-fetch-runtime-trust-"));
+    const store = new SqliteSessionStore(join(workDir, "test.db"));
+    try {
+      const session = await store.createSession("chat");
+      const retriever: RetrieverPort = { async search() { return searchEnvelope; } };
+      const fetchProvider: FetchProvider = {
+        id: "exa",
+        maxUrlsPerCall: 5,
+        async fetch() { return { provider: "exa", pages: [], failures: [] }; },
+      };
+      const domain: DomainConfigPort = {
+        sources: { enabled: ["exa"] },
+        prompts: [],
+        skills: { active: ["search"] },
+        hooks: { toolWhitelist: ["search", "fetch"] },
+        rag: { adapter: "none" },
+      };
+      let asked = 0;
+      let seen = "";
+      let turn = 0;
+      const provider = scriptedProvider((context) => {
+        turn++;
+        if (turn === 1) {
+          return assistantMessage([{
+            type: "toolCall",
+            id: "f1",
+            name: "fetch",
+            arguments: {
+              handles: ["https://docs.trust.example/guide"],
+              requestTrustFor: "docs.trust.example",
+            },
+          }], "toolUse");
+        }
+        seen = JSON.stringify(context.messages ?? []);
+        return assistantMessage([{ type: "text", text: "ok" }], "stop");
+      });
+      const runtime = new PiAgentRuntime({
+        retriever, domain, model, streamFn: provider.fn, store, sessionId: session.id,
+        fetchProviders: [fetchProvider],
+        interactive: false,
+        confirmFetchTrust: async () => { asked++; return true; },
+      });
+      await drain(runtime.run("read the docs"));
+      assert(asked === 0, "a non-interactive runtime never reaches the trust prompt");
+      assert(!store.hasFetchTicket(session.id, "tofu", "docs.trust.example"),
+        "a non-interactive trust request writes no ticket");
+      assert(seen.includes("非交互模式"), "the model reads the non-interactive refusal");
       store.close();
     } finally {
       try { rmSync(workDir, { recursive: true, force: true }); } catch {}

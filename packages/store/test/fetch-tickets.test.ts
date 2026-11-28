@@ -3,7 +3,7 @@
 // Style: assert-based self-check, matching the store suite.
 
 import Database from "better-sqlite3";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteSessionStore } from "../src/session-store";
@@ -58,6 +58,19 @@ async function main() {
     await store.saveFetchTickets(a.id, "search", [String(rowId), String(rowId)]);
     assert(store.hasFetchTicket(a.id, "search", String(rowId)), "duplicate ticket write stays present");
 
+    // #612: a trusted site is a bare domain, normalized like a user URL.
+    await store.saveFetchTickets(a.id, "tofu", ["Docs.Example.COM."]);
+    assert(store.hasFetchTicket(a.id, "tofu", "docs.example.com"),
+      "a tofu domain is lowercased and loses its trailing dot");
+    assert(!store.hasFetchTicket(b.id, "tofu", "docs.example.com"),
+      "another session does not see the tofu ticket");
+    await store.saveFetchTickets(a.id, "tofu", ["https://raw.example", "nodot", "example.com/path", "m:1"]);
+    assert(!store.hasFetchTicket(a.id, "tofu", "https://raw.example"),
+      "a URL is not stored as a tofu domain");
+    assert(!store.hasFetchTicket(a.id, "tofu", "nodot"), "a dotless value is not stored as a tofu domain");
+    assert(!store.hasFetchTicket(a.id, "tofu", "example.com/path"),
+      "a domain with a path is not stored as a tofu ticket");
+
     // Deleting the session takes its tickets with it.
     const raw = new Database(dbPath);
     raw.pragma("foreign_keys = ON");
@@ -70,8 +83,48 @@ async function main() {
     assert(!store.hasFetchTicket(a.id, "search", String(rowId)), "deleted session has no ticket");
     assert(store.hasFetchTicket(b.id, "user", "example.com/pasted") === false,
       "the surviving session still has none");
+    await store.saveFetchTickets(b.id, "user", ["example.com/survivor"]);
 
     store.close();
+
+    // #612: an older database whose CHECK only knew search/user is rebuilt once.
+    {
+      const legacy = new Database(dbPath);
+      legacy.pragma("foreign_keys = OFF");
+      legacy.exec(`
+        CREATE TABLE fetch_tickets_old (
+          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL CHECK (kind IN ('search', 'user')),
+          value TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (session_id, kind, value)
+        );
+        INSERT INTO fetch_tickets_old (session_id, kind, value, created_at)
+          SELECT session_id, kind, value, created_at FROM fetch_tickets;
+        DROP TABLE fetch_tickets;
+        ALTER TABLE fetch_tickets_old RENAME TO fetch_tickets;
+      `);
+      legacy.close();
+    }
+    const backupPath = dbPath + ".pre-migration.db";
+    assert(!existsSync(backupPath), "the fresh store needed no snapshot before the legacy CHECK");
+    const reopened = new SqliteSessionStore(dbPath);
+    try {
+      assert(existsSync(backupPath),
+        "a current marker plus an old fetch_tickets CHECK still gets a pre-migration snapshot");
+      assert(reopened.hasFetchTicket(b.id, "user", "example.com/survivor"),
+        "the fetch-ticket rebuild keeps the rows it already had");
+      await reopened.saveFetchTickets(b.id, "tofu", ["kept.example"]);
+      assert(reopened.hasFetchTicket(b.id, "tofu", "kept.example"),
+        "the rebuilt CHECK admits tofu tickets");
+      const ddl = reopened.dbQuery<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'fetch_tickets'",
+      )[0]!;
+      assert(ddl.sql.includes("'tofu'"), "the rebuilt table carries the widened CHECK");
+    } finally {
+      reopened.close();
+    }
+
     console.log("fetch-tickets.test.ts: " + passed + " passed, " + failed + " failed");
   } finally {
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}

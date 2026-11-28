@@ -69,12 +69,27 @@ const store = new SqliteSessionStore(dbPath, {
   consolidateClassify: () => ({ label: "supported", confidence: 0.92 }),
 });
 const session = await store.createSession("eval");
-// Supersede chain: 3 writes, one entity -> 2 closed + 1 live episode (the history cluster, D2).
+// #613: three LIVE materials, not three versions of one row. Temporal supersede
+// is per session, so seeding each version in its own session keeps all three
+// live while the shared entity still puts them in one cluster.
 for (let i = 1; i <= 3; i++) {
-  const r = await store.adjudicateMemory(session.id, [
-    { url: "https://ex.com/alpha", title: "Alpha build note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9 },
+  const s = i === 1 ? session : await store.createSession("eval");
+  const r = await store.adjudicateMemory(s.id, [
+    { url: "https://ex.com/alpha/" + i, title: "Alpha build note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9, entity: "AlphaBuild" },
   ]);
   assert(r[0] && (r[0].action === "accept" || r[0].action === "supersede"), "write " + i + " accepted");
+}
+// #613 lock: the fixture really is three LIVE materials, so the batch reaches
+// CLUSTER_MIN because of three current rows, not because a superseded row was
+// counted.
+{
+  const d = new Database(dbPath, { readonly: true });
+  const live = d.prepare(
+    "SELECT COUNT(*) c, COUNT(DISTINCT url) u FROM retrieval_results WHERE superseded_by IS NULL AND valid_until IS NULL",
+  ).get() as { c: number; u: number };
+  d.close();
+  assert(live.c === 3 && live.u === 3,
+    "fixture: three live materials with distinct URLs (got live=" + live.c + " urls=" + live.u + ")");
 }
 
 // dry-run == apply prediction (D7-6), and dry-run writes nothing
@@ -121,10 +136,10 @@ assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
 {
   const gateDb2 = join(dir, "gate-negative.db");
   const seed = new SqliteSessionStore(gateDb2, { consolidateSummarize: async () => SUMMARY_C });
-  const gs = await seed.createSession("eval");
   for (let i = 1; i <= 3; i++) {
+    const gs = await seed.createSession("eval");
     await seed.adjudicateMemory(gs.id, [
-      { url: "https://ex.com/delta", title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9 },
+      { url: "https://ex.com/delta/" + i, title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9, entity: "Delta" },
     ]);
   }
   const rejecting = new SqliteSessionStore(gateDb2, {
@@ -152,10 +167,10 @@ assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
 {
   const gateDb = join(dir, "gate-absent.db");
   const seed = new SqliteSessionStore(gateDb, { consolidateSummarize: async () => SUMMARY_C });
-  const gs = await seed.createSession("eval");
   for (let i = 1; i <= 3; i++) {
+    const gs = await seed.createSession("eval");
     await seed.adjudicateMemory(gs.id, [
-      { url: "https://ex.com/delta", title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9 },
+      { url: "https://ex.com/delta/" + i, title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9, entity: "Delta" },
     ]);
   }
   const rep4 = await seed.consolidateMemory();
@@ -192,10 +207,10 @@ assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
     consolidateSummarize: async () => SUMMARY_A,
     consolidateClassify: () => ({ label: "supported", confidence: 0.92 }),
   });
-  const ns = await seed.createSession("eval");
   for (let i = 1; i <= 3; i++) {
+    const ns = await seed.createSession("eval");
     await seed.adjudicateMemory(ns.id, [
-      { url: "https://ex.com/alpha", title: "Alpha build note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9 },
+      { url: "https://ex.com/alpha/" + i, title: "Alpha build note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9, entity: "AlphaBuild" },
     ]);
   }
   const seededReport = await seed.consolidateMemory();
@@ -241,10 +256,10 @@ assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
 {
   const llmDb = join(dir, "no-summarizer.db");
   const seed = new SqliteSessionStore(llmDb, { consolidateSummarize: async () => SUMMARY_C });
-  const ls = await seed.createSession("eval");
   for (let i = 1; i <= 3; i++) {
+    const ls = await seed.createSession("eval");
     await seed.adjudicateMemory(ls.id, [
-      { url: "https://ex.com/delta", title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9 },
+      { url: "https://ex.com/delta/" + i, title: "Delta note v" + i, snippet: "Delta runs on Epsilon, revision " + i, source: "exa", evidence: 0.9, entity: "Delta" },
     ]);
   }
   // A store with no summarize seam at all: the cluster triggers, the missing
@@ -255,6 +270,29 @@ assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
     "missing summarize seam -> llmUnavailable, fail-open; got llmUnavailable=" + repBare.llmUnavailable);
   seed.close();
   bare.close();
+}
+
+// A reply that is only a <quotes> block states no conclusion: nothing is
+// written, and it is reported as noConclusion, not as a missing model. The
+// quoted page text must not become the distilled fact.
+{
+  const qDb = join(dir, "no-conclusion.db");
+  const seed = new SqliteSessionStore(qDb, { consolidateSummarize: async () => SUMMARY_C });
+  for (let i = 1; i <= 3; i++) {
+    const ls = await seed.createSession("eval");
+    await seed.adjudicateMemory(ls.id, [
+      { url: "https://ex.com/omicron/" + i, title: "Omicron note v" + i, snippet: "Omicron is served by Pi, revision " + i, source: "exa", evidence: 0.9, entity: "Omicron" },
+    ]);
+  }
+  const quotesOnly = new SqliteSessionStore(qDb, {
+    consolidateSummarize: async () => '<quotes>[1] "Omicron is served by Pi."</quotes>',
+  });
+  const repQuotes = await quotesOnly.consolidateMemory();
+  assert(repQuotes.noConclusion === 1 && repQuotes.add === 0 && repQuotes.update === 0,
+    "a quotes-only reply writes nothing and counts as noConclusion (got " + repQuotes.noConclusion + ")");
+  assert(repQuotes.llmUnavailable === 0, "a reply without a conclusion is not a model failure");
+  seed.close();
+  quotesOnly.close();
 }
 
 // --- D5 forget: reversible archive (D7-4) ---
@@ -330,8 +368,8 @@ assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at
       consolidateSummarize: async () => "pnpm pins prevent lockfile drift; corepack enforces packageManager",
       consolidateClassify: () => ({ label: "supported" as const, confidence: 0.95 }),
     });
-    const sess2 = await storeA.createSession("eval");
     for (let i = 1; i <= 3; i++) {
+      const sess2 = await storeA.createSession("eval");
       await storeA.adjudicateMemory(sess2.id, [
         { url: "https://ex.com/pn" + i, title: "pnpm note v" + i, snippet: "pin drift note revision " + i, source: "exa", evidence: 0.9, entity: "PnpmPinning" },
       ]);
@@ -351,6 +389,96 @@ assert(prep.archived === 0 && prep.skipped === 1, "explicit pinned id refused at
   }
 }
 
+
+// --- #613: valid_until is dead, and one URL is one material --------------
+//
+// Four live rows would pass CLUSTER_MIN on their own. One is closed by a
+// re-fetch (valid_until) and two are the same URL: the summarizer must see
+// three, with the duplicate keeping the body version, never the closed row.
+{
+  const dir3 = mkdtempSync(join(tmpdir(), "ans-cons-live-"));
+  const dbPath3 = join(dir3, "live.db");
+  try {
+    let seen: import("../src/consolidate").ConsolidateEvidence[] = [];
+    const st = new SqliteSessionStore(dbPath3, {
+      consolidateSummarize: async (eps) => { seen = eps; return "Live filter result."; },
+      consolidateClassify: () => ({ label: "supported" as const, confidence: 0.95 }),
+    });
+    const ids: number[] = [];
+    const seed = async (url: string, title: string, snippet: string, entity: string) => {
+      const sess = await st.createSession("eval");
+      const ra = await st.adjudicateMemory(sess.id, [{
+        url, title, snippet, source: "exa", evidence: 0.9, entity,
+      }]);
+      const id = ra[0]?.insertedId;
+      if (typeof id !== "number") throw new Error("seed failed for " + title);
+      ids.push(id);
+      return id;
+    };
+    const deadId = await seed("https://ex.com/live-dead", "dead", "closed by a re-fetch", "LiveFilter");
+    const bodyId = await seed("https://ex.com/live-same", "dup-body", "short", "LiveFilter");
+    await seed("https://ex.com/live-same", "dup-newer", "newer snippet", "LiveFilter");
+    await seed("https://ex.com/live-a", "other-a", "other fact a", "LiveFilter");
+    await seed("https://ex.com/live-b", "other-b", "other fact b", "LiveFilter");
+    {
+      const d = new Database(dbPath3);
+      d.prepare("UPDATE retrieval_results SET content = ? WHERE id = ?").run("FULL BODY", bodyId);
+      d.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE id = ?").run(deadId);
+      d.close();
+    }
+    const rep = await st.consolidateMemory(
+      { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
+    );
+    assert(seen.length === 3, "live filter: three live unique materials reach the summarizer (got " + seen.length + ")");
+    assert(!seen.some((e) => e.title === "dead"), "live filter: a valid_until row is not evidence");
+    assert(seen.some((e) => e.title === "dup-body" && e.content === "FULL BODY"),
+      "URL dedupe: the body version survives");
+    assert(!seen.some((e) => e.title === "dup-newer"), "URL dedupe: the same URL is not fed twice");
+    assert(rep.add === 1, "live filter: the three live materials still add one row (add=" + rep.add + ")");
+    assert(rep.duplicateMaterialSkipped === 1,
+      "URL dedupe: the dropped live version is counted (got " + rep.duplicateMaterialSkipped + ")");
+
+    // The other half of the truth: three versions of one page (same entity,
+    // same session) leave ONE live material. Once the cluster is all replaced,
+    // the run counts it instead of silently treating the page as new evidence.
+    const pageSess = await st.createSession("eval");
+    const pageIds: number[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const ra = await st.adjudicateMemory(pageSess.id, [{
+        url: "https://ex.com/one-page?v=" + i, title: "one page v" + i,
+        snippet: "same page revision " + i, source: "exa", evidence: 0.9, entity: "OnePage",
+      }]);
+      const id = ra[0]?.insertedId;
+      if (typeof id !== "number") throw new Error("same-page seed failed");
+      pageIds.push(id);
+    }
+    {
+      const d = new Database(dbPath3, { readonly: true });
+      const live = d.prepare("SELECT COUNT(*) c FROM retrieval_results WHERE entity = 'OnePage' AND superseded_by IS NULL AND valid_until IS NULL").get() as { c: number };
+      const closed = d.prepare("SELECT COUNT(*) c FROM retrieval_results WHERE entity = 'OnePage' AND valid_until IS NOT NULL").get() as { c: number };
+      d.close();
+      assert(live.c === 1 && closed.c === 2,
+        "same page: three versions leave one live and two closed (live=" + live.c + ", closed=" + closed.c + ")");
+    }
+    // An all-replaced cluster means every version is closed. Close the one
+    // adjudication left live, then assert the run counts the dead cluster.
+    {
+      const d = new Database(dbPath3);
+      d.prepare("UPDATE retrieval_results SET valid_until = datetime('now') WHERE entity = 'OnePage' AND valid_until IS NULL").run();
+      d.close();
+    }
+    seen = [];
+    const skipRep = await st.consolidateMemory(
+      { scope: { by: "memory", sessionIds: [], memoryIds: pageIds, sessionIdNotApplied: false } },
+    );
+    assert(skipRep.supersededClusterSkipped === 1 && skipRep.add === 0,
+      "same page: an all-replaced cluster is counted, not silently skipped (skipped=" + skipRep.supersededClusterSkipped + ", add=" + skipRep.add + ")");
+    assert(seen.length === 0, "same page: no live material reaches the summarizer");
+    st.close();
+  } finally {
+    rmSync(dir3, { recursive: true, force: true });
+  }
+}
 for (const st of [store, store2]) st.close();
 rmSync(dir, { recursive: true, force: true });
 console.log("consolidate-forget: all assertions passed");

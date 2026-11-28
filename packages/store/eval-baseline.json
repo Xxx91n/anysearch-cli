@@ -1,15 +1,15 @@
 {
   "schema": "anysearch/eval-baseline@1",
-  "fingerprint": "7a8c7014f7c88f3d",
+  "fingerprint": "133ef0f17f47ffbc",
   "metrics": {
     "passRate": 1,
     "supersessionSuccess": 1,
     "quarantineFalsePositiveRate": 0,
     "counts": {
-      "cases": 123,
-      "casesPassed": 123,
-      "supExpected": 22,
-      "supPassed": 22,
+      "cases": 128,
+      "casesPassed": 128,
+      "supExpected": 16,
+      "supPassed": 16,
       "fpEligible": 210,
       "fpCount": 0
     },
@@ -60,6 +60,7 @@
         "triplesWritten": 74,
         "dedupSkipped": 52,
         "relatedToWriteOnce": 0,
+        "supersededSupportClosed": 0,
         "schemaRejected": 0,
         "armQueries": 81,
         "armHits": 96,
@@ -169,7 +170,7 @@
       "bgnbd": {
         "status": "skipped",
         "tier": "gate-not-met",
-        "reason": "BG/NBD fit (structural data absence — ledgered data-absent): T1: 645 active rows / 7 fittable units < 300/100; T2: PSI unavailable (no access-age histogram pair yet); T3: observation window 0.0005092592592592592d < 90d"
+        "reason": "BG/NBD fit (structural data absence — report-only): T1: 645 active rows / 7 fittable units < 300/100; T2: PSI unavailable (no access-age histogram pair yet); T3: observation window 0.00032407407407407406d < 90d"
       },
       "revival": {
         "status": "ok",
@@ -185,6 +186,12 @@
         "status": "skipped",
         "tier": "offline-deferred",
         "reason": "undo_reentry needs a 30-day post-undo window — outside the single-run eval horizon (observational sub-metric)"
+      },
+      "abstain": {
+        "status": "ok",
+        "n": 3,
+        "abstainRate": 0.6666666666666666,
+        "falseAbstainRate": 0
       },
       "armDeltas": {
         "entity": {
@@ -363,6 +370,6 @@
     "minGain": 0.1
   },
   "holdoutFingerprint": "956d925db2f73115",
-  "updatedAt": "2026-09-09",
-  "note": "Inject probe closure recalibrated dataset fingerprint (cases 123 -> 128); no gated allowance lowered."
+  "updatedAt": "2026-11-28",
+  "note": "metrics from one full run at fingerprint 133ef0f17f47ffbc after the consolidate golden change (supersede -> accept lowered supExpected 22 -> 16; cases 123 -> 128). allowance = worst-observed failures + 1 (0 + 1), the rule calibrate applies; the relationGain lock above is from the earlier calibration and its n stays locked. CI never writes this file."
 }

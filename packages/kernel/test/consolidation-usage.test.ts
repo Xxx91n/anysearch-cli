@@ -108,7 +108,7 @@ async function main() {
       { budget: { sessionId: "s1", ledger } },
     );
     const out = await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
-    assert(out === "Alpha uses Beta for builds.", "summarize returns the model text");
+    assert(typeof out === "object" && out !== null && out.text === "Alpha uses Beta for builds.", "summarize returns the model text");
 
     const u = seams.usage;
     assert(u.calls === 1, "one call is counted (got " + u.calls + ")");
@@ -160,7 +160,7 @@ async function main() {
   {
     const seams = createConsolidationSeams(fakeSession({ text: "text only" }));
     const out = await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
-    assert(out === "text only", "text still comes back without usage");
+    assert(typeof out === "object" && out !== null && out.text === "text only", "text still comes back without usage");
     assert(seams.usage.calls === 1, "the call is still counted");
     assert(seams.usage.missing.some((m) => /usage/i.test(m)), "a missing usage block is named");
     assert(seams.usage.costBasis === "unknown", "no usage and no price leaves the cost unknown (got " + seams.usage.costBasis + ")");
@@ -195,7 +195,7 @@ async function main() {
       budget: { sessionId: "s1", ledger },
     });
     const out = await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
-    assert(out === "text, no usage block", "the text still comes back");
+    assert(typeof out === "object" && out !== null && out.text === "text, no usage block", "the text still comes back");
     const tokenSettle = ledger.calls.find((c) => c.kind === "settle" && c.dimension === "token");
     assert(
       tokenSettle !== undefined && tokenSettle.actual !== undefined && tokenSettle.actual > 0,
@@ -321,7 +321,7 @@ async function main() {
     } as never;
     const seams = createConsolidationSeams(failing);
     const out = await seams.summarize([{ title: "t", snippet: "s", url: "https://ex.com/a" }]);
-    assert(out === null, "a failed stream yields no summary (got " + JSON.stringify(out) + ")");
+    assert(typeof out === "object" && out !== null && out.text === null, "a failed stream yields no summary text (got " + JSON.stringify(out) + ")");
     assert(seams.usage.calls === 1, "the attempt is still counted");
   }
 

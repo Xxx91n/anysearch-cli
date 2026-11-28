@@ -1,12 +1,14 @@
-// The pure half of fetch admission: address, domain and credential gates plus
-// user-URL ticket extraction.
+// The pure half of fetch admission: address, domain and credential gates,
+// user-URL ticket extraction, and trust refusal text.
 
 import {
   checkFetchAddress,
   checkFetchDomain,
   extractUserUrlTickets,
   fetchCredentialHit,
+  fetchRejectMessage,
   makeRequestUrl,
+  requestUrlFor,
 } from "../src/fetch-admission";
 
 let passed = 0, failed = 0;
@@ -156,12 +158,52 @@ assert(!fetchCredentialHit("https://example.com/sk-learn-python-in-30-days",
     "Chinese prose immediately after a bare URL is not swallowed");
 }
 
+// ---- trust refusal messages ---------------------------------------------
+assert(fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: true }).includes("site:docs.example.com"),
+  "an interactive no-ticket refusal teaches a site: query");
+assert(fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: true }).includes("requestTrustFor"),
+  "an interactive no-ticket refusal names the trust parameter");
+assert(fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: false }).includes("非交互模式"),
+  "a headless no-ticket refusal says it cannot prompt");
+assert(!fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: false }).includes("requestTrustFor"),
+  "a headless refusal does not suggest a parameter that cannot work");
+assert(fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: true, trustRefused: true })
+  .includes("信任这条路已经用完了"),
+  "an answered host or an exhausted allowance is not invited to ask again");
+assert(!fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: true, trustRefused: true })
+  .includes("还搜不到的话"),
+  "an answered host drops the requestTrustFor suggestion entirely");
+assert(fetchRejectMessage("trust_declined", { host: "docs.example.com" }).includes("docs.example.com"),
+  "a declined trust refusal names the domain");
+assert(fetchRejectMessage("trust_write_failed", { host: "docs.example.com" }).includes("docs.example.com")
+  && fetchRejectMessage("trust_write_failed", { host: "docs.example.com" }).includes("别再问了"),
+  "a failed ticket write tells the model not to ask again");
+assert(fetchRejectMessage("trust_prompt_limit").includes("不再弹确认"),
+  "a trust prompt over the run allowance says no more prompts");
+assert(fetchRejectMessage("trust_prompt_limit").includes("换个主机名也一样"),
+  "the prompt-limit refusal does not invite a different host instead");
+assert(fetchRejectMessage("trust_prompt_limit").includes("问够了") && fetchRejectMessage("trust_prompt_limit").includes("一直在空问"),
+  "the prompt-limit refusal covers both an answered allowance and a spinning one");
+assert(fetchRejectMessage("trust_request_invalid").includes("只收一个主机名")
+  && fetchRejectMessage("trust_request_invalid").includes("m: 句柄")
+  && !fetchRejectMessage("trust_request_invalid").includes("去掉"),
+  "a malformed trust request says what is allowed, not how to drop the parameter");
+
 assert(makeRequestUrl("example.com/a") === "https://example.com/a", "a stored identity gains https on the wire");
 assert(makeRequestUrl("https://example.com/a") === "https://example.com/a", "an explicit scheme is left alone");
 assert(makeRequestUrl("example.com/a", "http") === "http://example.com/a",
   "a user-typed http URL keeps its scheme");
 assert(makeRequestUrl("example.com/a") === "https://example.com/a",
   "a bare user URL still becomes https");
+
+assert(requestUrlFor("http://www.example.com/x", "example.com/x", false) === "https://example.com/x",
+  "an http URL without an http ticket is read on https from the normalized identity");
+assert(requestUrlFor("http://www.example.com/x", "example.com/x", true) === "http://www.example.com/x",
+  "an http user ticket keeps the raw http URL");
+assert(requestUrlFor("https://www.example.com/x", "example.com/x", false) === "https://www.example.com/x",
+  "an explicit https URL keeps its host spelling");
+assert(requestUrlFor("www.example.com/x", "example.com/x", false) === "https://example.com/x",
+  "a bare URL uses the normalized identity");
 
 console.log("fetch-admission.test.ts: " + passed + " passed, " + failed + " failed");
 if (failed > 0) process.exit(1);

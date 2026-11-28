@@ -118,6 +118,10 @@ const HOURS_NOTICE = "A 公司官方通知（2026-11-01 生效）：在线客服
 const A4_MERGED = "A 公司在线客服自 2026-11-01 起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 安排。客服邮箱 help@example.com 和公共假期暂停人工客服、仅保留自助服务的安排保持不变。";
 const B2_CANDIDATE = "A 公司通知：在线客服仅在周末 10:00—18:00 提供服务。";
 const EMAIL_NOTICE = "A 公司官方通知（2026-11-05 生效）：在线客服邮箱自 2026-11-05 起改为 support@example.com，替代原邮箱 help@example.com。服务时间与公共假期的人工客服安排保持不变。";
+// The page body the M1 material carries. It is longer than the snippet and the
+// extra sentence lives nowhere else, so a merge that only sees the snippet can
+// never produce the expected text.
+const EMAIL_BODY = EMAIL_NOTICE + " 本通知适用于中国大陆地区全部在线渠道，自生效之日起执行。";
 const BETA_EMAIL_FIRST_MERGED = "A 公司在线客服工作日（周一至周五）9:00—17:00 提供服务。客服邮箱自 2026-11-05 起改为 support@example.com，替代原邮箱 help@example.com。公共假期暂停人工客服、仅保留自助服务。";
 const M1_FINAL = "A 公司在线客服自 2026-11-01 起改为 7×24 小时全天候服务，替代原工作日（周一至周五）9:00—17:00 安排。客服邮箱自 2026-11-05 起改为 support@example.com，替代原邮箱 help@example.com。公共假期暂停人工客服、仅保留自助服务的安排保持不变。";
 const HOLIDAY_NOTICE = "A 公司官方通知（2026-11-08 生效）：公共假期人工客服照常提供服务，替代此前公共假期暂停人工客服、仅保留自助服务的安排。服务时间与客服邮箱保持不变。";
@@ -157,8 +161,10 @@ function stagedSummarize(
   opts: { reMerge?: string; onReMerge?: () => Promise<void>; reMergeError?: Error } = {},
 ) {
   let calls = 0;
+  const seen: ConsolidateEvidence[][] = [];
   const fn = async (eps: ConsolidateEvidence[]): Promise<string | null> => {
     calls++;
+    seen.push(eps.map((e) => ({ ...e })));
     const ck = eps.find((e) => e.title === "CURRENT KNOWLEDGE");
     if (!ck) return candidate;
     if (ck.snippet.includes("7×24")) {
@@ -168,7 +174,7 @@ function stagedSummarize(
     }
     return firstMerge;
   };
-  return { fn, calls: () => calls };
+  return { fn, calls: () => calls, seen: () => seen };
 }
 
 // A verify seam with scripted per-call verdicts and hooks:
@@ -207,7 +213,10 @@ async function buildKnowledge(
 ): Promise<number[]> {
   const ids: number[] = [];
   for (let i = 1; i <= 3; i++) {
-    ids.push(await seedEpisode(store, sessionId, urlBase + "-v" + i, entity + " v" + i, content, entity));
+    // #613: temporal supersede is per session. Seeding the three versions in
+    // separate sessions keeps all three LIVE so the batch reaches CLUSTER_MIN.
+    const sid = i === 1 ? sessionId : (await store.createSession("eval")).id;
+    ids.push(await seedEpisode(store, sid, urlBase + "-v" + i, entity + " v" + i, content, entity));
   }
   const rep = await store.consolidateMemory(
     { scope: { by: "memory", sessionIds: [], memoryIds: [...ids], sessionIdNotApplied: false } },
@@ -368,10 +377,19 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
   const sessB = await beta.createSession("beta-m1");
   const betaNotice = await seedEpisode(beta, sessB.id, "https://a.example/notice-2026-11-05",
     "A 公司客服邮箱变更通知（官方）", EMAIL_NOTICE, "a-support-hours");
+  {
+    // Give the material a real page body: the re-merge has to receive it.
+    const d = new Database(join(dir, db));
+    try { d.prepare("UPDATE retrieval_results SET content = ? WHERE id = ?").run(EMAIL_BODY, betaNotice); }
+    finally { d.close(); }
+  }
 
   const betaVerify = stagedVerify([CORRECTION, CORRECTION], { hold: alphaCorrection(alpha, alphaNotice) });
+  // The plan-time reply is a plain string (no <quotes>); only the re-merge is
+  // shaped. Its quotes are the only ones this cluster ever produced, so the
+  // report must carry them (a re-merge is not a second cluster).
   const betaSum = stagedSummarize(EMAIL_NOTICE, BETA_EMAIL_FIRST_MERGED, {
-    reMerge: M1_FINAL,
+    reMerge: "<quotes>M1-RE-MERGE-QUOTE</quotes><conclusion>" + M1_FINAL + "</conclusion>",
     onReMerge: async () => {
       const live = liveRows(db)[0]!;
       assert(live.content === A4_MERGED,
@@ -396,6 +414,18 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
   const res = repB.resolvedCollisions[0]!;
   assert(res.resolution === "re-merged" && res.newId === live.id && res.targetContent === A4_MERGED,
     "M1: the report names the re-merge and the version it targeted");
+  assert(repB.quotes.length === 1 && repB.quotes[0]!.quotes === "M1-RE-MERGE-QUOTE",
+    "M1: the re-merge's quotes reach the report (got " + JSON.stringify(repB.quotes) + ")");
+  // The re-merge is a model call like any other: it must read the page bodies,
+  // not the report-side snippets. The report trims evidence for size, and if
+  // that trimmed copy were the one stored on the pending collision, the merge
+  // would silently lose every fact that lives only in the body.
+  {
+    const mergeCall = betaSum.seen().at(-1)!;
+    const betaSide = mergeCall.find((e) => e.url.includes("notice-2026-11-05"))!;
+    assert(betaSide.content === EMAIL_BODY,
+      "M1: the re-merge call still receives the material's full page body");
+  }
   assert(res.retries === 1, "M1: exactly one re-judge");
   assert(repB.conflicts === 0, "M1: no unresolved conflict");
   assert(betaVerify.calls() === 2, "M1: two judgments total — initial + one re-judge");

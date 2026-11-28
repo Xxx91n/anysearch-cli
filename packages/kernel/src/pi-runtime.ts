@@ -53,7 +53,7 @@ import { MemoryPipeline } from "./memory-pipeline";
 import { isPositiveWholeInt } from "./num";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 import { SEARCH_MODE_DESCRIPTION } from "./tool-schemas";
-import { BUILTIN_FETCH_TOOL, createFetchTool, type FetchStorePort } from "./fetch-tool";
+import { BUILTIN_FETCH_TOOL, createFetchTool, type FetchStorePort, type FetchTrustRequest } from "./fetch-tool";
 import { extractUserUrlTickets, searchHandle } from "./fetch-admission";
 
 // HITL gate helpers for shouldAllowUrl (TTY ask / headless deny-first).
@@ -63,21 +63,56 @@ export function isInteractive(): boolean {
   return Boolean(process.stdin.isTTY);
 }
 
-// TTY y/N prompt; deny-first default on EOF/error. No timeout — waits for input
-// (ponytail: add clock timeout if HITL UX reports stuck prompts).
-export async function askAllowUrl(url: string): Promise<boolean> {
-  const readline = await import("node:readline");
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+// TTY y/N prompt; deny-first default on EOF/error/abort. No timeout — waits for
+// input (ponytail: add clock timeout if HITL UX reports stuck prompts).
+async function askYesNo(question: string, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return false;
   try {
-    const answer: string = await new Promise((resolve) => {
-      rl.question("[anysearch] retrieved-derived URL not on allowlist: " + url + " — allow once? [y/N] ", resolve);
+    const readline = await import("node:readline");
+    // Re-check after the await: an abort landing during the import would
+    // otherwise have no listener registered when the question starts.
+    if (signal?.aborted) return false;
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    let onAbort: (() => void) | undefined;
+    const answer = await new Promise<string | null>((resolve) => {
+      rl.question(question, (text) => resolve(text));
+      if (signal) {
+        onAbort = () => resolve(null);
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+    }).finally(() => {
+      rl.close();
+      if (signal && onAbort) signal.removeEventListener("abort", onAbort);
     });
-    return /^y(es)?$/i.test(answer.trim());
+    return answer === null ? false : /^y(es)?$/i.test(answer.trim());
   } catch {
     return false;
-  } finally {
-    rl.close();
   }
+}
+
+export async function askAllowUrl(url: string): Promise<boolean> {
+  return askYesNo("[anysearch] retrieved-derived URL not on allowlist: " + url + " — allow once? [y/N] ");
+}
+
+/**
+ * The exact text a TOFU prompt shows: every URL the model wants to read, then
+ * the one host the ticket would cover. Exported so the user-facing text has a
+ * test that does not need a TTY. Control characters are stripped so a crafted
+ * URL cannot rewrite the terminal line.
+ */
+export function fetchTrustPrompt(request: FetchTrustRequest): string {
+  const clean = (text: string): string => text.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "");
+  const lines = request.urls.map((url) => "  - " + clean(url)).join("\n");
+  return "[anysearch] 模型想读这些网址，但本会话还没有读它们的凭据：\n" + lines + "\n\n" +
+    "[anysearch] 信任 " + clean(request.domain) + " 这个主机吗？只对本会话的这个主机生效，不写域名配置。[y/N] ";
+}
+
+// Session TOFU prompt. Only an interactive CLI calls it; it still re-checks the
+// TTY, so a redirected stdin refuses instead of waiting on nobody. Abort counts
+// as "no", so Ctrl-C ends the wait instead of leaving it stuck.
+export async function askFetchTrust(request: FetchTrustRequest, signal?: AbortSignal): Promise<boolean> {
+  if (!isInteractive()) return false;
+  return askYesNo(fetchTrustPrompt(request), signal);
 }
 
 // Headless deny path: queue the blocked URL for `ans hitl review` recovery.
@@ -452,6 +487,8 @@ export interface PiAgentRuntimeOptions {
   /** #113: REAL model context window (LlmSession.contextWindow); undefined = unknown. */
   contextWindow?: number;
   interactive?: boolean; // wiring grants TTY-ask eligibility (headless/MCP omit -> deny-first)
+  /** Session TOFU prompt. Only the interactive CLI passes it; omitting it turns a trust request into an in-band refusal. */
+  confirmFetchTrust?: (request: FetchTrustRequest, signal?: AbortSignal) => Promise<boolean>;
   // caller observation span — retrieval audit events land
   // inside the caller's span events_json (ans_chat / third retrieval surface).
   span?: RetrievalObservationSink;
@@ -1051,6 +1088,9 @@ export class PiAgentRuntime {
         },
         ...(this.billingScope ? { ledger: this.billingScope.ledger, budgetId: this.billingScope.taskId } : {}),
         ...(this.opts.span ? { span: this.opts.span } : {}),
+        ...(this.opts.interactive && isInteractive() && this.opts.confirmFetchTrust
+          ? { confirmTrust: this.opts.confirmFetchTrust }
+          : {}),
       });
     } else if (this.opts.fetchProviders?.length) {
       if (!fetchAllowed) {

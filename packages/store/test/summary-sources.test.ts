@@ -141,12 +141,13 @@ async function buildKnowledge(
 ): Promise<{ materialIds: number[]; knowledgeId: number }> {
   const ids: number[] = [];
   for (let i = 1; i <= 3; i++) {
-    // One entity key (that is what the cluster groups on) with a distinct URL.
-    // Writing the next row of the same key closes the previous one by temporal
-    // supersede, so only the LAST row stays valid — and only a valid row may be
-    // cited as a summary's source (isSourceCurrent checks valid_until as well as
-    // superseded_by; a row retired by an ordinary re-fetch is history).
-    ids.push(await seedEpisode(store, sessionId, urlBase + "-v" + i, entity + " v" + i, content, entity));
+    // #613: one entity key (what the cluster groups on) with a distinct URL.
+    // Temporal supersede is per session, so each version gets its own session:
+    // all three stay LIVE and the batch reaches CLUSTER_MIN. Only the LAST is
+    // returned as the summary's source below, because that is the row this
+    // fixture chooses to cite.
+    const sid = i === 1 ? sessionId : (await store.createSession("eval")).id;
+    ids.push(await seedEpisode(store, sid, urlBase + "-v" + i, entity + " v" + i, content, entity));
   }
   const rep = await store.consolidateMemory(
     { scope: { by: "memory", sessionIds: [], memoryIds: [...ids], sessionIdNotApplied: false } },

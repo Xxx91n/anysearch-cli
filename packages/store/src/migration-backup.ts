@@ -105,6 +105,11 @@ export const STORE_META_TABLE = "store_meta";
  */
 const SESSION_SCHEMA_SENTINELS: readonly string[] = ["sessions", "messages", "retrieval_results", "budget_ledger"];
 
+/** True when fetch_tickets' CHECK already lists `tofu`; a missing table counts as current (nothing to rebuild). */
+export function fetchTicketsSqlIsCurrent(sql: string | undefined): boolean {
+  return sql === undefined || sql.includes("'tofu'");
+}
+
 /** Current store layout ordinal. v1 = the #299/#302 table set plus this ticket's marker. */
 export const STORE_LAYOUT_VERSION = "1";
 
@@ -148,7 +153,7 @@ export const STORE_LAYOUT_KEY = "store_layout";
 interface LayoutProbe {
   /** No tables at all — a brand-new or zero-byte file; assembly has nothing to lose. */
   fresh: boolean;
-  /** store_meta exists AND already carries the current layout marker. */
+  /** store_meta carries the current marker AND the fetch_tickets CHECK is current. */
   current: boolean;
   /** Any session-family table present (the structure the session assembly can rewrite). */
   hasSessionTables: boolean;
@@ -164,10 +169,17 @@ function probeLayout(db: Database.Database): LayoutProbe {
   ).all() as Array<{ name: string }>;
   const names = new Set(tables.map((t) => t.name));
   const storeMetaPresent = names.has(STORE_META_TABLE);
+  // An old CHECK counts as not-current: the rebuild drops this table, so it goes
+  // through the snapshot step first. A database that already has a snapshot reuses
+  // it; the rebuild itself runs in one transaction and rolls back as a whole.
+  const fetchTicketsSql = names.has("fetch_tickets")
+    ? (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'fetch_tickets'").get() as { sql: string } | undefined)?.sql
+    : undefined;
+  const fetchTicketsCurrent = fetchTicketsSqlIsCurrent(fetchTicketsSql);
   let current = false;
   if (storeMetaPresent) {
     const row = db.prepare("SELECT value FROM store_meta WHERE key = ?").get(STORE_LAYOUT_KEY) as { value: string } | undefined;
-    current = row?.value === STORE_LAYOUT_VERSION;
+    current = row?.value === STORE_LAYOUT_VERSION && fetchTicketsCurrent;
   }
   const observationUserVersion = (db.pragma("user_version", { simple: true }) as number) | 0;
   return {
