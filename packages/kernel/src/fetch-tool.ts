@@ -57,7 +57,6 @@ const PARAMETER_ERROR = `handles 要给 1–${FETCH_LIMITS.maxUrlsPerCall} 个�
 const TRUST_DOMAIN_FORMAT = "requestTrustFor 只收一个主机名，比如 example.com；不要带 http://、端口、路径或空格。把要读的网址放在 handles 里重试。";
 const TRUST_HANDLE_MISMATCH = "requestTrustFor 只能配合同一个主机下的网址：handles 里不能有 m: 句柄，也不能有别的网站的网址。这个不行：";
 const TRUST_GRANTED = "已信任这个主机，本会话内有效。现在重新调用 fetch，handles 用同样的网址，就能读了；这次请求没有读页。";
-const TRUST_WRITE_FAILED = "用户同意了，但信任票没写进本会话；这次没读页。稍后再试一次，或者让用户把网页正文贴进来。";
 const NO_FETCH_SOURCE_MESSAGE = "没有可用的抓取信息源";
 const EMPTY_BODY_MESSAGE = "页面正文是空的";
 const FETCH_TIMEOUT_MS = 20_000;
@@ -129,8 +128,10 @@ class FetchRunState {
   readonly cache = new Map<string, CachedRead>();
   readonly calls = new Map<string, number>();
   readonly pagesByProvider = new Map<string, number>();
-  /** Domains the user said no to in this run; a retry is refused without asking again. */
+  /** Hosts the user said no to in this run; a retry is refused without asking again. */
   readonly declinedTrust = new Set<string>();
+  /** Hosts the user agreed to but the ticket could not be written; no re-prompt. */
+  readonly failedTrust = new Set<string>();
 
   noteCall(provider: string): void {
     this.calls.set(provider, (this.calls.get(provider) ?? 0) + 1);
@@ -223,11 +224,8 @@ function hasTofuTrust(store: FetchStorePort, sessionId: string, host: string): b
 }
 
 /**
- * The normalized identity and the URL a user handle will actually request.
- * The read and the trust prompt both use this so a bare `www.` handle or an
- * http handle without an http ticket cannot mean one host to the prompt and
- * another to the read. The http-ticket lookup lives here too, because it is
- * what decides whether the raw http URL survives.
+ * The identity and the URL a user handle will really request. The read and the
+ * trust prompt both call this, so they cannot disagree about the host.
  */
 function effectiveRequestUrl(
   store: FetchStorePort,
@@ -354,13 +352,12 @@ function rejectTrust(
 }
 
 /**
- * Handle an explicit `requestTrustFor`. The request itself never reads a page:
- * it asks the user, writes one session ticket, and tells the model to retry.
- * That keeps the TOFU request out of the page and URL budgets, and keeps the
- * headless path from hanging on a prompt it cannot show.
+ * Handle an explicit `requestTrustFor`: ask the user, write one ticket, and tell
+ * the model to retry. This call reads no page, so a headless host refuses
+ * instead of waiting on a prompt it cannot show.
  *
- * Returns undefined when the host is already trusted, so the caller reads
- * the same call's handles normally (a retry may carry the parameter again).
+ * Returns undefined when the host is already trusted, and the caller reads the
+ * same call's handles normally.
  */
 async function handleTrustRequest(
   raw: unknown,
@@ -375,8 +372,6 @@ async function handleTrustRequest(
   const urls: string[] = [];
   for (const handle of handles) {
     if (/^m:/i.test(handle.trim())) return textResult(TRUST_HANDLE_MISMATCH + handle);
-    // Build the same identity and request URL resolveTicket will read, so the
-    // prompt and the ticket cannot point at a host the read never visits.
     const { identity, requestUrl } = effectiveRequestUrl(options.store, options.sessionId, handle);
     const address = checkFetchAddress(requestUrl, identity);
     if (!address.ok) return rejectTrust(options, state, fetchRejectMessage(address.reason), address.reason, handle);
@@ -397,6 +392,13 @@ async function handleTrustRequest(
   if (hasTofuTrust(options.store, options.sessionId, address.host)) return undefined;
   if (!options.confirmTrust) {
     return rejectTrust(options, state, fetchRejectMessage("trust_unavailable"), "trust_unavailable", domain, address.host);
+  }
+  if (state.failedTrust.has(address.host)) {
+    return rejectTrust(
+      options, state,
+      fetchRejectMessage("trust_write_failed", { host: address.host }),
+      "trust_write_failed", domain, address.host,
+    );
   }
   if (state.declinedTrust.has(address.host)) {
     return rejectTrust(
@@ -422,7 +424,13 @@ async function handleTrustRequest(
   try {
     await options.store.saveFetchTickets(options.sessionId, "tofu", [address.host]);
   } catch {
-    return textResult(TRUST_WRITE_FAILED);
+    // Remember it, so a retry does not ask the same user again.
+    state.failedTrust.add(address.host);
+    return rejectTrust(
+      options, state,
+      fetchRejectMessage("trust_write_failed", { host: address.host }),
+      "trust_write_failed", domain, address.host,
+    );
   }
   options.span?.addEvent("fetch.trust", {
     "fetch.host": address.host,

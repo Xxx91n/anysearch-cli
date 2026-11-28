@@ -29,7 +29,8 @@ export type FetchRejectReason =
   | "not_allowlisted"
   | "credential"
   | "trust_unavailable"
-  | "trust_declined";
+  | "trust_declined"
+  | "trust_write_failed";
 
 /** Extra facts a refusal sentence may use, so the model gets a concrete next move. */
 export interface FetchRejectContext {
@@ -68,6 +69,9 @@ export function fetchRejectMessage(reason: FetchRejectReason, context: FetchReje
       return "这个网址不在本会话的搜索结果或用户消息里，抓不了。当前是非交互模式（headless/MCP），不能弹「信任这个网站」的确认；先做站点限定搜索，还搜不到就让用户把链接贴进对话。";
     case "trust_declined":
       return "用户没有同意信任" + (context.host ? " " + context.host : "这个网站") + "，这次先不读它。先用已有材料回答；要读的话让用户把网页正文贴进来。";
+    case "trust_write_failed":
+      return "用户同意了，但" + (context.host ? " " + context.host + " 的" : "这个主机的") +
+        "信任票没写进本会话，别再问了。这次没读页；先用已有材料回答，或者让用户把网页正文贴进来。";
     default:
       return assertNever(reason);
   }
@@ -294,11 +298,9 @@ export function makeRequestUrl(identity: string, scheme: "http" | "https" = "htt
 }
 
 /**
- * The URL a fetch will actually request for a user-typed handle. An explicit
- * https handle keeps its spelling. An http handle keeps http only when a user
- * ticket recorded that scheme; otherwise the read rebuilds the URL from the
- * normalized identity on https, which is exactly what the trust prompt must
- * show and what the trust ticket must cover.
+ * The URL a handle will really request. An explicit https URL keeps its
+ * spelling; an http URL keeps http only when a user ticket recorded that
+ * scheme; anything else is rebuilt on https from the identity.
  */
 export function requestUrlFor(raw: string, identity: string, hasHttpTicket: boolean): string {
   const rawUserUrl = raw.trim();

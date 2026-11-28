@@ -169,6 +169,9 @@ assert(!fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailab
   "a headless refusal does not suggest a parameter that cannot work");
 assert(fetchRejectMessage("trust_declined", { host: "docs.example.com" }).includes("docs.example.com"),
   "a declined trust refusal names the domain");
+assert(fetchRejectMessage("trust_write_failed", { host: "docs.example.com" }).includes("docs.example.com")
+  && fetchRejectMessage("trust_write_failed", { host: "docs.example.com" }).includes("别再问了"),
+  "a failed ticket write tells the model not to ask again");
 
 assert(makeRequestUrl("example.com/a") === "https://example.com/a", "a stored identity gains https on the wire");
 assert(makeRequestUrl("https://example.com/a") === "https://example.com/a", "an explicit scheme is left alone");

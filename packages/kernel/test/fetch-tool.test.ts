@@ -91,9 +91,10 @@ async function main() {
       deny: string[] = [],
       ledger?: BudgetLedgerPort,
       confirmTrust?: (request: { domain: string; urls: readonly string[] }) => Promise<boolean>,
+      storePort: FetchStorePort = fetchStore,
     ) =>
       createFetchTool({
-        store: fetchStore,
+        store: storePort,
         sessionId: session.id,
         providers: [provider],
         policy: () => ({ allow, deny }),
@@ -775,6 +776,28 @@ async function main() {
       assert(rawText(second).includes("连续 2 次整批网址都没被放行"),
         "a trust refusal counts toward the rejected-batch stop");
       assert(!store.hasFetchTicket(session.id, "tofu", "docs.no.example"), "a decline writes no ticket");
+    }
+
+    {
+      // A store that cannot write a ticket must not turn one consent into a
+      // re-prompt loop.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const failingStore: FetchStorePort = {
+        saveFetchTickets: async () => { throw new Error("disk full"); },
+        savePage: (sessionId, input) => store.savePage(sessionId, input),
+        hasFetchTicket: (sessionId, kind, value) => store.hasFetchTicket(sessionId, kind, value),
+        searchRowForFetch: (sessionId, rowId) => store.searchRowForFetch(sessionId, rowId),
+      };
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return true; }, failingStore);
+      const handle = "https://docs.broke.example/page";
+      const first = await tool.execute("t25q1", { handles: [handle], requestTrustFor: "docs.broke.example" });
+      assert(rawText(first).includes("别再问了") && asked === 1,
+        "a failed ticket write says the ticket is missing and not to ask again");
+      const second = await tool.execute("t25q2", { handles: [handle], requestTrustFor: "docs.broke.example" });
+      assert(rawText(second).includes("别再问了") && asked === 1,
+        "a retry after a failed write does not prompt the user again");
+      assert(provider.calls.length === 0, "neither call reads a page");
     }
 
     store.close();

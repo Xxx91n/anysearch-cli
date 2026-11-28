@@ -20,7 +20,8 @@ PRAGMA journal_mode = WAL;
 -- ahead of the engine; either way the next full assembly still needs the
 -- recovery point (which the registry's pre-schema snapshot already put there).
 -- #612 adds a second probe: an old fetch_tickets CHECK also counts as
--- not-current even with the marker, so that rebuild gets its recovery point.
+-- not-current even with the marker, so the rebuild gets a recovery point first
+-- (an existing snapshot is reused, and the rebuild itself is one transaction).
 CREATE TABLE IF NOT EXISTS store_meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -183,7 +184,7 @@ CREATE TABLE IF NOT EXISTS retrieval_chunk_vectors (
 
 -- Handles a model may turn into a page read in one session.
 -- search stores archive row ids; user stores URL identities plus an http: marker;
--- tofu stores a bare domain the user trusted for this session (#612).
+-- tofu stores a bare host the user trusted for this session (#612).
 -- Tickets cascade with their session.
 CREATE TABLE IF NOT EXISTS fetch_tickets (
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

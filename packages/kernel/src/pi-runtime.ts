@@ -64,12 +64,12 @@ export function isInteractive(): boolean {
 
 // TTY y/N prompt; deny-first default on EOF/error. No timeout — waits for input
 // (ponytail: add clock timeout if HITL UX reports stuck prompts).
-export async function askAllowUrl(url: string): Promise<boolean> {
+async function askYesNo(question: string): Promise<boolean> {
   const readline = await import("node:readline");
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
   try {
     const answer: string = await new Promise((resolve) => {
-      rl.question("[anysearch] retrieved-derived URL not on allowlist: " + url + " — allow once? [y/N] ", resolve);
+      rl.question(question, resolve);
     });
     return /^y(es)?$/i.test(answer.trim());
   } catch {
@@ -77,6 +77,10 @@ export async function askAllowUrl(url: string): Promise<boolean> {
   } finally {
     rl.close();
   }
+}
+
+export async function askAllowUrl(url: string): Promise<boolean> {
+  return askYesNo("[anysearch] retrieved-derived URL not on allowlist: " + url + " — allow once? [y/N] ");
 }
 
 /**
@@ -92,24 +96,11 @@ export function fetchTrustPrompt(request: FetchTrustRequest): string {
     "[anysearch] 信任 " + clean(request.domain) + " 这个主机吗？只对本会话的这个主机生效，不写域名配置。[y/N] ";
 }
 
-/**
- * Session TOFU prompt for #612. Shown only from an interactive CLI; it defaults
- * to no on EOF or error.
- */
+// Session TOFU prompt. Only an interactive CLI calls it; it still re-checks the
+// TTY, so a redirected stdin refuses instead of waiting on nobody.
 export async function askFetchTrust(request: FetchTrustRequest): Promise<boolean> {
   if (!isInteractive()) return false;
-  const readline = await import("node:readline");
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    const answer: string = await new Promise((resolve) => {
-      rl.question(fetchTrustPrompt(request), resolve);
-    });
-    return /^y(es)?$/i.test(answer.trim());
-  } catch {
-    return false;
-  } finally {
-    rl.close();
-  }
+  return askYesNo(fetchTrustPrompt(request));
 }
 
 // Headless deny path: queue the blocked URL for `ans hitl review` recovery.

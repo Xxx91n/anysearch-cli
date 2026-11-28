@@ -121,7 +121,7 @@ import { migrateTaskRegistryColumns, TaskRegistry } from "./task-registry.js";
 // #310: the pre-migration snapshot runs before this constructor opens its
 // handle — the very first statement below (journal_mode = WAL) already rewrites
 // the physical file, so "back up before assembly" must precede openDatabase.
-import { ensurePreMigrationBackup, writeStoreLayout } from "./migration-backup.js";
+import { ensurePreMigrationBackup, fetchTicketsSqlIsCurrent, writeStoreLayout } from "./migration-backup.js";
 // embedding is optional — routed through the guarded arm
 // module (absent package => embedText null / telemetry absent), never imported statically.
 import { embedText, embeddingModelId, EMBEDDING_MODEL_UNAVAILABLE, armTelemetry, cosineSimilarity } from "./embedding-arm.js";
@@ -639,8 +639,8 @@ function migrateSwitchEventSchema(db: Database.Database): void {
   });
 }
 
-// #612: fetch tickets gained a third kind (`tofu`). A CHECK constraint cannot
-// be altered in place, so an older database is rebuilt once with the same rows
+// fetch_tickets gained a third kind (`tofu`). A CHECK constraint cannot be
+// altered in place, so an older database is rebuilt once with the same rows
 // and the same primary key. New databases already carry the widened CHECK from
 // schema.sql and skip this. The shape is probed inside the transaction for the
 // same reason as the switch-event rebuild: a second process may have finished
@@ -651,7 +651,7 @@ function migrateFetchTicketKinds(db: Database.Database): void {
       const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'fetch_tickets'").get() as
         | { sql?: string }
         | undefined;
-      if (!row?.sql || row.sql.includes("'tofu'")) return;
+      if (!row?.sql || fetchTicketsSqlIsCurrent(row.sql)) return;
       db.exec(`
         CREATE TABLE fetch_tickets_kind_migrate (
           session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -1977,7 +1977,7 @@ export class SqliteSessionStore implements SessionStore {
     });
     const valid = cleaned.filter((v) => {
       if (kind === "search") return /^[1-9]\d*$/.test(v);
-      if (kind === "tofu") return normalizeTrustDomain(v) === v && v === v.toLowerCase();
+      if (kind === "tofu") return normalizeTrustDomain(v) === v;
       // User values are scheme-less identities; `http:<identity>` marks the
       // scheme the user actually pasted. Non-http(s) schemes and values without
       // a resolvable dotted host are dropped.
