@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **拒绝文案**（`packages/kernel/src/fetch-admission.ts`）：没票时明确教 `site:<域名> 关键词`；交互式环境下再提 `requestTrustFor`，headless/MCP 说明不能弹确认、让用户贴链接。新增 `trust_unavailable` / `trust_declined` / `trust_write_failed` / `trust_prompt_limit` 四种理由：票写不进库时文案直接说别再问；一次提问最多问 `maxTrustPrompts`（3）次信任，超过就不再弹确认，`no_ticket` 也跟着不再劝重试，且这条拒绝不计入整批被拒软停。
+- **拒绝文案**（`packages/kernel/src/fetch-admission.ts`）：没票时明确教 `site:<域名> 关键词`；交互式环境下再提 `requestTrustFor`，headless/MCP 说明不能弹确认、让用户贴链接。新增 `trust_unavailable` / `trust_declined` / `trust_write_failed` / `trust_prompt_limit` 四种理由：票写不进库时文案直接说别再问；一次提问最多问 `maxTrustPrompts`（3）次信任，超过就不再弹确认，`no_ticket` 也跟着不再劝重试；额度用完后第一次拒绝不计入整批被拒软停（主机没被判断过），同一个主机再问一次才按普通拒绝计数，免得模型空转。
 - **信任票**（`packages/kernel/src/fetch-tool.ts`、`packages/retriever/src/url-identity.ts`）：`fetch` 多一个可选 `requestTrustFor`，只收裸主机名（不带协议、端口、路径、空格、IP）。它先按地址门和域名门校验所有 handles 与主机名，交互式下弹一次确认，用户同意后写本会话 `tofu` 票；这次调用不读页、不占页数和网址数，模型重试时按主机名精确匹配放行。同一次运行里，用户答过的主机（拒绝或票写不进库）不会被再问一次；拒绝文案也不再劝模型再带 `requestTrustFor`。信任问答走完算「问过了」，不计入整批被拒软停——否则「没票 → 问一次 → 用户说不」这条正常路会直接把整轮抓页停掉，连手里能读的句柄都一起停。真正的地址门/域名门/凭据门拒绝照旧累计。
 - **交互接线**（`packages/kernel/src/pi-runtime.ts`、`apps/cli/src/commands/chat.ts`）：runtime 新增 `confirmFetchTrust`，只有 `interactive` 且 stdin 真是 TTY 才交给 fetch；CLI 只在交互模式传 `askFetchTrust`，提示逐条列出完整网址和域名，默认否。MCP 不传，因此不会弹确认。
 - **票的种类**（`packages/store/src/schema.sql`、`packages/store/src/session-store.ts`）：`fetch_tickets.kind` 增加 `tofu`；旧库启动时重建一次表（CHECK 不能原地改），保留原有行和级联删除。重建前会先按 #310 拍快照：布局探测把旧 CHECK 也算成「不在当前布局」，已经拍过快照的库沿用旧那份，重建本身在一个事务里完成。这个判断和重建共用 `fetchTicketsSqlIsCurrent`，不会一处认得出、一处认不出。

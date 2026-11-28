@@ -429,8 +429,10 @@
   refusal stops inviting another trust request and does not count toward the
   two-rejected-batches stop. One question may show at most three trust prompts;
   after that the request is refused in-band, the no-ticket refusal stops inviting
-  another one, and that refusal counts toward neither stop because the host was
-  never judged. Headless/MCP never prompts — it
+  another one, and that first refusal counts toward neither stop because the host
+  was never judged. Asking again for the very same host is the model spinning, not
+  a new host, so the repeats count like an ordinary refusal. Headless/MCP never
+  prompts — it
   refuses and tells the model to ask the user to paste the link. No TOML is
   written and nothing crosses sessions. This does not open the external
   surfaces: there is still no MCP `fetch_pages`, no `ans fetch`, and no

@@ -122,11 +122,13 @@ interface Target {
  * Per-question page reads: cached URLs, new pages, and the stop streaks.
  *
  * `emptyStreak` counts batches that returned no new page. `rejectedStreak`
- * counts batches a gate refused (address, deny, allowlist, credential) and the
- * trust request headless/MCP cannot answer. A trust question a human actually
- * answered does not count — see rejectTrustSettled — and neither does the
- * run-wide prompt allowance running out, because that host was never judged.
- * `trustPrompts` is that allowance.
+ * counts batches that got nothing admitted: gate refusals (address, deny,
+ * allowlist, credential) and batches of nothing but `no_ticket`,
+ * `stale_handle` or `invalid_handle`. A batch the user's own trust answer
+ * settled does not count (see rejectTrustSettled); neither does the first
+ * refusal for spending the run's trust-question allowance, which says nothing
+ * about the host; a repeat for that same host does count. `trustPrompts` is the
+ * allowance, `overLimitTrust` the hosts that already used their free refusal.
  */
 class FetchRunState {
   pagesRead = 0;
@@ -142,6 +144,8 @@ class FetchRunState {
   readonly declinedTrust = new Set<string>();
   /** Hosts the user agreed to but the ticket could not be written; no re-prompt. */
   readonly failedTrust = new Set<string>();
+  /** Hosts already turned down because the run's question allowance was gone. */
+  readonly overLimitTrust = new Set<string>();
 
   noteCall(provider: string): void {
     this.calls.set(provider, (this.calls.get(provider) ?? 0) + 1);
@@ -451,9 +455,16 @@ async function handleTrustRequest(
     return rejectTrustSettled(options, state, "trust_declined", domain, address.host);
   }
   // The allowance is per run, not this host: running out says nothing about the
-  // host, so this refusal must not count toward the rejected-batch stop.
+  // host, so the first refusal must not count toward the rejected-batch stop.
+  // A second ask for the same host is the model spinning, though, and that has
+  // to be able to stop the run.
   if (!state.claimTrustPromptSlot()) {
-    return trustRefusal(options, fetchRejectMessage("trust_prompt_limit"), "trust_prompt_limit", domain, address.host);
+    const firstTime = !state.overLimitTrust.has(address.host);
+    state.overLimitTrust.add(address.host);
+    if (firstTime) {
+      return trustRefusal(options, fetchRejectMessage("trust_prompt_limit"), "trust_prompt_limit", domain, address.host);
+    }
+    return rejectTrustGate(options, state, fetchRejectMessage("trust_prompt_limit"), "trust_prompt_limit", domain, address.host);
   }
   // The model followed the documented escape hatch and a human is about to
   // decide. The earlier no_ticket is answered, not repeated.

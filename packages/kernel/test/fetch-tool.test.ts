@@ -876,6 +876,19 @@ async function main() {
         "a prompt-limit refusal does not stop the run");
       assert(envelope(readable).pages.length === 1 && provider.calls.length === 1,
         "a ticketed URL is still readable after the trust allowance ran out");
+
+      // Repeating the same dead trust request must still be able to stop the run:
+      // the first refusal is a limit, the repeats are the model spinning.
+      const repeat = async () => tool.execute("t25t-rep", {
+        handles: ["https://docs.seven.example/a"], requestTrustFor: "docs.seven.example",
+      });
+      const firstRepeat = await repeat();
+      assert(!rawText(firstRepeat).includes("这轮抓页已经停了"),
+        "the first over-limit refusal leaves the run alone");
+      await repeat();
+      const thirdRepeat = await repeat();
+      assert(rawText(thirdRepeat).includes("这轮抓页已经停了"),
+        "repeating a dead trust request still reaches the rejected-batch stop");
     }
 
     store.close();
