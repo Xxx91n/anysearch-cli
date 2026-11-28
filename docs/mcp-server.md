@@ -764,17 +764,21 @@ Exa's `includeDomains` applies only to `search()`. Its separate `answer()`
 call does not receive the allowlist, and the kernel does not URL-gate answer
 text or citations.
 
-The AnySearch adapter wires `search` only. `get_sub_domains`,
-`batch_search`, `extract`, and the live-but-undocumented `score` are not
-wired, and this client does not pin the upstream tool count (official docs
-list four tools; the live endpoint has also returned `score`). A successful
+The AnySearch adapter wires `search` and, for the internal `fetch` tool,
+`extract`. `get_sub_domains`, `batch_search`, and the live-but-undocumented
+`score` are not wired, and this client does not pin the upstream tool count
+(official docs list four tools; the live endpoint has also returned `score`).
+A successful
 `search` reply's non-empty `_meta.request_id` is recorded as a diagnostic
 correlation id on the observation span when a caller supplies one. It never
 enters results and is never an idempotency key. A failed reply throws before
 extraction and records nothing. Upstream REST
 `POST /v1/search` is live (only `GET` returns 404). This adapter speaks MCP
 only, so the `/v1/search` → `/mcp` rewrite is a compatibility shim, not a
-retirement notice.
+retirement notice. Page reads try Exa, then Tavily, then AnySearch, whatever
+order the domain's `sources.enabled` lists; an arm that fails as a whole — a
+thrown call, or a per-URL failure whose class is quota, auth, the free-quota
+wall or a dead session — is not called again in the same run (#610).
 
 ## Verification
 

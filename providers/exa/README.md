@@ -148,6 +148,10 @@ Exa 的说明。信息源 id 是 `exa`，有 key 时的 REST 适配器在
   没撞到），分类落到 `permanent-auth`。那句三家共用的提示里「配一把有效 key」正好是有效动作，「删掉 key
   走免费额度」这半句对没配 key 的人没用——为什么不为它新开一个错误类，记在 `docs/limitations.md`。
 - **`result.isError: true` 也算失败**：正文读出来当错误串，绝不静默变成 0 条。
+- **读页的 `CRAWL_*` 码怎么归**（`exa-fetch.ts`）：`CRAWL_NOT_FOUND` / `CRAWL_INVALID_URL` /
+  `CRAWL_BAD_REQUEST` 是这一页的定局，不换家；`CRAWL_ACCESS_DENIED` / `CRAWL_FORBIDDEN` 认成 403，
+  算这一家在本次 run 里坏了，页面交给下一家；其余（`CRAWL_UNKNOWN_ERROR`、`CRAWL_TIMEOUT`、
+  `CRAWL_UNSUPPORTED_CONTENT`）只算这一页读不动，同样换下一家。
 - **回包的 `Content-Type` 两种都认**（`application/json` 和 `text/event-stream`）：都不是就报错，并说出
   实际拿到的是什么。
 

@@ -1,7 +1,9 @@
 # anysearch 档案夹
 
-AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvider`，见 `GLOSSARY.md`），适配器在
-[`packages/retriever/src/providers/anysearch.ts`](../../packages/retriever/src/providers/anysearch.ts)。
+AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvider`，见 `GLOSSARY.md`），搜索适配器在
+[`packages/retriever/src/providers/anysearch.ts`](../../packages/retriever/src/providers/anysearch.ts)；
+MCP 传输（握手、会话过期重试、SSE/JSON 回复）抽在 `anysearch-mcp.ts`，搜索和读页共用；读页臂是
+`anysearch-fetch.ts`。
 
 ## 端点
 
@@ -12,8 +14,10 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
   故意自己留一份字面量——它不能经过 provider 层。改表里那个值要同步这份 README。
 - `ANYSEARCH_ENDPOINT` 可覆盖。值以 `/v1/search` 结尾时自动改写成 `base+/mcp` 并打一次 stderr 警告——
   REST 还活着（`POST /v1/search` 200），改写成兼容垫片，不是 REST 退役。
-- 官方归属 2026-11-04 确认（#15，证据在适配器头注释）；证书 `*.anysearch.com` 有效期到 2027-04-07，
-  下次轮换要复查。
+- 官方归属 2026-11-04 确认（#15）：`api.anysearch.com` 是官方端点——官方仓库 README 直接写了
+  这个地址（Streamable HTTP），密钥控制台在 apex 域名的 `/console/api-keys`，`/health` 200。
+  REST 那条路也还活着（`POST /v1/search` 200，只有 `GET` 是 404），所以 `/v1/search` 尾巴改写成
+  `/mcp` 是兼容垫片，不是「REST 退役了」。证书 `*.anysearch.com` 有效期到 2027-04-07，下次轮换要复查。
 - 三家信息源里**只有 anysearch** 有这个 endpoint 环境变量开关。
 
 ## 认证
@@ -47,6 +51,12 @@ AnySearch 的说明和手工探针。信息源 id 是 `anysearch`（`SearchProvi
   `### N. 标题` + `- **URL**: ...` + 摘要行。`result.structuredContent` 到 2026-09-24 还没有；将来有
   就先解析它。
 - 失败：`result.isError:true`（例如 `invalid_api_key`）→ 适配器直接抛，不会返 0 条假装成功。
+- 读页（`extract`，只有内部 `fetch` 工具用）：参数只有 `{url}`，一次一个地址，所以 `maxUrlsPerCall` 是 1。
+  成功回 `result.structuredContent = {url, title, content}`；正文空 → 页级失败（可换家），`isError`
+  里是 404/410/非法网址 → 页级定局；其余 `isError` 交给共享分类器，只有额度 / 鉴权 / 免费额度墙 /
+  session 过期这几类算整臂退场，别的（含一个坏地址引起的协议样错误）只算这一页。
+- 上游 `extract` 只吃 HTML / 文本 / JSON / Markdown：PDF、图片、音视频一律失败，正文还会被截到约 50k 字符
+  （工具层自己的上限是 100k，拿不到更长的）。
 
 ## 已知异常
 

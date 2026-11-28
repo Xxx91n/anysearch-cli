@@ -13,7 +13,7 @@
 // 三家回包的确切形状（含坏 key 那几种）钉在 packages/retriever/test/provider-probes.test.ts 的夹具里。
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
-import { PROVIDER_FACTS, type UndetectableClass } from "./provider-facts";
+import { MCP_CLIENT_VERSION, PROVIDER_FACTS, resolveAnySearchEndpoint, type UndetectableClass } from "./provider-facts";
 
 /** 一次探针请求多久算超时。服务器回了响应头再卡住，也在这一条时限里。 */
 const PROBE_TIMEOUT_MS = 10_000;
@@ -198,20 +198,9 @@ export async function probeExa(input: ProbeInput): Promise<ProbeOutcome> {
 // ── AnySearch：initialize + tools/list + 空参数 tools/call ────────────
 // 空参数 tools/call 才分得开 key：好 key 回 isError「query is required」，坏 key 回
 // isError「invalid_api_key」。顺手补一次 tools/list：这只工具改名或改入参是真出过的事。
-const LEGACY_REST_SUFFIX = "/v1/search";
-
 /**
- * 适配器的 normalizeEndpoint 把 `/v1/search` 尾巴改写成 `/mcp`（env 兼容垫片）。
- * 探针问的必须是适配器真会问的那个地址，否则一个老 env 值就能让 --live 报假红。
+ * 探针在第一步就说不下去时，用它把结论一路抛到 catch。
  */
-function normalizeAnySearchEndpoint(raw: string): string {
-  const trimmed = raw.replace(/\/+$/, "");
-  return trimmed.endsWith(LEGACY_REST_SUFFIX)
-    ? trimmed.slice(0, -LEGACY_REST_SUFFIX.length) + "/mcp"
-    : raw;
-}
-
-/** 探针在第一步就说不下去时，用它把结论一路抛到 catch。 */
 class ProbeFault extends Error {
   constructor(readonly outcome: ProbeOutcome) {
     super("probe fault");
@@ -230,10 +219,12 @@ interface JsonRpcMessage {
 export async function probeAnySearch(input: ProbeInput): Promise<ProbeOutcome> {
   const facts = PROVIDER_FACTS.anysearch;
   const undetectable = facts.freeProbe.undetectable;
-  const endpoint = normalizeAnySearchEndpoint(input.endpoint ?? facts.freeProbe.endpoint);
+  // 问的必须是适配器真会问的那个地址（空白算没配、`/v1/search` 尾巴换掉），
+  // 不然一个老 env 值就能让 --live 报假红。归一规则和适配器共用 provider-facts 那份。
+  const endpoint = resolveAnySearchEndpoint(input.endpoint).endpoint;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    // spec MUST：两种媒体类型都要在 Accept 里。
+    // MCP 要求 Accept 里两种媒体类型都得写，少一个算协商失败。
     Accept: "application/json, text/event-stream",
     "MCP-Protocol-Version": facts.mcpProtocolVersion,
   };
@@ -250,8 +241,8 @@ export async function probeAnySearch(input: ProbeInput): Promise<ProbeOutcome> {
       params: {
         protocolVersion: facts.mcpProtocolVersion,
         capabilities: {},
-        // 跟适配器发的 clientInfo 一致（那边也是写死的 0.2.0）：探针要量的就是产品那条路。
-        clientInfo: { name: "anysearch-cli-doctor", version: "0.2.0" },
+        // 跟适配器共用同一个版本号，探针要量的就是产品那条路。
+        clientInfo: { name: "anysearch-cli-doctor", version: MCP_CLIENT_VERSION },
       },
     }), 1, undetectable);
     const protocolVersion = typeof handshake.protocolVersion === "string" ? handshake.protocolVersion : undefined;

@@ -50,8 +50,30 @@ export interface ProviderFacts {
   freeArm?: FreeArmFacts;
   /** MCP 客户端支持的协议版本。只有说 MCP 的那家有；适配器和探针发的是同一格。 */
   mcpProtocolVersion?: string;
-  /** 本适配器一次最多发几个 URL；按工具侧上限取 5，端点真实上限未测。 */
+  /** 我们一次往上游递几个网址（工具按这个数切批）。上游自己能收几个写在各家说明里。 */
   fetchMaxUrlsPerCall?: number;
+}
+
+/** MCP 握手时 clientInfo.version 报的版本号，适配器和探针共用这一格；发版时跟 packages/retriever/package.json 的 version 一起改，有测试盯着两边一致。 */
+export const MCP_CLIENT_VERSION = "0.2.0";
+
+/** 老配置把端点写成 REST 搜索尾巴时，要被替掉的那一段（换成 /mcp，写在下头的函数里）。 */
+export const ANYSEARCH_LEGACY_REST_SUFFIX = "/v1/search";
+
+/** `/v1/search` 尾巴换成 `/mcp`；`rewritten` 说换没换，提示不提示由调用方决定。 */
+function rewriteAnySearchEndpoint(raw: string): { endpoint: string; rewritten: boolean } {
+  const trimmed = raw.replace(/\/+$/, "");
+  if (!trimmed.endsWith(ANYSEARCH_LEGACY_REST_SUFFIX)) return { endpoint: raw, rewritten: false };
+  return { endpoint: trimmed.slice(0, -ANYSEARCH_LEGACY_REST_SUFFIX.length) + "/mcp", rewritten: true };
+}
+
+/**
+ * 端点归一：空串或只有空白算没配，退回表里那一格；再把 `/v1/search` 尾巴换掉。
+ * 适配器和探针都走这一份，不然一处算「没配」、一处拿空串去 fetch，探针就报假红。
+ */
+export function resolveAnySearchEndpoint(raw: string | undefined): { endpoint: string; rewritten: boolean } {
+  const trimmed = raw?.trim();
+  return rewriteAnySearchEndpoint(trimmed ? trimmed : PROVIDER_FACTS.anysearch.freeProbe.endpoint);
 }
 
 /**
@@ -94,6 +116,10 @@ export const PROVIDER_FACTS = {
     // include_domains 随 mode 一起发（只发这个会 400），上游按它过滤。
     domainFilterSupported: true,
     verticalDomainSupported: false,
+    // 我们一次递 5 个，上游文档说一次能收 20 个。这里写的是「我们发几个」：工具切批
+    // 用的就是这一格，写成 20 就会把 20 个网址塞进一次请求，而 SDK 的 15 秒是每次请求
+    // 各算一次、整批共用——网址一多、站一慢，整批一起废。要放大得先按站切请求。
+    fetchMaxUrlsPerCall: FETCH_MAX_URLS_PER_CALL,
     freeProbe: {
       // @tavily/core 的 BASE_URL。
       endpoint: "https://api.tavily.com",
@@ -111,12 +137,16 @@ export const PROVIDER_FACTS = {
     freeProbe: {
       // Design: 免费面 endpoint 就是适配器的默认地址 —— anysearch 的免费面本身就是
       // MCP 入口（initialize + tools/list + 空参数 tools/call），两个消费者要的是同一个
-      // URL，收成两格只会漂。归属确认和证书证据见 anysearch.ts 的头注释（#15）。
+      // URL，收成两格只会漂。归属确认和证书证据见 `providers/anysearch/README.md`
+      // 的「## 端点」。
       endpoint: "https://api.anysearch.com/mcp",
       undetectable: ["quota"],
     },
     // 客户端支持的那个版本由我们决定，不跟服务端协商；请求新版本时上游会往下退
     // （2026-07-28 → 2025-11-25，探针实测过），退到哪个就跟着哪个。
     mcpProtocolVersion: "2025-11-25",
+    // extract 一次只收一个网址；适配器内部按 URL 循环，工具按这个数切批，
+    // 于是每次上游请求正好记一次 calls。
+    fetchMaxUrlsPerCall: 1,
   },
 } as const satisfies ProviderFactsTable;

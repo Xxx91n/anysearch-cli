@@ -6,9 +6,9 @@
 
 import Exa from "exa-js";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
-import { FETCH_PAGE_MAX_CHARS, type FetchEnvelope, type FetchFailure, type FetchPage, type FetchProvider, type FetchRequest } from "../fetch-contract";
+import { FETCH_EMPTY_BODY_MESSAGE, FETCH_PAGE_MAX_CHARS, fetchIdentity, mapReading, oneLineFault, pageFault, type FetchEnvelope, type FetchFailure, type FetchPage, type FetchProvider, type FetchRequest } from "../fetch-contract";
 import { sameHostname } from "../content-trust";
-import { normalizeUrlIdentity, parseWebUrl } from "../url-identity";
+import { parseWebUrl } from "../url-identity";
 import { callExaMcpTool } from "./exa-free-arm";
 import { PROVIDER_FACTS } from "./provider-facts";
 
@@ -37,29 +37,6 @@ interface Reading {
   failures: FetchFailure[];
 }
 
-/** This page came back without text. */
-const NO_BODY_MESSAGE = "该网址没有返回正文";
-
-/** Turn pages and a failure rule into the requested order. */
-function mapReading(
-  requested: string[],
-  pages: FetchPage[],
-  failureFor: (url: string) => FetchFailure,
-): Reading {
-  const byIdentity = new Map(pages.map((page) => [normalizeUrlIdentity(page.url), page]));
-  const outPages: FetchPage[] = [];
-  const failures: FetchFailure[] = [];
-  for (const url of requested) {
-    const page = byIdentity.get(normalizeUrlIdentity(url));
-    if (page) {
-      outPages.push({ ...page, url });
-      continue;
-    }
-    failures.push(failureFor(url));
-  }
-  return { pages: outPages, failures };
-}
-
 function readingEnvelope(provider: string, reading: Reading): FetchEnvelope {
   return { provider, pages: reading.pages, failures: reading.failures };
 }
@@ -68,10 +45,6 @@ function isRedirectTo(wanted: URL, got: URL): boolean {
   return sameHostname(wanted.hostname, got.hostname)
     && wanted.pathname.replace(/\/+$/, "") === got.pathname.replace(/\/+$/, "")
     && wanted.search === got.search;
-}
-
-function pageFailure(url: string, message: string): FetchFailure {
-  return { url, errorClass: "unknown", message, retryable: true };
 }
 
 /**
@@ -86,7 +59,7 @@ function matchPaidReading(
   for (const result of results) {
     const url = typeof result?.url === "string" ? result.url.trim() : "";
     if (!url) continue;
-    const identity = normalizeUrlIdentity(url);
+    const identity = fetchIdentity(url);
     const text = typeof result?.text === "string" ? result.text : "";
     const title = typeof result?.title === "string" ? result.title.trim() : "";
     if (!text.trim()) continue;
@@ -101,8 +74,8 @@ function matchPaidReading(
   // Exa returns the landing page URL after a redirect; with one requested URL
   // and one non-empty result the mapping is unambiguous.
   if (requested.length === 1 && results.length === 1 && pages.length === 1) {
-    const wanted = normalizeUrlIdentity(requested[0]!);
-    const returned = normalizeUrlIdentity(pages[0]!.url);
+    const wanted = fetchIdentity(requested[0]!);
+    const returned = fetchIdentity(pages[0]!.url);
     if (returned !== wanted) {
       const wantedUrl = parseWebUrl(requested[0]!);
       const returnedUrl = parseWebUrl(pages[0]!.url);
@@ -114,18 +87,23 @@ function matchPaidReading(
     }
   }
   return mapReading(requested, pages, (url) =>
-    pageFailure(url, NO_BODY_MESSAGE));
+    pageFault(url, FETCH_EMPTY_BODY_MESSAGE));
 }
 
 function failureFromMessage(url: string, message: string): FetchFailure {
-  const classified: ProviderErrorClass = classifyProviderError(message);
+  const classified: ProviderErrorClass = /CRAWL_(?:ACCESS_DENIED|FORBIDDEN)\b/i.test(message)
+    ? "permanent-auth"
+    : classifyProviderError(message);
   return {
     url,
     errorClass: classified,
-    message: message.trim().slice(0, 300) || undefined,
+    message: oneLineFault(message, 200) || undefined,
     // Only an explicit "this page cannot exist" code is final. Everything else,
-    // including CRAWL_UNKNOWN_ERROR, is worth trying on another arm.
-    retryable: !/CRAWL_(?:NOT_FOUND|INVALID_URL|UNSUPPORTED_CONTENT|ACCESS_DENIED|FORBIDDEN|BAD_REQUEST)\b/i.test(message),
+    // including CRAWL_UNKNOWN_ERROR and CRAWL_UNSUPPORTED_CONTENT, is worth
+    // trying on another arm: this arm cannot read a PDF, but the next one may.
+    // An access fault is not decided here — the class above makes the tool
+    // retire this arm and hand the page on.
+    retryable: !/CRAWL_(?:NOT_FOUND|INVALID_URL|BAD_REQUEST)\b/i.test(message),
   };
 }
 
@@ -145,7 +123,8 @@ function failureFromMessage(url: string, message: string): FetchFailure {
  */
 export function parseExaFetchReply(text: string, requested: string[]): Reading {
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
-  const requestedSet = new Set(requested.map(normalizeUrlIdentity));
+  // 身份口径和 mapReading 一致（尾斜杠也折）：上游正文里回 /a/ 时别当没读到。
+  const requestedSet = new Set(requested.map(fetchIdentity));
 
   const rawStarts: Array<{ heading: number; urlLine: number; url: string; title: string }> = [];
   for (let i = 0; i < lines.length; i++) {
@@ -165,11 +144,11 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
   // starts a document only when the preceding line is blank.
   const lastRequested = new Map<string, number>();
   rawStarts.forEach((start, index) => {
-    const identity = normalizeUrlIdentity(start.url);
+    const identity = fetchIdentity(start.url);
     if (requestedSet.has(identity)) lastRequested.set(identity, index);
   });
   const boundaries = rawStarts.filter((start, index) => {
-    const identity = normalizeUrlIdentity(start.url);
+    const identity = fetchIdentity(start.url);
     if (requestedSet.has(identity)) return lastRequested.get(identity) === index;
     return start.heading === 0 || !lines[start.heading - 1]!.trim();
   });
@@ -193,7 +172,7 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
       if (!line.trim()) { i--; continue; }
       const match = upstreamError.exec(line);
       if (!match) break;
-      const identity = normalizeUrlIdentity(match[1]!);
+      const identity = fetchIdentity(match[1]!);
       if (!requestedSet.has(identity)) break;
       errorByUrl.set(identity, match[2] ?? "");
       cut = i;
@@ -209,7 +188,7 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
   const pages: FetchPage[] = [];
   const seen = new Set<string>();
   for (const doc of docs) {
-    const identity = normalizeUrlIdentity(doc.url);
+    const identity = fetchIdentity(doc.url);
     if (!requestedSet.has(identity) || seen.has(identity)) continue;
     seen.add(identity);
     const body = lines.slice(doc.bodyFrom, doc.end).join("\n").trim();
@@ -235,7 +214,7 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
       const allErrors = nonEmpty.every((line) => upstreamError.test(line));
       const bodyLines = nonEmpty.filter((line) => {
         const match = upstreamError.exec(line);
-        return !match || !requestedSet.has(normalizeUrlIdentity(match[1]!));
+        return !match || !requestedSet.has(fetchIdentity(match[1]!));
       });
       const body = bodyLines.join("\n").trim();
       if (body && !allErrors && bodyLines.length >= 3) pages.push({ url: requested[0]!, text: body });
@@ -243,8 +222,8 @@ export function parseExaFetchReply(text: string, requested: string[]): Reading {
   }
 
   return mapReading(requested, pages, (url) => {
-    const error = errorByUrl.get(normalizeUrlIdentity(url));
-    return error !== undefined ? failureFromMessage(url, error) : pageFailure(url, NO_BODY_MESSAGE);
+    const error = errorByUrl.get(fetchIdentity(url));
+    return error !== undefined ? failureFromMessage(url, error) : pageFault(url, FETCH_EMPTY_BODY_MESSAGE);
   });
 }
 

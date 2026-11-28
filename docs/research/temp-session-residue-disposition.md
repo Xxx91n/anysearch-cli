@@ -28,9 +28,8 @@ Date: 2026-11-05. 范围：issue #182 的第二件仓务动作——`.temp/` 里
 
 ### 已知情况（按类别说；实际文件没在检出树里出现）
 
-- #15（api.anysearch.com 归属确认）的结论已经写进 `packages/retriever/src/providers/anysearch.ts`
-  的注释块 `DEFERRED → CONFIRMED`（2026-11-04），也记在 CHANGELOG（#15 段）和
-  `docs/limitations.md`。
+- #15（api.anysearch.com 归属确认）的结论已经写进 `providers/anysearch/README.md` 的「## 端点」
+  （2026-11-04），也记在 CHANGELOG（#15 段）和 `docs/limitations.md`。
 - #16（better-sqlite3 在 macOS 退出时 mutex 崩溃）的结论已经写进
   `.github/workflows/ship-gate.yml` 的矩阵剪除、`docs/limitations.md` 和审计 S1/S2
   的修复（PR #174，已 MERGED）。

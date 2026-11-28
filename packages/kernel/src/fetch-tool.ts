@@ -21,6 +21,7 @@ import {
   sanitizeText,
   wrapRetrieved,
   FETCH_PAGE_MAX_CHARS,
+  FETCH_ARM_FAULT_CLASSES,
   type FetchEnvelope,
   type FetchFailure,
   type FetchPage,
@@ -54,11 +55,15 @@ const REJECTED_STOP_MESSAGE = `这轮抓页已经停了：连续 ${FETCH_LIMITS.
 const TRUST_CLOSED_MESSAGE = `这轮不再受理 requestTrustFor 了：连续 ${FETCH_LIMITS.maxTrustSpins} 次信任请求都没真的问到人。带上这个参数也一样被忽略；手里有票的网址照读，要读新的网站，让用户把网页正文贴进来。`;
 const PAGE_BUDGET_MESSAGE = `这轮读页到上限了（一次提问最多 ${FETCH_LIMITS.maxPages} 页），先用已有结果作答。`;
 const PROVIDER_NO_REPLY_MESSAGE = "抓页信息源这次没有回包；先别断定页面没内容，稍后再试。";
+// 本轮所有臂都退场了：再调一次也是一次请求都不发，别让提示引导模型重试。
+const ALL_ARMS_RETIRED_MESSAGE = "本轮的抓页源都退场了（配额、鉴权、连续超时或回包坏）；这一轮别再试，用已有材料作答。";
 const PARAMETER_ERROR = `handles 要给 1–${FETCH_LIMITS.maxUrlsPerCall} 个（m:<行号> 或用户贴过的网址），不能有空串；maxCharacters 在 1–${FETCH_LIMITS.maxCharacters} 之间。`;
 const TRUST_GRANTED = "已信任这个主机，本会话内有效。现在重新调用 fetch，handles 用同样的网址，就能读了；这次请求没有读页。";
 const NO_FETCH_SOURCE_MESSAGE = "没有可用的抓取信息源";
-const EMPTY_BODY_MESSAGE = "页面正文是空的";
+const EMPTY_BODY_MESSAGE = "过完净化还是空的";
 const FETCH_TIMEOUT_MS = 20_000;
+/** 同一家连续撞超时墙达到这个次数就本轮退场：单页慢不废整家，但连卡两次别再排队白等。 */
+const MAX_CONSECUTIVE_TIMEOUTS = 2;
 
 /**
  * Store seams: the tool calls the first three; saveFetchTickets is used by the
@@ -92,6 +97,8 @@ export interface FetchToolOptions {
    * hung prompt. `signal` aborts the wait, so Ctrl-C does not leave the prompt stuck.
    */
   confirmTrust?: (request: FetchTrustRequest, signal?: AbortSignal) => Promise<boolean>;
+  /** 每次上游请求的超时上限（毫秒），默认 20 秒；测试可以调小，不用干等。 */
+  callTimeoutMs?: number;
 }
 
 interface CachedRead {
@@ -141,9 +148,23 @@ class FetchRunState {
   readonly declinedTrust = new Set<string>();
   /** Hosts the user agreed to but the ticket could not be written; no re-prompt. */
   readonly failedTrust = new Set<string>();
+  // 一家整家坏了就记在这里：本轮剩下的调用都跳过它，下一轮 run 是新实例、重新试。
+  readonly deadProviders = new Set<string>();
+  // 同一家连续撞超时墙的次数：单次慢不拉黑，连续两次就当本轮卡死了。
+  readonly consecutiveTimeouts = new Map<string, number>();
 
   noteCall(provider: string): void {
     this.calls.set(provider, (this.calls.get(provider) ?? 0) + 1);
+  }
+
+  noteTimeout(provider: string): number {
+    const next = (this.consecutiveTimeouts.get(provider) ?? 0) + 1;
+    this.consecutiveTimeouts.set(provider, next);
+    return next;
+  }
+
+  clearTimeouts(provider: string): void {
+    this.consecutiveTimeouts.delete(provider);
   }
 
   notePage(provider: string): void {
@@ -558,9 +579,11 @@ interface ProviderWork {
 
 /**
  * Ask the providers in order. A thrown call means "this arm is down": the
- * unread URLs move to the next arm. A retryable page failure moves only that
- * page. A non-retryable page failure is final. Each real upstream request
- * reserves and settles one `calls` unit before it is sent.
+ * unread URLs move to the next arm. A page failure whose class describes the arm
+ * (quota, 403, free-quota wall) does the same, keeping the pages that batch
+ * already read. A retryable page failure moves only that page. A non-retryable
+ * page failure is final. Each real upstream request reserves and settles one
+ * `calls` unit before it is sent.
  */
 async function runProviders(
   providers: readonly FetchProvider[],
@@ -583,6 +606,9 @@ async function runProviders(
 
   providerLoop: for (const provider of providers) {
     if (pending.size === 0) break;
+    // 这家本轮别再叫了：已经坏到不可能在同一次 run 里恢复，再叫只会计一次 calls。
+    // 状态只在这一次 run 内存活——工具实例是每轮 run 新建的。
+    if (state.deadProviders.has(provider.id)) continue;
     const entries = [...pending.values()];
     const perCall = Math.max(1, Math.trunc(provider.maxUrlsPerCall) || 1);
     for (let offset = 0; offset < entries.length; offset += perCall) {
@@ -608,7 +634,7 @@ async function runProviders(
         }
       }
 
-      const deadline = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+      const deadline = AbortSignal.timeout(options.callTimeoutMs ?? FETCH_TIMEOUT_MS);
       const callSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
       let envelope: FetchEnvelope;
       try {
@@ -619,8 +645,11 @@ async function runProviders(
       } catch (error) {
         settleReserved(reserved);
         if (signal?.aborted) throw error;
+        const timedOut = deadline.aborted;
         const text = providerErrorText(error);
-        const cls: ProviderErrorClass = providerErrorClassOf(error) ?? classifyProviderError(text);
+        const cls: ProviderErrorClass = timedOut
+          ? "transient"
+          : (providerErrorClassOf(error) ?? classifyProviderError(text));
         const message = redactSecrets(text, { keepPaths: false }).slice(0, 300);
         for (const entry of chunk) {
           entry.attempts.push({ provider: provider.id, class: cls });
@@ -628,8 +657,18 @@ async function runProviders(
           entry.lastMessage = message;
         }
         state.noteCall(provider.id);
+        if (timedOut) {
+          // 单页慢不废掉整家，但同一家连撞两次超时墙（比如按 1 个 URL 切分片撞上彻底
+          // 无响应的源）就当本轮卡死了，立刻摘掉，别排着队把后面分片都等一遍。
+          if (state.noteTimeout(provider.id) >= MAX_CONSECUTIVE_TIMEOUTS) {
+            state.deadProviders.add(provider.id);
+            continue providerLoop;
+          }
+          continue;
+        }
         // This arm is down. Skip its remaining chunks and leave every URL for
         // the next arm instead of spending calls against the same failure.
+        state.deadProviders.add(provider.id);
         continue providerLoop;
       }
 
@@ -642,6 +681,7 @@ async function runProviders(
           entry.lastClass = "permanent-protocol";
           entry.lastMessage = "抓页信息源返回了坏形状";
         }
+        state.deadProviders.add(provider.id);
         continue providerLoop;
       }
       gotAnyResponse = true;
@@ -653,6 +693,20 @@ async function runProviders(
         pending.delete(identity);
         pages.push({ page: { ...page, url: entry.url }, provider: responseProvider });
       }
+      // 只认明确标记（工具超时墙响了，或适配器在失败项上标了 timedOut: true），
+      // 不靠文案猜，免得目标站自己回 504 Gateway Timeout 把整家误摘。
+      const batchTimedOut = envelope.pages.length === 0 && (
+        deadline.aborted
+        || (envelope.failures.length > 0 && envelope.failures.every((f) => f.timedOut === true))
+      );
+      // 逐页失败里带着整家坏的类：同样的请求换个网址也会坏，这家本轮就到此为止。
+      // 这一批已经读到的页留着，没读的（包括这一页）交给下一家。
+      let armDown = false;
+      if (batchTimedOut) {
+        if (state.noteTimeout(provider.id) >= MAX_CONSECUTIVE_TIMEOUTS) armDown = true;
+      } else {
+        state.clearTimeouts(provider.id);
+      }
       for (const failure of envelope.failures) {
         const identity = normalizeUrlIdentity(failure.url);
         const entry = pending.get(identity);
@@ -660,6 +714,11 @@ async function runProviders(
         entry.attempts.push({ provider: provider.id, class: failure.errorClass });
         entry.lastClass = failure.errorClass;
         if (failure.message) entry.lastMessage = failure.message;
+        if (failure.armFault === true || FETCH_ARM_FAULT_CLASSES.includes(failure.errorClass)) {
+          // This URL stays unread: the next arm gets it.
+          armDown = true;
+          continue;
+        }
         if (failure.retryable !== false) continue;
         pending.delete(identity);
         failures.push({
@@ -668,6 +727,12 @@ async function runProviders(
           attempts: entry.attempts,
           ...(failure.message ? { message: failure.message } : {}),
         });
+      }
+      if (armDown) {
+        // The pages this batch already read stay; every unread URL goes to the
+        // next arm, and the remaining chunks for this arm are skipped.
+        state.deadProviders.add(provider.id);
+        continue providerLoop;
       }
       // A URL the adapter did not mention stays pending for the next arm. With
       // no arm left, the final sweep below reports it.
@@ -937,10 +1002,16 @@ export function createFetchTool(options: FetchToolOptions): AgentTool {
         state.emptyStreak = 0;
       }
 
+      // 跑完这一批再看是不是全军覆没：最后一家正好在这次退场时，当次就告诉模型别再试，
+      // 不然给一句「稍后再试」，模型只会白跑一次不发请求的空调用。
+      const allArmsRetired = options.providers.length > 0
+        && options.providers.every((provider) => state.deadProviders.has(provider.id));
       let notice: string | undefined;
       if (batch.budgetStopped) notice = BUDGET_STOP_MESSAGE;
       else if (pages.length === 0 && skipped.length > 0) notice = PAGE_BUDGET_MESSAGE;
-      else if (newPageCount === 0 && !batch.gotAnyResponse && failures.length > 0) notice = PROVIDER_NO_REPLY_MESSAGE;
+      else if (newPageCount === 0 && !batch.gotAnyResponse && failures.length > 0) {
+        notice = allArmsRetired ? ALL_ARMS_RETIRED_MESSAGE : PROVIDER_NO_REPLY_MESSAGE;
+      }
 
       const payload = {
         pages,

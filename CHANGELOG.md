@@ -1,3 +1,35 @@
+## Unreleased — #610: 三家回退：Tavily + AnySearch + 半成功只补失败页
+
+一句话说清：**内部 `fetch` 工具以前只有 Exa 一家，Exa 读不动就整批没正文。现在按固定顺序 Exa → Tavily → AnySearch 轮着来，顺序不看 domain 的 `sources.enabled` 怎么写，只看它启用了谁；一家整臂挂了（配额、403、连不上、回包形状坏、免费额度用光）本轮后面就不再叫它，没读的网址交给下一家；只是这一页读不出来（空正文、超时、这家的格式不支持）就只把这一页交给下一家，同一批里已经读到的页留在信封里，不再重复花钱。404/410、网址非法这类定局不换家。信封里每页带读到它的那家，每家带 `calls` / `pages`，每个没读成的网址带 `attempts`。**
+
+### Changed
+
+- **顺序和成员**（`packages/kernel/src/composition.ts`）：新增 `FETCH_PROVIDER_ORDER = ["exa", "tavily", "anysearch"]`，`buildFetchProviders` 先按这个固定顺序排，再和 domain 的启用集合取交集；domain 把 `enabled` 写成 `["anysearch","tavily"]` 也还是 Tavily 先上。没启用的那家根本不构造。两张表两个方向都绑住（顺序表里的必须真实现、实现了一家就必须排位），否则编不过。没有 domain 时默认名单取自读页那张构造表，不再从搜索表推。domain 里写了读页这边没有的 id（打错，或者这家只有搜索）会在 stderr 说一句，不再静默丢掉。
+- **一家坏了就不再叫它**（`packages/kernel/src/fetch-tool.ts`）：`FetchRunState` 多一个 `deadProviders`。适配器抛错、回包形状坏，或者某一页的失败带着「整家坏」那几类错误（配额、403、免费额度墙、session 过期）、又或者适配器自己标了 `armFault` 时，这一家记进去，后面每次 `runProviders` 直接跳过，没读的网址交给下一家；这一批里已经读到的页留着。单次超时不算整家坏，只记这批网址的 `transient` 页失败，不把这家拉黑；但同一家连续两次超时会直接本轮退场，避免多分片排队白等。所有臂都在本轮退场时，当次调用就直接提示「这一轮别再试」，不再劝模型白跑一趟。工具实例是一轮 run 建一个，所以下一轮会重新试。
+- **Tavily 读页臂**（`packages/retriever/src/providers/tavily-fetch.ts`，新文件）：走 `@tavily/core` 的 `extract`，我们一次递 5 个网址（`fetchMaxUrlsPerCall`）——上游文档说能收 20，但 SDK 那 15 秒超时是整批共用的，所以不一次发那么多；只要 `basic` + `markdown`，自己带 15 秒超时（工具那层是 20 秒）。SDK 超时抛错时转成这批网址的 `transient` 页失败（可换家、不带 `armFault`），不废掉整家；配额、鉴权、keyless 上限、连不上这些照旧往上抛让这家退场。`results` 按网址身份对上（尾斜杠也折），正文按 `maxCharacters` 截、硬顶 10 万字；`failedResults` 带 404/410/非法网址的算定局（`retryable: false`），其余算可换家；错因落进「整家坏」的同样让这家退场。`results` 和 `failedResults` 都是可选的，两样都没有才算坏回包。工具那道 20 秒墙在结果回来之后才响时，这一批照常返回，只有调用方自己取消才往上抛。
+- **AnySearch 读页臂**（`packages/retriever/src/providers/anysearch-fetch.ts`，新文件）：调 MCP 的 `extract`，一次只发一个网址（`fetchMaxUrlsPerCall: 1`，这样每次上游请求正好记一次 `calls`）。回包读 `structuredContent.content`，没给或只有空白就退回文字半边（不挑段的 `type`，两路都空才算坏回包）；`isError` 一律走共享的 `pageFault`，靠错误类分开。这一页的请求本身挂了或回包两半都没字都记成带 `armFault` 的失败，前面读到的页留着；工具那道 20 秒墙响了只记 `transient` 页失败，不让这家退场。文字半边当正文前只认共享分类器判出的 `free-quota-exhausted` 且不超过 `FREE_WALL_MAX_CHARS`（600）字才当免费额度墙。只认 HTML/text/JSON/Markdown，PDF 和图片回可换家的页失败。
+- **定局与对齐**（`packages/retriever/src/fetch-contract.ts`、`packages/retriever/src/http-headers.ts`、`packages/retriever/src/stderr.ts`）：404/410 只认状态码形状（`HTTP 404`、`status=410`、`status 404`、`404 Not Found`），网址路径里的 `/404-guide`、查询串里的 `?id=404` 和笼统的 `not found` 都不算定局。三家把上游回的页对回请求的那一套（`mapReading`、`fetchIdentity`）收进 `fetch-contract.ts`，路径尾斜杠折掉后再比；`retry-after` 解析单独放 `http-headers.ts`；安全写 stderr 的 `writeStderrDiagnostic` 抽进 `stderr.ts`，retriever 和 kernel 共用一份。
+- **搜索臂的 200 墙**（`packages/retriever/src/providers/anysearch.ts`）：没有「## Search Results」头的回包先按不挑 `type` 的一行文字读一遍，认得出就报对应错误类并带上脱敏后的上游摘要（和 `isError` 口径一致），实在认不出才算形状坏。
+- **两句「没正文」分开写**（`packages/kernel/src/fetch-tool.ts`）：上游没给正文用 retriever 的「该网址没有返回正文」；正文过完净化/入库是空的用 kernel 自己的「过完净化还是空的」。
+- **MCP 传输抽出来**（`packages/retriever/src/providers/anysearch-mcp.ts`，新文件）：`AnySearchMcpClient` 收拢握手、JSON/SSE 回包、session 过期重握手重试一次、`/v1/search` 端点改写，搜索臂和读页臂共用一份；`clientInfo.version` 统一读 `provider-facts.ts` 的 `MCP_CLIENT_VERSION`（探针也用同一格）。SSE 边收边解、拿到答复即取消流、坏帧跳过、没带 body 归为 `permanent-protocol`；端点归一收进 `provider-facts.ts` 的 `resolveAnySearchEndpoint`。
+- **Exa 的失败口径**（`packages/retriever/src/providers/exa-fetch.ts`）：`CRAWL_UNSUPPORTED_CONTENT` 改为可重试；`CRAWL_ACCESS_DENIED` / `CRAWL_FORBIDDEN` 认成 `permanent-auth` 让这家退场；404/410/非法网址仍是定局。
+- **文档**（`docs/limitations.md`、`docs/mcp-server.md`）：AnySearch 从「只接了 search」改成「search + 读页用的 extract」，写清三家的固定顺序、整家坏只在这一轮 run 内有效、超时不退场、信封字段。
+
+### Tests
+
+- `packages/retriever/test/fetch-anysearch.test.ts`：单 URL 请求、页/失败拆开、空正文可换家、404 定局、路径带 404 不算定局、配额/鉴权类退场且保留已读页、请求抛错与空回包带 `armFault`、免费额度墙与正常 403 文章区分、工具超时墙不退场、SSE 坏帧跳过、session 过期重握手、截断到 `maxCharacters`。
+- `packages/retriever/test/fetch-tavily.test.ts`：请求形状、页/失败拆开、404/410/`status 404`/DNS/非法网址定局、`content not found` 与路径 `/404-guide` 可换家、空正文、SDK 超时转 `transient` 页失败不退场、缺 `failedResults` 或缺 `results` 兼容、尾斜杠对齐、工具墙滞后保留结果、匿名上限抛错。
+- `packages/retriever/test/fetch-exa.test.ts`：`CRAWL_UNSUPPORTED_CONTENT` 可换家、`CRAWL_FORBIDDEN`/`CRAWL_ACCESS_DENIED` 归 `permanent-auth`、尾斜杠对齐、原因脱敏截断。
+- `packages/kernel/test/fetch-tool.test.ts`：一家挂了本轮不再叫、整家坏类/标 `armFault` 退场且保留已读页、混合批保留 404 定局、工具超时墙不拉黑臂、全臂退场当次就提示别再试、只补失败页、信封按页记 `provider` 和按家记 `calls`/`pages`。
+- `packages/kernel/test/composition-fetch-order.test.ts`：固定顺序 Exa → Tavily → AnySearch、domain 启用过滤、构造抛错不泄 key、未知 id 提示。
+- `packages/retriever/test/anysearch.test.ts`：拆段中文额度文案、不带 `type` 回包、200 墙保留脱敏上游文字、非 2xx 带正文、空端点退回默认、SSE 边收边解、`MCP_CLIENT_VERSION` 版本对齐。
+- `packages/retriever/test/provider-probes.test.ts`：`resolveAnySearchEndpoint` 纯函数对齐。
+
+### Known limits
+
+- AnySearch 的 `extract` 只吃 HTML/text/JSON/Markdown，PDF、图片读不了，截断在 5 万字上下；Tavily 匿名通道有自己的每日上限，撞上了就只剩 AnySearch 一家兜底。两家都不解 JS 渲染，动态页只能拿到服务端给的那点正文。
+- 一家整家坏了只记在这一轮 run 里：同一轮后面不再叫它，下一轮 run 重新试（不会一直记着）。
+
 ## Unreleased — #612: 官方文档搜不到时，先 site: 搜索，再问一次信不信任这个网站
 
 一句话说清：**以前模型只能读本会话搜索结果和用户贴过的网址，官方文档的页面常常搜不到、也读不了。现在拒绝文案会先让模型用 `site:` 搜索；还搜不到时，交互式 CLI 可以带 `requestTrustFor` 问用户一次，用户看清完整网址并同意后，本会话就信任这个主机名，模型重试即可读，同一个主机的页面不再重复问；子域是另一个主机，要单独问。信任票不读页、不占页数/网址数、不写 TOML、不跨会话；headless/MCP 直接拒，让用户贴链接。**

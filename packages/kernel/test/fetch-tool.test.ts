@@ -24,16 +24,16 @@ class FakeProvider implements FetchProvider {
   readonly maxUrlsPerCall: number;
   readonly calls: string[][] = [];
   constructor(
-    private readonly handler: (urls: string[]) => FetchEnvelope | Promise<FetchEnvelope>,
+    private readonly handler: (urls: string[], signal: AbortSignal) => FetchEnvelope | Promise<FetchEnvelope>,
     id = "exa",
     maxUrlsPerCall = 100,
   ) {
     this.id = id;
     this.maxUrlsPerCall = maxUrlsPerCall;
   }
-  async fetch(req: FetchRequest): Promise<FetchEnvelope> {
+  async fetch(req: FetchRequest, signal: AbortSignal): Promise<FetchEnvelope> {
     this.calls.push(req.urls);
-    return this.handler(req.urls);
+    return this.handler(req.urls, signal);
   }
 }
 
@@ -53,8 +53,9 @@ interface OuterEnvelope {
 }
 
 interface EnvelopeBody {
-  pages: Array<{ text: string; truncated: boolean; trust: string; finalUrlKnown: boolean }>;
-  failures: Array<{ url: string; errorClass: string }>;
+  pages: Array<{ url: string; text: string; provider: string; truncated: boolean; trust: string; finalUrlKnown: boolean }>;
+  failures: Array<{ url: string; errorClass: string; retryable?: boolean }>;
+  providers: Array<{ id: string; calls: number; pages: number }>;
   skipped: Array<{ url: string; reason: string }>;
   rejected: Array<{ handle: string; reason: string }>;
   pagesRead: number;
@@ -586,13 +587,368 @@ async function main() {
       await tickets("user", ["allowed.example/down"]);
       const provider = new FakeProvider(() => { throw new Error("provider down"); }, "down", 5);
       const tool = makeTool(provider, ["allowed.example"]);
-      await tool.execute("t24k", { handles: ["https://allowed.example/down"] });
-      await tool.execute("t24l", { handles: ["https://allowed.example/down"] });
-      const third = await tool.execute("t24m", { handles: ["https://allowed.example/down"] });
+      const first = await tool.execute("t24k", { handles: ["https://allowed.example/down"] });
+      assert(rawText(first).includes("都退场了") && !rawText(first).includes("稍后再试"),
+        "when the last arm dies on this call, the notice stops telling the model to retry");
+      await tool.execute("t24l", { handles: ["allowed.example/down"] });
+      const third = await tool.execute("t24m", { handles: ["allowed.example/down"] });
       const text = rawText(third);
-      assert(text.includes("没有回包"), "an upstream outage names the provider, not empty content");
+      assert(text.includes("都退场了"),
+        "once every arm is dead the notice still says every arm retired");
+      assert(!text.includes("稍后再试"), "and it does not ask for a retry that would send nothing");
       assert(!text.includes("连续 2 次没拿到新内容"),
         "an upstream outage does not trip the empty-batch stop");
+    }
+
+    // ---- 7h. a dead arm stays dead for the rest of the run (#610) --------
+    {
+      await tickets("user", ["allowed.example/dead1", "allowed.example/dead2"]);
+      const dead = new FakeProvider(() => { throw new Error("quota exhausted"); }, "exa", 5);
+      const backup = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "backup body" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [dead, backup],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      await tool.execute("t25a", { handles: ["https://allowed.example/dead1"] });
+      const second = await tool.execute("t25b", { handles: ["https://allowed.example/dead2"] });
+      assert(dead.calls.length === 1, "a dead arm is not called again in the same run");
+      assert(backup.calls.length === 2 && envelope(second).pages.length === 1,
+        "the next arm carries the second read");
+    }
+
+    // ---- 7i. only the failed page moves to the next arm (#610) ------------
+    {
+      await tickets("user", ["allowed.example/p1", "allowed.example/p2"]);
+      const first = new FakeProvider(() => ({
+        provider: "exa",
+        pages: [{ url: "https://allowed.example/p1", text: "first body" }],
+        failures: [{ url: "https://allowed.example/p2", errorClass: "unknown", message: "empty body", retryable: true }],
+      }), "exa", 5);
+      const second = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "second body" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [first, second],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const result = await tool.execute("t25c", {
+        handles: ["https://allowed.example/p1", "https://allowed.example/p2"],
+      });
+      assert(first.calls.length === 1, "the first arm asks for the whole batch once");
+      assert(second.calls.length === 1 && second.calls[0]!.length === 1,
+        "only the failed page is re-requested from the next arm");
+      assert(second.calls[0]![0] === "https://allowed.example/p2", "the next arm gets the failed URL");
+      const body = envelope(result);
+      assert(body.pages.length === 2 && body.failures.length === 0, "both pages are read");
+      assert(body.pages.find((page) => page.url === "https://allowed.example/p1")?.provider === "exa",
+        "the page names the arm that read it");
+      assert(body.pages.find((page) => page.url === "https://allowed.example/p2")?.provider === "tavily",
+        "the retried page names its own arm");
+      const exaCount = body.providers.find((entry) => entry.id === "exa");
+      const tavilyCount = body.providers.find((entry) => entry.id === "tavily");
+      assert(exaCount?.calls === 1 && exaCount?.pages === 1, "the envelope counts exa");
+      assert(tavilyCount?.calls === 1 && tavilyCount?.pages === 1, "the envelope counts tavily");
+    }
+
+    // ---- 7j. a final page failure never switches arms (#610) --------------
+    {
+      await tickets("user", ["allowed.example/gone"]);
+      const first = new FakeProvider(() => ({
+        provider: "exa",
+        pages: [],
+        failures: [{ url: "https://allowed.example/gone", errorClass: "permanent-protocol", message: "HTTP 404", retryable: false }],
+      }), "exa", 5);
+      const second = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "should not run" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [first, second],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const result = await tool.execute("t25d", { handles: ["https://allowed.example/gone"] });
+      assert(second.calls.length === 0, "a 404 does not reach the next arm");
+      assert(envelope(result).failures.length === 1 && envelope(result).pages.length === 0,
+        "the 404 is reported without a page");
+    }
+
+    // ---- 7k. a per-URL arm-level fault retires the arm too (#610) --------
+    {
+      await tickets("user", ["allowed.example/q1", "allowed.example/q2", "allowed.example/q3"]);
+      const first = new FakeProvider(() => ({
+        provider: "exa",
+        pages: [{ url: "https://allowed.example/q1", text: "first body" }],
+        failures: [
+          { url: "https://allowed.example/q2", errorClass: "free-quota-exhausted", message: "free quota exhausted", retryable: true },
+          { url: "https://allowed.example/q3", errorClass: "free-quota-exhausted", message: "free quota exhausted", retryable: true },
+        ],
+      }), "exa", 5);
+      const second = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "second body" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [first, second],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const result = await tool.execute("t25e", {
+        handles: [
+          "https://allowed.example/q1",
+          "https://allowed.example/q2",
+          "https://allowed.example/q3",
+        ],
+      });
+      const body = envelope(result);
+      assert(first.calls.length === 1, "an arm retired by a per-URL fault is not called again");
+      assert(second.calls.length === 1 && second.calls[0]!.length === 2,
+        "the unread URLs go to the next arm in one call");
+      assert(body.pages.length === 3, "the page the first arm read is kept");
+      assert(body.pages.find((page) => page.url === "https://allowed.example/q1")?.provider === "exa",
+        "the kept page still names the arm that read it");
+      const exaCount = body.providers.find((entry) => entry.id === "exa");
+      assert(exaCount?.calls === 1 && exaCount?.pages === 1, "the envelope counts the retired arm once");
+    }
+
+    // ---- 7l. a mixed batch keeps the final page final (#610) --------------
+    {
+      await tickets("user", ["allowed.example/deny", "allowed.example/gone"]);
+      const first = new FakeProvider(() => ({
+        provider: "exa",
+        pages: [],
+        failures: [
+          { url: "https://allowed.example/deny", errorClass: "permanent-auth", message: "CRAWL_FORBIDDEN", retryable: true },
+          { url: "https://allowed.example/gone", errorClass: "permanent-protocol", message: "HTTP 404", retryable: false },
+        ],
+      }), "exa", 5);
+      const second = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "second body" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [first, second],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const result = await tool.execute("t25f", {
+        handles: ["https://allowed.example/deny", "https://allowed.example/gone"],
+      });
+      const body = envelope(result);
+      assert(second.calls.length === 1 && second.calls[0]!.length === 1,
+        "only the arm-level page goes to the next arm");
+      assert(second.calls[0]![0] === "https://allowed.example/deny", "the next arm gets the arm-level page");
+      const gone = body.failures.find((failure) => failure.url === "https://allowed.example/gone");
+      assert(gone?.errorClass === "permanent-protocol",
+        "a 404 listed after the arm fault is still this page's final failure");
+      assert(body.pages.length === 1, "the page the next arm read is in the envelope");
+    }
+
+    // ---- 7m. a marked arm fault retires the arm, not the batch (#610) ----
+    {
+      await tickets("user", ["allowed.example/t1", "allowed.example/t2", "allowed.example/t3"]);
+      const first = new FakeProvider(() => ({
+        provider: "anysearch",
+        pages: [{ url: "https://allowed.example/t1", text: "first body" }],
+        // transient class, but the adapter knows the request itself threw.
+        failures: [{ url: "https://allowed.example/t2", errorClass: "transient", message: "timed out", retryable: true, armFault: true }],
+      }), "anysearch", 1);
+      const second = new FakeProvider((urls) => ({
+        provider: "exa",
+        pages: urls.map((url) => ({ url, text: "second body" })),
+        failures: [],
+      }), "exa", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [first, second],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const result = await tool.execute("t25g", {
+        handles: [
+          "https://allowed.example/t1",
+          "https://allowed.example/t2",
+          "https://allowed.example/t3",
+        ],
+      });
+      const body = envelope(result);
+      assert(first.calls.length === 1, "an arm marked as faulted is not called for the next URL");
+      assert(second.calls.length === 1 && second.calls[0]!.length === 2,
+        "both unread URLs go to the next arm in one call");
+      assert(body.pages.length === 3 && body.failures.length === 0, "all three pages end up read");
+      assert(body.pages.find((page) => page.url === "https://allowed.example/t1")?.provider === "anysearch",
+        "the page read before the fault keeps naming its arm");
+    }
+
+    // ---- 7n. tool's own deadline does not retire the arm (#610) ----------
+    {
+      await tickets("user", ["allowed.example/slow-wall", "allowed.example/fast-next"]);
+      let attempt = 0;
+      const slowThenFast = new FakeProvider(async (urls, signal) => {
+        attempt++;
+        if (attempt === 1) {
+          await new Promise<void>((_, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        }
+        return {
+          provider: "exa",
+          pages: urls.map((url) => ({ url, text: "exa recovered" })),
+          failures: [],
+        };
+      }, "exa", 5);
+      const backup = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "tavily backup" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [slowThenFast, backup],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+        callTimeoutMs: 25,
+      });
+      const first = await tool.execute("t25h1", { handles: ["https://allowed.example/slow-wall"] });
+      assert(envelope(first).pages[0]?.provider === "tavily",
+        "a timed-out URL falls back to the next arm");
+      const second = await tool.execute("t25h2", { handles: ["https://allowed.example/fast-next"] });
+      assert(slowThenFast.calls.length === 2 && envelope(second).pages[0]?.provider === "exa",
+        "the timed-out arm is not retired and handles the next call in the same run");
+
+      // Single-arm timeout keeps the arm alive, so the notice still invites a retry.
+      await tickets("user", ["allowed.example/slow-only"]);
+      const slowOnly = new FakeProvider(async (_urls, signal) => {
+        await new Promise<void>((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+        return pageEnvelope([]);
+      }, "exa", 5);
+      const singleTool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [slowOnly],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+        callTimeoutMs: 25,
+      });
+      const timedOutOnly = await singleTool.execute("t25h3", { handles: ["https://allowed.example/slow-only"] });
+      assert(rawText(timedOutOnly).includes("没有回包") && !rawText(timedOutOnly).includes("都退场了"),
+        "a single-arm timeout keeps PROVIDER_NO_REPLY_MESSAGE because the arm is still alive");
+
+      // Multi-chunk batch (maxUrlsPerCall = 1): two consecutive timeouts retire
+      // the stalled arm so remaining chunks do not each wait out a full deadline.
+      await tickets("user", ["allowed.example/mc1", "allowed.example/mc2", "allowed.example/mc3"]);
+      const stalled = new FakeProvider(async (_urls, signal) => {
+        await new Promise<void>((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+        return pageEnvelope([]);
+      }, "anysearch", 1);
+      const fastFallback = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "fallback body" })),
+        failures: [],
+      }), "tavily", 5);
+      const multiChunkTool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [stalled, fastFallback],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+        callTimeoutMs: 25,
+      });
+      const mcResult = await multiChunkTool.execute("t25h4", {
+        handles: [
+          "https://allowed.example/mc1",
+          "https://allowed.example/mc2",
+          "https://allowed.example/mc3",
+        ],
+      });
+      assert(stalled.calls.length === 2,
+        "a stalled 1-URL arm retires after 2 consecutive timeouts instead of waiting for every chunk (got " + stalled.calls.length + ")");
+      assert(fastFallback.calls.length === 1 && envelope(mcResult).pages.length === 3,
+        "all three URLs move to the fallback arm and succeed");
+
+      // A target site's own "504 Gateway Timeout" (without timedOut: true) must
+      // NOT retire the provider even twice in a row; an adapter-marked timedOut
+      // failure DOES count toward the 2-timeout retirement cap.
+      await tickets("user", [
+        "allowed.example/g504a", "allowed.example/g504b", "allowed.example/g504c",
+        "allowed.example/td1", "allowed.example/td2", "allowed.example/td3",
+      ]);
+      const site504 = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: [],
+        failures: urls.map((url) => ({ url, errorClass: "transient", message: "504 Gateway Timeout", retryable: true })),
+      }), "tavily", 1);
+      const site504Backup = new FakeProvider((urls) => ({
+        provider: "anysearch",
+        pages: urls.map((url) => ({ url, text: "backup" })),
+        failures: [],
+      }), "anysearch", 5);
+      const site504Tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [site504, site504Backup],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      await site504Tool.execute("t25h5", {
+        handles: [
+          "https://allowed.example/g504a",
+          "https://allowed.example/g504b",
+          "https://allowed.example/g504c",
+        ],
+      });
+      assert(site504.calls.length === 3,
+        "unmarked 504 Gateway Timeout failures do not retire the arm (got " + site504.calls.length + ")");
+
+      const markedTimeout = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: [],
+        failures: urls.map((url) => ({
+          url,
+          errorClass: "transient",
+          message: "This operation was aborted",
+          retryable: true,
+          timedOut: true,
+        })),
+      }), "tavily", 1);
+      const markedBackup = new FakeProvider((urls) => ({
+        provider: "anysearch",
+        pages: urls.map((url) => ({ url, text: "backup" })),
+        failures: [],
+      }), "anysearch", 5);
+      const markedTool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [markedTimeout, markedBackup],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+      });
+      const markedRes = await markedTool.execute("t25h6", {
+        handles: [
+          "https://allowed.example/td1",
+          "https://allowed.example/td2",
+          "https://allowed.example/td3",
+        ],
+      });
+      assert(markedTimeout.calls.length === 2,
+        "adapter-marked timedOut failures retire the arm after 2 chunks even without 'timeout' in message (got " + markedTimeout.calls.length + ")");
+      assert(envelope(markedRes).pages.length === 3, "all three URLs still succeed via fallback");
     }
 
     // ---- 8. parameter errors are ordinary tool errors ----------------------

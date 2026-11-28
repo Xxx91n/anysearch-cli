@@ -318,11 +318,12 @@
   that REST is retired. Upstream `request_id` in the reply is a
   server-generated diagnostic UUID (also returned as `X-Request-ID`). A
   caller-supplied value is ignored, and it is not an idempotency key.
-- **The AnySearch adapter wires `search` only** — the official
+- **The AnySearch adapter wires `search` and `extract`** — the official
   `anysearch-mcp-server` documentation lists four tools, while a live
   `tools/list` on 2026-11-07 also returned `score`, so the upstream count is
-  deliberately not pinned. `get_sub_domains`, `batch_search`, `extract`,
-  and the live-but-undocumented `score` are not wired. The `get_sub_domains`
+  deliberately not pinned. `get_sub_domains`, `batch_search`, and the
+  live-but-undocumented `score` are not wired; `extract` is wired only as the
+  page-read arm of the internal `fetch` tool (#610). The `get_sub_domains`
   output is used as documentation evidence (`docs/vertical-domains.md`), not
   called at runtime. A successful `search` reply's non-empty
   `_meta.request_id` is captured as a diagnostic correlation id (capped at
@@ -445,6 +446,27 @@
   surfaces: there is still no MCP `fetch_pages`, no `ans fetch`, and no
   plugin/dsh page-read tool. An external host can read only what is already
   archived.
+- **Page reads fall back Exa → Tavily → AnySearch, and a whole-arm fault retires
+  that arm for the run (#610)** — the internal `fetch` tool builds the three arms
+  in that fixed order, then filters them by the domain's `sources.enabled`, so a
+  domain that disables an arm never calls it. A whole-arm fault (quota, 401/403,
+  a dead session, the free-quota wall, a connect error, a malformed reply)
+  retires that arm for the rest of the run and moves the pending URLs to the next
+  one. The tool's own deadline (and Tavily's per-call extract timeout) is not one
+  of them: a slow page is a retryable page fault, so one slow site cannot retire
+  an arm. The tool builds one fetch tool instance per run, so the next run tries
+  that arm again. The same fault reported per URL — a 403 or a quota sentence
+  sitting in `failedResults`, or Exa's `CRAWL_ACCESS_DENIED` — retires the arm
+  too, and the pages that batch already read are kept. A page-level fault (empty
+  body, unsupported format) retires only that page. A final page fault (404/410,
+  invalid URL, nonexistent host) does not switch arms at all. The envelope names
+  the arm that read each page and counts `calls`/`pages` per arm. Tavily's arm
+  posts `extract` through `@tavily/core` (keyless works; the anonymous daily cap
+  is `free-quota-exhausted`); AnySearch's arm calls the MCP `extract` tool one
+  URL at a time and reads only HTML, text, JSON and Markdown — PDFs and images
+  come back as a retryable page fault. A malformed reply or a non-timeout
+  request throw retires that arm for the run without dropping the pages it
+  already read.
 - **Exa's free-quota `web_fetch_exa` backs the internal fetch tool; `web_search_advanced_exa` stays unwired (#530, #608)** —
   with a key the fetch adapter asks Exa's paid `/contents` endpoint through
   `exa-js`; without one it posts `web_fetch_exa` to the same free-quota MCP
@@ -454,5 +476,6 @@
   advanced-search tool remains deferred: it needs `?tools=` and returns JSON
   where the search parser expects text blocks, and the kernel's post-filter is
   still the authority. `web_search_advanced_exa` is not a page-read gap; the
-  page-read gap for the internal agent is closed by #608. Shape and limits:
-  `providers/exa/README.md`, sections 「## 回复形状」 and 「## 已知异常」.
+  page-read gap for the internal agent is closed by #608. This is the first arm
+  of the #610 fallback chain. Shape and limits: `providers/exa/README.md`,
+  sections 「## 回复形状」 and 「## 已知异常」.

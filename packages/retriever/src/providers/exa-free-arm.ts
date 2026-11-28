@@ -2,6 +2,7 @@
 // Search and page-read adapters share this; each parses the text itself.
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
+import { waitSecondsFromHeader } from "../http-headers";
 import { PROVIDER_FACTS } from "./provider-facts";
 
 const FREE_ARM = PROVIDER_FACTS.exa.freeArm;
@@ -18,20 +19,6 @@ interface McpToolResult {
   isError?: boolean;
 }
 
-// 上游给的等待秒数挂在错误对象上，providerErrorText 会把它写回错误串，引擎据此记进
-// providerErrorRetryAfterSeconds。头里要么是秒数，要么是 HTTP 日期（RFC 9110）；两种都认，
-// 其余写法当没有，不猜。
-function waitSeconds(resp: Response): number | undefined {
-  const raw = resp.headers.get("retry-after")?.trim();
-  if (!raw) return undefined;
-  const seconds = Number(raw);
-  if (Number.isFinite(seconds) && seconds > 0) return seconds;
-  const at = Date.parse(raw);
-  if (!Number.isFinite(at)) return undefined;
-  const delta = Math.ceil((at - Date.now()) / 1000);
-  return delta > 0 ? delta : undefined;
-}
-
 // 非 2xx：状态码和正文前 300 字进错误串。
 function httpFailure(resp: Response, body: string): Error {
   const detail = body.trim().slice(0, 300);
@@ -39,7 +26,7 @@ function httpFailure(resp: Response, body: string): Error {
     "Exa MCP tools/call HTTP " + resp.status + (resp.statusText ? " " + resp.statusText : "") +
     (detail ? ": " + detail : ""),
   );
-  const retryAfter = waitSeconds(resp);
+  const retryAfter = waitSecondsFromHeader(resp);
   if (retryAfter !== undefined) Object.assign(error, { retryAfter });
   return error;
 }

@@ -222,6 +222,60 @@ async function main() {
     assert(reading.failures[0]!.retryable === false, "parse: CRAWL_NOT_FOUND is final");
   }
 
+  // ---- an unsupported format is page-level: another arm may read it -------
+  {
+    const reading = parseExaFetchReply("Error fetching https://example.com/x: CRAWL_UNSUPPORTED_CONTENT",
+      ["https://example.com/x"]);
+    assert(reading.failures[0]!.retryable === true,
+      "parse: CRAWL_UNSUPPORTED_CONTENT is retryable, so the next arm gets the URL");
+  }
+
+  // ---- an access fault is this arm, not the page (#610) ------------------
+  {
+    const reading = parseExaFetchReply("Error fetching https://example.com/x: CRAWL_FORBIDDEN",
+      ["https://example.com/x"]);
+    assert(reading.failures[0]!.errorClass === "permanent-auth",
+      "parse: CRAWL_FORBIDDEN is an arm-level auth fault");
+    assert(reading.failures[0]!.retryable === true,
+      "parse: the tool retires the arm and hands the page on");
+    // IPv6 / proxy egress gets turned away as ACCESS_DENIED rather than FORBIDDEN.
+    const denied = parseExaFetchReply("Error fetching https://example.com/y: CRAWL_ACCESS_DENIED",
+      ["https://example.com/y"]);
+    assert(denied.failures[0]!.errorClass === "permanent-auth",
+      "parse: CRAWL_ACCESS_DENIED takes the same arm-level branch");
+    assert(denied.failures[0]!.retryable === true,
+      "parse: a denied page is still worth another arm");
+  }
+
+  // ---- the free arm matches documents by the same identity as mapReading ---
+  {
+    const text = [
+      "# A",
+      "URL: https://example.com/a/",
+      "body a",
+      "",
+      "# B",
+      "URL: https://example.com/b",
+      "body b",
+    ].join("\n");
+    const reading = parseExaFetchReply(text, ["https://example.com/a", "https://example.com/b"]);
+    const urls = reading.pages.map((page) => page.url).sort();
+    assert(urls.length === 2, "a document whose URL came back with a trailing slash is still matched");
+    assert(urls[0] === "https://example.com/a" && urls[1] === "https://example.com/b",
+      "and it reports the requested spelling, not the upstream one");
+  }
+
+  // ---- the upstream reason reaches the model scrubbed and bounded --------
+  {
+    const reading = parseExaFetchReply(
+      "Error fetching https://example.com/x: CRAWL_UNKNOWN_ERROR api_key=as_sk_live_abcdefghijklmnop " + "z".repeat(400),
+      ["https://example.com/x"],
+    );
+    const shown = reading.failures[0]!.message ?? "";
+    assert(!shown.includes("as_sk_live_abcdefghijklmnop"), "parse: the reason is redacted before it is shown");
+    assert(shown.length <= 200, "parse: the reason is capped at 200 characters");
+  }
+
   // ---- free arm requests the full text, one tools/call for the batch ------
   {
     const stub = installFetch(reply);
