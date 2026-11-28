@@ -138,16 +138,26 @@ const sessionB = await seed.createSession("eval");
 const idsA: number[] = [];
 const idsB: number[] = [];
 for (let i = 1; i <= 3; i++) {
+  // #613: distinct URLs so the exact-URL dedup keeps all three; one entity so
+  // they still form one cluster, and valid_until cleared below so the temporal
+  // supersede does not leave only the newest live.
   const ra = await seed.adjudicateMemory(sessionA.id, [
-    { url: "https://ex.com/alpha", title: "Alpha note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9, entity: "AlphaA" },
+    { url: "https://ex.com/alpha/" + i, title: "Alpha note v" + i, snippet: "Alpha uses Beta for builds, revision " + i, source: "exa", evidence: 0.9, entity: "AlphaA" },
   ]);
   if (ra[0]?.insertedId) idsA.push(ra[0].insertedId);
   const rb = await seed.adjudicateMemory(sessionB.id, [
-    { url: "https://ex.com/beta", title: "Beta note v" + i, snippet: "Beta uses Gamma for deploys, revision " + i, source: "exa", evidence: 0.9, entity: "BetaB" },
+    { url: "https://ex.com/beta/" + i, title: "Beta note v" + i, snippet: "Beta uses Gamma for deploys, revision " + i, source: "exa", evidence: 0.9, entity: "BetaB" },
   ]);
   if (rb[0]?.insertedId) idsB.push(rb[0].insertedId);
 }
 assert(idsA.length === 3 && idsB.length === 3, "seed: three materials in each session");
+function reviveSession(path: string, sessionId: string): void {
+  const d = new Database(path);
+  d.prepare("UPDATE retrieval_results SET valid_until = NULL WHERE session_id = ?").run(sessionId);
+  d.close();
+}
+reviveSession(dbPath, sessionA.id);
+reviveSession(dbPath, sessionB.id);
 
 let rep = await seed.consolidateMemory({ dryRun: true, scope: scopeOf({ sessionId: sessionA.id }) });
 assert(rep.scope.by === "session", "session scope is reported as such");
@@ -217,12 +227,14 @@ assert(rep.add === 0 && rep.update === 0 && rep.noop === 1, "unchanged state re-
   const sB = await builder.createSession("eval");
   for (let i = 1; i <= 3; i++) {
     await builder.adjudicateMemory(sA.id, [
-      { url: "https://ex.com/kappa", title: "Kappa note v" + i, snippet: "Kappa runs on Lambda, revision " + i, source: "exa", evidence: 0.9, entity: "Kappa" },
+      { url: "https://ex.com/kappa/" + i, title: "Kappa note v" + i, snippet: "Kappa runs on Lambda, revision " + i, source: "exa", evidence: 0.9, entity: "Kappa" },
     ]);
     await builder.adjudicateMemory(sB.id, [
-      { url: "https://ex.com/theta", title: "Theta note v" + i, snippet: "Theta uses Iota, revision " + i, source: "exa", evidence: 0.9, entity: "Theta" },
+      { url: "https://ex.com/theta/" + i, title: "Theta note v" + i, snippet: "Theta uses Iota, revision " + i, source: "exa", evidence: 0.9, entity: "Theta" },
     ]);
   }
+  reviveSession(outsideDb, sA.id);
+  reviveSession(outsideDb, sB.id);
   let oRep = await builder.consolidateMemory({ scope: scopeOf({ sessionId: sA.id }) });
   assert(oRep.add === 1 && oRep.updates.length === 0, "setup: the first run adds one row and reports no update");
 
@@ -271,9 +283,10 @@ assert(rep.add === 0 && rep.update === 0 && rep.noop === 1, "unchanged state re-
   const s = await bStore.createSession("eval");
   for (let i = 1; i <= 3; i++) {
     await bStore.adjudicateMemory(s.id, [
-      { url: "https://ex.com/delta", title: "Delta note v" + i, snippet: "Delta uses Epsilon, revision " + i, source: "exa", evidence: 0.9, entity: "Delta" },
+      { url: "https://ex.com/delta/" + i, title: "Delta note v" + i, snippet: "Delta uses Epsilon, revision " + i, source: "exa", evidence: 0.9, entity: "Delta" },
     ]);
   }
+  reviveSession(budgetDb, s.id);
   bStore.initBudget!(s.id, { callCap: 0, tokenCap: 0 });
   // The same ledger over the same connection the store uses, so the reserve
   // the seam makes is the one the cap has to reject.

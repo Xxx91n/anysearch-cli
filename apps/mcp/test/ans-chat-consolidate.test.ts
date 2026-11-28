@@ -190,7 +190,8 @@ async function callConsolidate(args: Record<string, unknown>) {
   // A single material is below the batch threshold; the flag opts into the
   // correction exception. With no model configured the cluster reports
   // llmUnavailable (the honest shape), and the new count fields are present.
-  const res = await callConsolidate({ memoryIds: [idsB[0]!], allowSingleEvidence: true });
+  // idsB holds three revisions of one URL; only the newest is live (#613).
+  const res = await callConsolidate({ memoryIds: [idsB[idsB.length - 1]!], allowSingleEvidence: true });
   assert(!isError(res), "a single-evidence run without an LLM is a report, not an error");
   const sc = res?.result?.structuredContent as any;
   assert(sc?.report?.clustersTriggered === 1 && sc?.report?.llmUnavailable === 1,
@@ -310,6 +311,95 @@ async function callConsolidate(args: Record<string, unknown>) {
   assert(sc.counts.conflict === 0, "counts.conflict stays the claim-gate counter (0 here)");
   assert(Array.isArray(sc.report.conflictDetails) && sc.report.conflictDetails.length === 1,
     "the full conflict detail travels in structuredContent");
+}
+
+// --- 11. the material report lists every fed material ---------------------
+// The MCP text half is the only feed a content-only host reads, so it must not
+// trim (the CLI does, with --verbose for the rest). The installed acceptance
+// lane asserts these lines too.
+{
+  const { buildAnsChatConsolidateResult } = await import("../src/ans-chat-session.js");
+  const base = {
+    dryRun: false, clustersScanned: 1, clustersTriggered: 1, llmUnavailable: 0, noConclusion: 0,
+    gateRejected: 0, add: 1, noop: 0, update: 0, embeddingAbsent: 0,
+    scope: { by: "memory", sessionIds: [], memoryIds: [9], sessionIdNotApplied: false, requestedMaterials: 1, materialsRead: 1 },
+    budgetRejected: 0, singleEvidenceSkipped: 0, verifyRejected: 0, verifyDetails: [],
+    verifiedCorrections: [], correctionsIncomplete: 0, incompleteDetails: [], conflicts: 0,
+    conflictDetails: [], resolvedCollisions: [], semanticIds: [], updates: [],
+    quotes: [], quotesMissing: 0, quotesMalformed: 0, clusterTokenBudget: 24_000, clustersOverBudget: 0,
+  };
+  const feed = {
+    cluster: 1, materialId: 7, url: "https://a.example/full", title: "Official notice",
+    originalChars: 40, fedChars: 40, estimatedTokens: 10, sections: [],
+    overBudget: false, truncated: false, cacheHit: false, source: "content" as const,
+  };
+  const usage = { calls: 1, inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 2, costUsd: 0, costBasis: "unknown" as const, missing: ["consolidation cost"] };
+
+  const allGood = buildAnsChatConsolidateResult({ ...base, materialsFed: [feed] } as never, usage as never, {});
+  const allGoodText = allGood.content[0]!.text;
+  assert(allGoodText.includes("material (cluster 1"), "a material that fitted is still listed");
+  assert(allGoodText.includes("https://a.example/full"), "the material line names its url");
+
+  const noneFed = buildAnsChatConsolidateResult({ ...base, materialsFed: [] } as never, usage as never, {});
+  assert(!/material \(cluster/.test(noneFed.content[0]!.text), "no materials fed: no material line at all");
+
+  // The list is capped, but the cap never hides a material that needs
+  // attention, and the count line names where the rest are.
+  const many = Array.from({ length: 25 }, (_, i) => ({
+    ...feed, materialId: 100 + i, url: "https://a.example/" + i,
+  }));
+  const needsRoom = { ...feed, materialId: 999, url: "https://a.example/starved", fedChars: 0 };
+  const capped = buildAnsChatConsolidateResult(
+    { ...base, materialsFed: [...many, needsRoom] } as never, usage as never, {},
+  );
+  const cappedText = capped.content[0]!.text;
+  assert(cappedText.includes("https://a.example/starved"),
+    "capped list: a material that got nothing is still printed");
+  assert((cappedText.match(/material \(cluster/g) ?? []).length === 20,
+    "capped list: exactly the cap is printed");
+  assert(/\(20 of 26 materials shown/.test(cappedText),
+    "capped list: the count line says how many were left out");
+
+  const fits = buildAnsChatConsolidateResult({ ...base, materialsFed: many.slice(0, 3) } as never, usage as never, {});
+  assert(!/materials shown/.test(fits.content[0]!.text), "under the cap: no count line");
+
+  // Over the cap with nothing needing attention: the count line must not claim
+  // that the shown ones were picked out.
+  const allFitMany = Array.from({ length: 22 }, (_, i) => ({
+    ...feed, materialId: 200 + i, url: "https://b.example/" + i,
+  }));
+  const noAttention = buildAnsChatConsolidateResult(
+    { ...base, materialsFed: allFitMany } as never, usage as never, {},
+  );
+  const noAttentionText = noAttention.content[0]!.text;
+  assert(/\(20 of 22 materials shown; the rest are/.test(noAttentionText),
+    "over the cap with nothing notable: a plain count line");
+  assert(!/need attention first/.test(noAttentionText),
+    "over the cap with nothing notable: no false 'attention first' claim");
+
+  // More materials need attention than the list can show: the count line must
+  // not read as "the hidden ones are fine".
+  const starvedMany = Array.from({ length: 24 }, (_, i) => ({
+    ...feed, materialId: 300 + i, url: "https://c.example/" + i, fedChars: 0,
+  }));
+  const starvedText = buildAnsChatConsolidateResult(
+    { ...base, materialsFed: starvedMany } as never, usage as never, {},
+  ).content[0]!.text;
+  assert(/more than this list can show still need attention/.test(starvedText),
+    "attention list itself capped: the count line says so");
+
+  // The counters are per cluster and independent: the note appears only when
+  // two of them are non-zero, because one cluster can land under both.
+  const oneCounter = buildAnsChatConsolidateResult(
+    { ...base, materialsFed: [feed], quotesMissing: 1 } as never, usage as never, {},
+  );
+  assert(!/do not add them up/.test(oneCounter.content[0]!.text),
+    "one counter: no overlap note");
+  const twoCounters = buildAnsChatConsolidateResult(
+    { ...base, materialsFed: [feed], quotesMissing: 1, noConclusion: 1 } as never, usage as never, {},
+  );
+  assert(/do not add them up/.test(twoCounters.content[0]!.text),
+    "two counters: the overlap note says they are independent");
 }
 
 await server.close();

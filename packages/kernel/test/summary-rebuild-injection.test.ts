@@ -144,7 +144,10 @@ async function seedSuspended(
     // The earlier rows are closed by supersede, so only the last stays current.
     const ids: number[] = [];
     for (let i = 1; i <= 3; i++) {
-      const ra = await store.adjudicateMemory(sessionId, [{
+      // #613: temporal supersede is per session, so all three versions must be
+      // in different sessions to stay LIVE and reach the cluster gate.
+      const seedSid = i === 1 ? sessionId : (await store.createSession("eval")).id;
+      const ra = await store.adjudicateMemory(seedSid, [{
         url: "https://acme.example/hours-v" + i, title: "Acme hours v" + i,
         snippet: old, source: "tavily", evidence: 0.9, entity: "acme",
       }]);
@@ -619,7 +622,9 @@ async function seedSuspended(
   const old = "Acme online support runs weekdays 9:00-17:00.";
   const ids: number[] = [];
   for (let i = 1; i <= 3; i++) {
-    const ra = await store.adjudicateMemory(sid, [{
+    // #613: one session per version keeps all three LIVE for the batch.
+    const seedSid = i === 1 ? sid : (await store.createSession("acme")).id;
+    const ra = await store.adjudicateMemory(seedSid, [{
       url: "https://acme.example/k13-v" + i, title: "k13 v" + i, snippet: old,
       source: "tavily", evidence: 0.9, entity: "acme-k13",
     }]);
@@ -821,7 +826,9 @@ async function seedSuspended(
   // A summary that records a source, then a correction that suspends it.
   const mids: number[] = [];
   for (let i = 1; i <= 3; i++) {
-    const ra = await store.adjudicateMemory(sid, [{
+    // #613: one session per version keeps all three LIVE for the batch.
+    const seedSid = i === 1 ? sid : (await store.createSession("acme")).id;
+    const ra = await store.adjudicateMemory(seedSid, [{
       url: "https://acme.example/k17-v" + i, title: "k17 v" + i,
       snippet: "Acme online support runs weekdays 9:00-17:00.", source: "tavily", evidence: 0.9, entity: "acme",
     }]);

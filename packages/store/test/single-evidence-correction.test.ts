@@ -71,6 +71,13 @@ function q(db: string, sql: string, ...params: unknown[]): any {
   const d = new Database(join(dir, db), { readonly: true });
   try { return d.prepare(sql).get(...params); } finally { d.close(); }
 }
+// #613: keep seeded versions LIVE. Temporal supersede closes the older rows of
+// one entity, and a batch needs three live materials to reach the cluster gate.
+function reviveVersions(db: string, sessionId: string): void {
+  const d = new Database(join(dir, db));
+  try { d.prepare("UPDATE retrieval_results SET valid_until = NULL WHERE session_id = ?").run(sessionId); }
+  finally { d.close(); }
+}
 
 // --- fixtures -------------------------------------------------------------
 
@@ -117,12 +124,15 @@ async function buildKnowledge(
   for (let i = 1; i <= 3; i++) {
     ids.push(await seedEpisode(store, sessionId, urlBase + "-v" + i, entity + " v" + i, content, entity));
   }
+  // #613: the three versions are distinct URLs, but the shared entity made the
+  // temporal rule close the first two. Clear that closure so the batch really
+  // has three LIVE materials, which is what these correction cases assume.
+  reviveVersions(db, sessionId);
   const rep = await store.consolidateMemory(
     { scope: { by: "memory", sessionIds: [], memoryIds: [...ids], sessionIdNotApplied: false } },
     { summarize: async () => content, classify: () => ({ label: "supported", confidence: 0.95 }) },
   );
   assert(rep.add === 1, "seed: the batch run built one knowledge row (add=" + rep.add + ")");
-  void db;
   return ids;
 }
 
@@ -443,6 +453,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
   for (let i = 0; i < 3; i++) newIds.push(await seedEpisode(store, unrelated.id,
     "https://ex.com/other-" + i, "Unrelated report " + i,
     "An independent topic was discussed.", "zeta-api"));
+  reviveVersions(db, unrelated.id);
   // The summarizer echoed old knowledge that the new evidence cannot support.
   const rep = await store.consolidateMemory(
     { scope: { by: "memory", sessionIds: [], memoryIds: newIds, sessionIdNotApplied: false } },
@@ -534,6 +545,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
   for (let i = 0; i < 3; i++) fresh.push(await seedEpisode(store, next.id,
     "https://ex.com/fresh-" + i, "New note " + i,
     "An unrelated new fact is stated here.", "zeta-api"));
+  reviveVersions(db, next.id);
   let seen: ConsolidateEvidence[] = [];
   await store.consolidateMemory(
     { scope: { by: "memory", sessionIds: [], memoryIds: [...oldIds, ...fresh], sessionIdNotApplied: false } },
@@ -785,6 +797,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
       ids.push(await seedEpisode(store, corr.id, "https://ex.com/zeta-new-" + i, "Zeta change v" + i,
         "Zeta service no longer supports the REST API as of November.", "zeta-api"));
     }
+    reviveVersions(db, corr.id);
     const rep = await store.consolidateMemory(
       { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
       {
@@ -821,6 +834,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     for (let i = 0; i < 3; i++) ids.push(await seedEpisode(store, corr.id,
       "https://ex.com/classifier-new-" + i, "Zeta correction",
       "Zeta service no longer supports the REST API.", "zeta-api"));
+    reviveVersions(db, corr.id);
     const rep = await store.consolidateMemory(
       { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
       { summarize: twoStageSummarize("Zeta service no longer supports the REST API.",
@@ -840,6 +854,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     const ids: number[] = [];
     for (let i = 0; i < 3; i++) ids.push(await seedEpisode(store, session.id,
       "https://ex.com/unsafe-" + i, "Unknown note", "Unsupported new fact", "unrelated"));
+    reviveVersions(db, session.id);
     const rep = await store.consolidateMemory(
       { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
       { summarize: async () => "Unsupported new fact",
@@ -862,6 +877,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
       ids.push(await seedEpisode(store, corr.id, "https://ex.com/zeta-alt-" + i, "Zeta alt v" + i,
         "Zeta service no longer supports the REST API as of November.", "zeta-api"));
     }
+    reviveVersions(db, corr.id);
     const rep = await store.consolidateMemory(
       { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
       {
@@ -898,6 +914,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
         "Acme online support phone line now opens at 10:00 every weekday except public holidays.",
         "acme-support"));
     }
+    reviveVersions(db, corr.id);
     const rep = await store.consolidateMemory(
       { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
       {
@@ -939,6 +956,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
       ids.push(await seedEpisode(store, corr.id, "https://ex.com/zeta-cadence-" + i, "Zeta cadence v" + i,
         "Zeta deploys now run monthly instead of weekly.", "zeta-api"));
     }
+    reviveVersions(db, corr.id);
     const rep = await store.consolidateMemory(
       { scope: { by: "memory", sessionIds: [], memoryIds: ids, sessionIdNotApplied: false } },
       {
@@ -1170,6 +1188,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     idsB.push(await seedEpisode(store, corr.id, "https://acme.example/notice-b-" + i, "Acme 电话通知 v" + i,
       "Acme support email is help@acme.com now. Phone line opens at 8:00.", "acme-phone"));
   }
+  reviveVersions(db, corr.id);
   const rep = await store.consolidateMemory(
     { scope: { by: "memory", sessionIds: [], memoryIds: [...idsA, ...idsB], sessionIdNotApplied: false } },
     {
@@ -1770,6 +1789,8 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
   for (let i = 1; i <= 3; i++) {
     await seedEpisode(store, sessA.id, "https://acme.example/restate-" + i, "Acme restate " + i, shared, "acme-restate");
   }
+  reviveVersions(db, sessB.id);
+  reviveVersions(db, sessA.id);
 
   const rep = await store.consolidateMemory(
     { scope: { by: "session", sessionIds: [sessA.id, sessB.id], memoryIds: [], sessionIdNotApplied: false } },
@@ -1833,6 +1854,7 @@ const SUPPORTED = () => ({ label: "supported" as const, confidence: 0.95 });
     await seedEpisode(store, sess.id, "https://acme.example/hours-" + i, "Acme hours note " + i,
       candidate, "acme-hours");
   }
+  reviveVersions(db, sess.id);
   const rep = await store.consolidateMemory(
     { scope: { by: "session", sessionIds: [sess.id], memoryIds: [], sessionIdNotApplied: false } },
     {

@@ -195,7 +195,10 @@ async function seed(
   const sessSeed = await store.createSession("eval");
   const ids: number[] = [];
   for (let i = 1; i <= 3; i++) {
-    const ra = await store.adjudicateMemory(sessSeed.id, [{
+    // #613: temporal supersede is per session; one session per version keeps
+    // all three LIVE so the batch reaches the cluster gate.
+    const seedSid = i === 1 ? sessSeed.id : (await store.createSession("eval")).id;
+    const ra = await store.adjudicateMemory(seedSid, [{
       url: "https://a.example/support-facts-v" + i,
       title: "A 公司客服说明 v" + i,
       snippet: A4_OLD, source: "tavily", evidence: 0.9, entity: "a-support-hours",

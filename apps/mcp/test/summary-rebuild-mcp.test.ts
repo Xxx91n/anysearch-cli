@@ -233,7 +233,10 @@ async function seedSuspendedSummary(
 
     const ids: number[] = [];
     for (let i = 1; i <= 3; i++) {
-      const ra = await store.adjudicateMemory(sessionId, [{
+      // #613: temporal supersede is per session; one session per version keeps
+      // all three LIVE so the batch can build the knowledge row.
+      const seedSid = i === 1 ? sessionId : (await store.createSession("acme")).id;
+      const ra = await store.adjudicateMemory(seedSid, [{
         url: "https://acme.example/hours-v" + i, title: "acme hours v" + i,
         snippet: OLD_FACT, source: "tavily", evidence: 0.9, entity: "acme-hours",
       }]);

@@ -32,6 +32,9 @@ import {
   resolveConsolidateScope,
   ConsolidateScopeError,
   formatConsolidateScope,
+  formatConsolidateMaterialFeed,
+  notableMaterialFeeds,
+  formatConsolidateQuotes,
   toBudgetCaps,
   type BudgetConfig,
   type ConsolidateReport,
@@ -47,7 +50,7 @@ function help(): string {
   return [
     "ans consolidate - turn stored research materials into long-term knowledge",
     "",
-    "Usage: ans consolidate [--session ID | --memory ID]... [--single-evidence] [--dry-run|--apply] [--limit N]",
+    "Usage: ans consolidate [--session ID | --memory ID]... [--single-evidence] [--dry-run|--apply] [--limit N] [--verbose]",
     "",
     "An explicit scope is required. --session ID reads that session's materials;",
     "--memory ID reads exactly the listed materials (repeatable). Both flags may be",
@@ -101,6 +104,10 @@ function help(): string {
     "",
     "Without an LLM configured the run reports llmUnavailable and writes nothing (exit 1).",
     "",
+    "Per-material detail prints only what needs attention (a material got no room, was",
+    "truncated, or was planned by section). --verbose prints every material and every",
+    "quote block, which is what a full-archive run should not do by default.",
+    "",
   ].join("\n");
 }
 
@@ -126,7 +133,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
   // THIS command's own options. A session id may legitimately start with `--`
   // (the scope rule accepts any visible ASCII), and the old prefix test made the
   // CLI refuse handles the MCP entry accepts.
-  const KNOWN_FLAGS = new Set(["--session", "--memory", "--limit", "--dry-run", "--apply", "--single-evidence"]);
+  const KNOWN_FLAGS = new Set(["--session", "--memory", "--limit", "--dry-run", "--apply", "--single-evidence", "--verbose"]);
   const sessionIds: string[] = [];
   const memoryIds: number[] = [];
   for (let i = 0; i < args.length; i++) {
@@ -153,7 +160,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       i++;
       continue;
     }
-    if (a !== "--dry-run" && a !== "--apply" && a !== "--single-evidence") {
+    if (a !== "--dry-run" && a !== "--apply" && a !== "--single-evidence" && a !== "--verbose") {
       process.stderr.write("ans consolidate: unknown flag " + a + "\n");
       return 2;
     }
@@ -161,6 +168,7 @@ export async function runConsolidate(argv: string[]): Promise<number> {
 
   const dryRun = args.includes("--dry-run");
   const allowSingleEvidence = args.includes("--single-evidence");
+  const verbose = args.includes("--verbose");
   const li = args.indexOf("--limit");
   const limit = li >= 0 ? Number(args[li + 1]) : undefined;
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
@@ -333,12 +341,21 @@ export async function runConsolidate(argv: string[]): Promise<number> {
       ", add " + r.add + ", noop " + r.noop + ", update " + r.update +
       (r.singleEvidenceSkipped > 0 ? ", singleEvidenceSkipped " + r.singleEvidenceSkipped : "") +
       (r.supersededClusterSkipped > 0 ? ", supersededClusterSkipped " + r.supersededClusterSkipped : "") +
+      (r.duplicateMaterialSkipped > 0 ? ", duplicateMaterialSkipped " + r.duplicateMaterialSkipped : "") +
       (r.verifyRejected > 0 ? ", verifyRejected " + r.verifyRejected : "") +
       (r.correctionsIncomplete > 0 ? ", correctionsIncomplete " + r.correctionsIncomplete : "") +
       (r.summariesSuspended > 0 ? ", summariesSuspended " + r.summariesSuspended : "") +
       (r.conflicts > 0 ? ", conflicts " + r.conflicts : "") +
       (r.resolvedCollisions.length > 0 ? ", collisionsResolved " + r.resolvedCollisions.length : "") +
       (r.budgetRejected > 0 ? ", budgetRejected " + r.budgetRejected : "") +
+      // The cluster material budget. Printed only when it mattered, so a
+      // small run reads exactly as before.
+      (r.clustersOverBudget > 0
+        ? ", clusterTokenBudget " + r.clusterTokenBudget + ", clustersOverBudget " + r.clustersOverBudget
+        : "") +
+      (r.quotesMissing > 0 ? ", quotesMissing " + r.quotesMissing : "") +
+      (r.quotesMalformed > 0 ? ", quotesMalformed " + r.quotesMalformed : "") +
+      (r.noConclusion > 0 ? ", noConclusion " + r.noConclusion : "") +
       // #277: how the cross-script pass went. Printed only when it did
       // something, so a run over same-language material reads exactly as before.
       (r.crossScriptDeclared > 0 ? ", crossScriptDeclared " + r.crossScriptDeclared : "") +
@@ -348,11 +365,36 @@ export async function runConsolidate(argv: string[]): Promise<number> {
 
   // The scope that was really used, not the one the caller thinks it passed.
   process.stdout.write("scope: " + formatConsolidateScope(r.scope) + "\n");
+  // Dry-run says so before the detail, not after a thousand material lines.
   if (dryRun) {
     process.stdout.write(
       "dry-run: nothing saved. The counts describe the state read now; a concurrent write\n" +
         "before an apply can make the apply differ.\n",
     );
+  }
+  // Material detail: by default only what needs attention prints; --verbose
+  // prints them all. Which materials count as "needs attention" lives in the
+  // store, so this host and the MCP one cannot disagree about it.
+  const notable = notableMaterialFeeds(r.materialsFed);
+  for (const m of verbose ? r.materialsFed : notable) {
+    process.stdout.write(formatConsolidateMaterialFeed(m) + "\n");
+  }
+  if (!verbose && notable.length < r.materialsFed.length) {
+    process.stdout.write(
+      "materials: " + r.materialsFed.length + " fed, " + notable.length + " shown (" +
+        (notable.length === 0
+          ? "none needed attention; --verbose lists every material and quote"
+          : "only those that need attention; --verbose lists every material and quote") +
+        ")\n",
+    );
+  }
+  // The verbatim quotes the summarizer selected. They are not persisted in
+  // semantic memory; the report is the only place they survive, so they print
+  // only when the caller asked for the full report.
+  if (verbose) {
+    for (const q of r.quotes) {
+      process.stdout.write(formatConsolidateQuotes(q) + "\n");
+    }
   }
   if (r.semanticIds.length > 0) {
     process.stdout.write("semantic ids: " + r.semanticIds.join(", ") + "\n");
@@ -505,5 +547,8 @@ export async function runConsolidate(argv: string[]): Promise<number> {
     );
     return 1;
   }
-  return r.llmUnavailable > 0 && r.add === 0 && r.update === 0 ? 1 : 0;
+  // A cluster that answered without a conclusion wrote nothing, the same as a
+  // missing model. It is counted separately so the operator looks in the right
+  // place, but the exit code still says "this run finished nothing".
+  return (r.llmUnavailable > 0 || r.noConclusion > 0) && r.add === 0 && r.update === 0 ? 1 : 0;
 }

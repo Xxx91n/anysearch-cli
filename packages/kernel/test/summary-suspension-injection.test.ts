@@ -109,7 +109,9 @@ async function main() {
   // One knowledge row built from three materials of the same entity.
   const ownMaterials: number[] = [];
   for (let i = 1; i <= 3; i++) {
-    ownMaterials.push(await seedMaterial(store, sessionId, "https://acme.example/m" + i, OWN_FACT, "acme"));
+    // #613: one session per version keeps all three LIVE for the batch gate.
+    const seedSid = i === 1 ? sessionId : (await store.createSession("acme")).id;
+    ownMaterials.push(await seedMaterial(store, seedSid, "https://acme.example/m" + i, OWN_FACT, "acme"));
   }
   const built = await store.consolidateMemory(
     { scope: { by: "memory", sessionIds: [], memoryIds: [...ownMaterials], sessionIdNotApplied: false } },

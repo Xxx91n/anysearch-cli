@@ -109,9 +109,13 @@ function sseToolCall(name, args, preamble) {
 }
 
 function classify(body) {
-  // 整理用的提示词带这些标题，普通对话请求不带。
-  if (body.includes("Summarize these episodic memories") || body.includes("You are a memory adjudicator")
-    || body.includes("You are a context summarization assistant")) return "consolidate";
+  // 只认当前真的会发出来的整理提示词。PI 自己的上下文摘要不是整理，它以前被算进这里，
+  // 假端点就会拿整理那句话去回它。
+  if (body.includes("The materials are above")) return "consolidate";
+  if (body.includes("You are a context summarization assistant")) return "ctxsummary";
+  // 后台的「复用还是压缩」判断既不是整理，也不是主模型那一轮对话。它单独一个桶，
+  // 否则 .pop() 取「最新一条对话请求」时会把它当成那一轮。
+  if (body.includes("You are a memory adjudicator")) return "adjudicate";
   // 已经拿到过工具结果的轮次，不能再要搜索：请求历史里还留着原来那句话，
   // 只看文字就会一直循环下去。
   let messages = [];
@@ -188,7 +192,15 @@ const endpoint = createServer(async (req, res) => {
       body.includes("PRINT-SEARCH-QUESTION") ? "我先搜一下。" : undefined));
   }
   if (role === "print-gap") return res.end(sseText("Find the second print source"));
-  if (role === "consolidate") return res.end(sseText(FACT));
+  // 整理得回真实的形状。只回纯文本的话，这条车道每次都走「形状不对、整段当结论」
+  // 那条分支，正常形状、quotesMissing=0 以及材料和引文报告都验不到。
+  if (role === "consolidate") {
+    return res.end(sseText("<quotes>\n[1] acme hours [@0] \"" + FACT + "\"\n</quotes>\n<conclusion>" + FACT + "</conclusion>"));
+  }
+  if (role === "ctxsummary") return res.end(sseText("CONDENSED-HISTORY"));
+  // 判断只要一个词。以前它落进 chat 桶、拿到一段固定文本、被判成 compress，回这个词
+  // 让结果保持不变，同时不再污染 chat 这个桶。
+  if (role === "adjudicate") return res.end(sseText("compress"));
   // 回最新一轮的问题。后面那次请求如果带着这句话，就说明会话记录真的接上了；
   // 写死一句固定回答不行，因为全新会话也会出现同一个常量。
   //
@@ -2041,6 +2053,13 @@ async function main() {
     check(applyCall.result?.isError !== true, "整理 apply 跑完", applyText.slice(0, 300));
     const counts = applyCall.result?.structuredContent?.counts;
     check(counts?.add === 1, "apply 只写出一条知识行", JSON.stringify(counts));
+    // 材料的诊断数不参与 counts 加总，单独挂在 materialReport 上；引文契约在正常形状
+    // 下应当是 0 条缺失，材料也应当逐条报出来（假端点现在回的正是带形状的回复）。
+    const materialReport = applyCall.result?.structuredContent?.materialReport;
+    check(materialReport?.quotesMissing === 0,
+      "正常形状的回复不报引文缺失", JSON.stringify(materialReport));
+    check((materialReport?.materialsReported ?? 0) > 0 && /material \(cluster/.test(applyText),
+      "整理报告逐条列出了喂进去的材料", applyText.slice(0, 300));
     check(!!applyCall.result?.structuredContent?.usage, "整理报了自己的模型用量", JSON.stringify(applyCall.result?.structuredContent?.usage));
     const usageApply = applyCall.result?.structuredContent?.usage;
     check(usageApply?.calls >= 1, "整理把它那次模型调用记上了账", JSON.stringify(usageApply));

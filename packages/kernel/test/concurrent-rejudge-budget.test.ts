@@ -73,7 +73,7 @@ const REPLY_FINAL = '{"supported": true, "preserved": true, "corrected": true, "
 // only the re-judge's CURRENT-KNOWLEDGE section carries alpha's landed text.
 // ("7×24" alone cannot tell them apart — the candidate and the notice snippet
 // already contain it; the plain summary template also contains the literal
-// words "CURRENT KNOWLEDGE", so the evidence ITEM shape "CURRENT KNOWLEDGE - "
+// words "CURRENT KNOWLEDGE", so the evidence ITEM shape "CURRENT KNOWLEDGE ("
 // is what identifies a merge call.)
 const LANDED_OLD_MARKER = "help@example.com 和公共假期暂停";
 
@@ -103,7 +103,7 @@ function replyFor(prompt: string, rejudge: "same" | "accept", betaMarker: string
     return REPLY_ACCEPT;
   }
   if (prompt.includes("You are checking the final text")) return REPLY_FINAL;
-  if (prompt.includes("CURRENT KNOWLEDGE - ")) {
+  if (prompt.includes("CURRENT KNOWLEDGE (")) {
     if (prompt.includes(betaMarker)) {
       // Beta's merge calls: the first one (CURRENT KNOWLEDGE = the old row)
       // produces the draft the resolution discards; the RE-merge (CURRENT
@@ -116,7 +116,7 @@ function replyFor(prompt: string, rejudge: "same" | "accept", betaMarker: string
 }
 
 function scriptedSession(
-  gate: RaceGate, rejudge: "same" | "accept", betaMarker: string,
+  gate: RaceGate, rejudge: "same" | "accept", betaMarker: string, holdFirstJudgment = false,
 ): { model: unknown; streamFn: unknown; apiKey: string } {
   const model = {
     id: "fake-model", name: "fake-model", api: "openai-completions", provider: "fake",
@@ -133,8 +133,11 @@ function scriptedSession(
       { type: "done", message: { role: "assistant", content: [], usage: { input: 100, output: 30, totalTokens: 130 } } },
     ];
     return (async function* () {
-      const isBetaPlanJudgment = prompt.includes("You are checking a correction")
-        && prompt.includes(betaMarker)
+      // #613: the judge prompt now carries only quotes, so the old URL marker
+      // is not there. Hold the first judgment of the explicit beta seam only;
+      // alpha uses a separate seam and must not block on beta's gate.
+      const isBetaPlanJudgment = holdFirstJudgment
+        && prompt.includes("You are checking a correction")
         && !prompt.includes(LANDED_OLD_MARKER);
       if (isBetaPlanJudgment) {
         gate.announce();
@@ -204,7 +207,10 @@ async function seedDb(
   const sessSeed = await seed.createSession("eval");
   const ids: number[] = [];
   for (let i = 1; i <= 3; i++) {
-    ids.push(await seedEpisode(seed, sessSeed.id, "https://a.example/support-facts-v" + i,
+    // #613: temporal supersede is per session; one session per version keeps
+    // all three LIVE so the batch reaches the cluster gate.
+    const seedSid = i === 1 ? sessSeed.id : (await seed.createSession("eval")).id;
+    ids.push(await seedEpisode(seed, seedSid, "https://a.example/support-facts-v" + i,
       "A 公司客服说明 v" + i, A4_OLD, "a-support-hours"));
   }
   const rep = await seed.consolidateMemory(
@@ -239,7 +245,7 @@ async function runRace(
   const betaMarker = normalizeUrlIdentity(seedArgs.betaUrl);
   const alphaSeams = createConsolidationSeams(scriptedSession(gate, rejudge, betaMarker) as never);
   const betaLedger = recordingLedger();
-  const betaSeams = createConsolidationSeams(scriptedSession(gate, rejudge, betaMarker) as never, {
+  const betaSeams = createConsolidationSeams(scriptedSession(gate, rejudge, betaMarker, true) as never, {
     budget: { ledger: betaLedger, sessionId: "race-" + label },
   });
 
