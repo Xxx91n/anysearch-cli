@@ -1307,7 +1307,7 @@ Resolve with `but resolve apply <path>[:<N>] --ours|--theirs` or pipe mixed cont
 
 ### Added
 
-- **`ip` 第五域评测语料**（`eval-looks.json`）：14 条能现场跑的条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表里 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的两参、三参和四参组合）、语义 5 条（`vert-i1201..i1205`，spec 只写 domain，沿用已有语义层的写法；参数化 `ip.global` 不带参数时多数回的是没有 URL 的文本，当前 adapter 会把这些丢掉，所以这一层不做断言）、对照 4 条（`ctrl-i101..i104`：没有 spec 时防止被误标、spec 配错时静默退回普通搜索、乱写的 sub_domain 被拒、问题本身有歧义）。5 条参数化条目都定义了 `hitHosts`（部分还带 `/patent/` 路径池）；语义条目按 2026-11-07 只给 domain 时实测到的宿主补上 `hitHosts` 测量池。
+- **`ip` 第五域评测语料**（当时写在 `eval-looks.json`，现为 `eval-golden.json`）：14 条能现场跑的条目 —— 参数化 5 条（`vert-i1101..i1105`，覆盖 `ip.global` 词表里 `type`/`keyword`/`applicant`/`ipc`/`date_start` 的两参、三参和四参组合）、语义 5 条（`vert-i1201..i1205`，spec 只写 domain，沿用已有语义层的写法；参数化 `ip.global` 不带参数时多数回的是没有 URL 的文本，当前 adapter 会把这些丢掉，所以这一层不做断言）、对照 4 条（`ctrl-i101..i104`：没有 spec 时防止被误标、spec 配错时静默退回普通搜索、乱写的 sub_domain 被拒、问题本身有歧义）。5 条参数化条目都定义了 `hitHosts`（部分还带 `/patent/` 路径池）；语义条目按 2026-11-07 只给 domain 时实测到的宿主补上 `hitHosts` 测量池。
 - **`ip` 进垂域维度词表**（`packages/store/src/eval/docs-golden.ts`）：`VERTICAL_DIMENSION_VALUES.vdomain` 加 `ip`，新语料才能过 schema 校验；docs 那边八个维度的计数检查不受影响（垂域标签走的是另一份词表）。
 - **词表快照存档**（`docs/eval/ip-corpus-probe-2026-11-07.md` + `docs/vertical-domains.md`）：记下 2026-11-07 调 `get_sub_domains(domain="ip")` 的原文（只有一个子域 `ip.global`，参数 `type`/`keyword`/`applicant`/`ipc`/`date_start`）和搜索结果的各种形态（只给 domain 时静默退回普通搜索、乱写 sub_domain 时 `isError`、乱写 type 值时静默接受）。快照只用来建语料，运行时不读它。
 - **上游阻塞清单里补上 #24 的进展**（`docs/research/upstream-unblock-registry.md`）：#24 那条加上 2026-11-07 触发的事实和语料放在哪；原来的 `登记状态: absent` 不变（内部评测缺口不往 `docs/limitations.md` 补）。
@@ -1926,7 +1926,7 @@ Resolve with `but resolve apply <path>[:<N>] --ours|--theirs` or pipe mixed cont
 
 ### Added
 
-- 垂域评测双层扩展：`eval-looks.json` 的金标账册扩出 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不碰 docs 八维计数检查）；57 条能现场跑的垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；来源字段全带 + 建集时拉到的词表快照（get_sub_domains 只人工看，不进运行时）。
+- 垂域评测双层扩展：`eval-looks.json`（现为 `eval-golden.json`）的金标账册扩出 `expected.vertical{role,domain,sub_domain,paramsKeys,paramsSent,hit,degraded,hitHosts,hitPaths}` 断言；`vert-*`/`ctrl-*` id 族 + `stratum:`/`vdomain:` 独立维度词表（不碰 docs 八维计数检查）；57 条能现场跑的垂域语料（finance/academic/code/health × parameterized/semantic）+ 对照类一等断言条目；来源字段全带 + 建集时拉到的词表快照（get_sub_domains 只人工看，不进运行时）。
 - 配对 delta 的现场检查项 `packages/store/test/online/eval-looks-vertical.online.ts`（D-002 证据层/D-004/D-005）：同一个 query 同一批期望集，vertical-on/off 跑四趟（隔离 `ANS_PROVIDERS=anysearch` 做实验组级主证 + 全同时查多个源融合级副列），产出 `anysearch/vertical-delta@1` 证据件（datasetFingerprint + 实验组标识 + 显式 n + better/worse/tied/unknown + providersFailed 四面 + 实验组采样 URL）；测不了的格记 null/unknown，不记 0。
 - CLI eval 面的环境变量开关：`ANS_ARM_SNAPSHOT=1`（`--json` 透出 `metadata.fusion{labels,lists}`）+ `ANS_PROVIDERS=a,b`（provider 子集过滤走 `Query.providers`）。
 

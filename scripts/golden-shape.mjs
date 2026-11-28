@@ -2,8 +2,9 @@
 // two plain-node consumers cannot drift on the vocabularies the corpus uses.
 // The TS originals live in packages/store: GOLDEN_FILE in eval/corpus-files.ts,
 // the schema, scope, dimension, stability and tolerate vocabularies in
-// eval/docs-golden.ts. ship-gate compares each block below, whole, against that
-// source, so a TS-side edit fails the gate instead of the next corpus run.
+// eval/docs-golden.ts. A TS-side edit that leaves these behind fails
+// packages/store/test/eval-golden-vocab-parity.test.ts, which imports both sides
+// and compares values; ship-gate runs that test in its test step.
 // This module deliberately has no imports.
 export const GOLDEN_FILE = "eval-golden.json";
 export const GOLDEN_SCHEMA = "anysearch/docs-golden@1";
@@ -40,6 +41,22 @@ export function goldenShapeProblems(doc) {
   } else {
     for (const [id, scope] of Object.entries(doc.scopes)) {
       if (!GOLDEN_SCOPE_VALUES.includes(scope)) problems.push("scope for " + id + " must be " + GOLDEN_SCOPE_VALUES.join("|"));
+    }
+  }
+  // The pairing readGoldenFile enforces and this module used to leave to it: a
+  // deleted row whose scope lingers (or a scope-less row) loads fine here but
+  // throws when the live executor opens the same file, so gate and executor
+  // disagree. Check the pairing wherever the shapes above are already sound.
+  if (problems.length === 0) {
+    const scopes = doc.scopes;
+    const ids = new Set(doc.entries.map((e) => e.id));
+    for (const e of doc.entries) {
+      const scoped = Object.prototype.hasOwnProperty.call(scopes, e.id);
+      if (e.tombstone !== undefined && scoped) problems.push("tombstoned entry " + e.id + " must not carry a scope");
+      if (e.tombstone === undefined && !scoped) problems.push("entry " + e.id + " has no scope");
+    }
+    for (const id of Object.keys(scopes)) {
+      if (!ids.has(id)) problems.push("scope for unknown entry " + id);
     }
   }
   return problems;

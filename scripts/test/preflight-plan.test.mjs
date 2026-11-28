@@ -123,8 +123,6 @@ test("windows separators name the same package", () => {
 });
 
 test("a root file runs the packages whose tests read it, and stops there", () => {
-  // kernel depends on store, and this file is read by store's tests alone: a
-  // dependent cannot see it through the reader's tests, so it does not run.
   for (const [files, readers] of [
     // Store is the one reader here; kernel depends on store but its tests do
     // not read this file, so the dependent does not run.
