@@ -5,16 +5,19 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const SCRIPT = join(REPO, "scripts", "badcase-backfill.mjs");
 const QUESTION = "How do I install the widget?";
+// The fixture host appears in the badcase, in its docs.toml allowlist and in
+// the crossCheck call below; one constant keeps the three in step.
+const DOCS_HOST = "docs.example.com";
 
 function expected() {
   return {
     verdict: "answer",
-    mustHitHosts: ["docs.example.com"],
+    mustHitHosts: [DOCS_HOST],
     mustHitPaths: [{ path: "/install", tolerate: ["locale"] }],
     mustNotHitPaths: ["/blog"],
   };
@@ -105,7 +108,7 @@ function tree(t, options = {}) {
   const dir = mkdtempSync(join(tmpdir(), "ans-backfill-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(join(dir, "domains"));
-  writeFileSync(join(dir, "domains", "docs.toml"), "[sources]\nurlAllowlist = [\"docs.example.com\"]\n", "utf8");
+  writeFileSync(join(dir, "domains", "docs.toml"), "[sources]\nurlAllowlist = [\"" + DOCS_HOST + "\"]\n", "utf8");
   writeJson(join(dir, "eval-badcases.json"), { badcases: [badcase()] });
   writeJson(join(dir, "eval-golden.json"), golden(options.goldenQuestion));
   writeJson(join(dir, "eval-looks.coverage.json"), coverage());
@@ -122,6 +125,9 @@ function run(dir, args, nodeArgs = []) {
   // A timeout or a missing node leaves status null; name that instead of
   // letting "expected null to equal 2" point at the script logic.
   assert.equal(r.error, undefined, String(r.error));
+  // A child killed by a signal leaves status null and error undefined; name it
+  // here instead of letting the next status assertion read as a logic bug.
+  assert.equal(r.signal, null, "badcase-backfill killed by " + r.signal);
   return r;
 }
 
@@ -311,7 +317,19 @@ const REJECTS = [
     name: "a golden entries value that is not an array is rejected",
     file: "eval-golden.json",
     edit: (g) => { g.entries = {}; },
-    pattern: /has no entries/,
+    pattern: /entries must be an array/,
+  },
+  {
+    name: "a golden entry with a repeated id is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.entries.push(liveRow("docs-g0001", "How do I install the widget twice?")); },
+    pattern: /duplicate id: docs-g0001/,
+  },
+  {
+    name: "a golden entry whose id is not a string is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.entries[0].id = 7; },
+    pattern: /entry id must be a non-empty string/,
   },
   {
     name: "a golden entry without a scope is rejected",
@@ -419,7 +437,19 @@ const REJECTS = [
     name: "--new rejects mustHitHosts that are not an array",
     file: "eval-badcases.json",
     edit: (b) => { b.badcases[0].expected.mustHitHosts = "docs.example.com"; },
-    pattern: /mustHitUrls\/mustHitHosts must be arrays/,
+    pattern: /mustHitHosts must be an array/,
+  },
+  {
+    name: "--new rejects a null mustHitUrls instead of writing it through",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitUrls = null; },
+    pattern: /mustHitUrls must be an array/,
+  },
+  {
+    name: "--new rejects a mustHitHosts entry that is not a string",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitHosts = ["docs.example.com", 42]; },
+    pattern: /mustHitHosts must be string\[\]/,
   },
   {
     name: "--new rejects mustNotHitPaths holding a non-string",
@@ -507,31 +537,61 @@ test("node too old to strip types says the store validator was skipped", (t) => 
 });
 
 test("a valid --new writes an entry the store validator accepts", async (t) => {
+  // The script skips the validator when node cannot strip types (22.0-22.17
+  // reports the .ts import as an unknown extension), so this test can only claim
+  // the strong thing on a node that loads it.
+  let docs;
+  try {
+    docs = await import("../../packages/store/src/eval/docs-golden.ts");
+  } catch (err) {
+    if (err?.code !== "ERR_UNKNOWN_FILE_EXTENSION") throw err;
+    t.skip("this node (" + process.version + ") cannot strip types");
+    return;
+  }
   const dir = tree(t);
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
   // Exit 0 alone would also be produced by a skipped validator (older node, a
   // broken import path), which is the opposite of what this test claims.
   assert.doesNotMatch(r.stderr, /skipped the store validator/, "the real validator must have run, not been skipped");
-  const { crossCheckDocsGolden, validateCoverageManifest, validateDocsGoldenEntry } = await import(
-    "../../packages/store/src/eval/docs-golden.ts"
-  );
+  const { crossCheckDocsGolden, validateCoverageManifest, validateDocsGoldenEntry } = docs;
   const written = readJson(dir, "eval-golden.json");
   const manifest = readJson(dir, "eval-looks.coverage.json");
   assert.deepEqual(validateDocsGoldenEntry(written.entries.at(-1)), [], "the written row passes the real entry validator");
   assert.deepEqual(validateCoverageManifest(manifest), [], "the recount leaves a valid manifest");
   assert.deepEqual(
-    crossCheckDocsGolden(written, manifest, ["docs.example.com"]),
+    crossCheckDocsGolden(written, manifest, [DOCS_HOST]),
     [],
     "the recounted manifest still agrees with the entries it counts",
   );
 });
 
 test("--new rejects a question already in the golden corpus", (t) => {
-  const dir = tree(t, { goldenQuestion: QUESTION });
-  const r = run(dir, ["--id", "docs-bc0001", "--new"]);
-  assert.equal(r.status, 2, r.stdout + r.stderr);
-  assert.match(r.stderr, /use --into/);
+  // expectFail also proves the three ledgers stayed byte-identical, which a
+  // hand-written status check here used to skip.
+  expectFail(t, () => {}, /use --into/, ["--id", "docs-bc0001", "--new"], { goldenQuestion: QUESTION });
+});
+
+test("a validator that cannot load stops the run before anything is written", (t) => {
+  const dir = tree(t);
+  const before = LEDGERS.map((file) => ledgerText(dir, file));
+  const r = spawnSync(process.execPath, [SCRIPT, "--id", "docs-bc0001", "--new"], {
+    cwd: REPO,
+    env: {
+      ...process.env,
+      ANS_BACKFILL_ROOT: dir,
+      ANS_BACKFILL_VALIDATOR: pathToFileURL(join(dir, "no-such-validator.ts")).href,
+    },
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  // Only an unloadable .ts on an old node may be skipped; a validator that is
+  // missing for any other reason must stop the write.
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /ERR_MODULE_NOT_FOUND|Cannot find module/);
+  LEDGERS.forEach((file, i) => {
+    assert.equal(ledgerText(dir, file), before[i], file + " changed despite the validator failure");
+  });
 });
 
 test("--into attaches to the same-question row", (t) => {
@@ -647,6 +707,14 @@ test("--into rejects a verdict mismatch", (t) => {
   expectFail(t, (dir) => {
     editJson(join(dir, "eval-badcases.json"), (b) => { b.badcases[0].expected.verdict = "abstain"; });
   }, /verdict mismatch/, ["--id", "docs-bc0001", "--into", "docs-g0001"], { goldenQuestion: QUESTION });
+});
+
+test("--into rejects a badcase that names no verdict", (t) => {
+  // Two absent verdicts compare equal, so the mismatch check alone would attach
+  // an evidence-free badcase to the row.
+  expectFail(t, (dir) => {
+    editJson(join(dir, "eval-badcases.json"), (b) => { delete b.badcases[0].expected.verdict; });
+  }, /expected\.verdict must be answer\|abstain/, ["--id", "docs-bc0001", "--into", "docs-g0001"], { goldenQuestion: QUESTION });
 });
 
 test("--new rejects a badcase missing its classification fields", (t) => {

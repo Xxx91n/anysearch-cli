@@ -30,9 +30,11 @@ const dist = join(root, "apps", "cli", "dist", "index.js");
 // somewhere else when the artifact needs to outlive the workspace.
 const DELTA_OUT = process.env.ANS_VERTICAL_DELTA_OUT
   ?? join(root, ".scratch", "vertical-eval", "delta.json");
-const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT?.trim();
+const rawLimit = process.env.ANS_VERTICAL_DELTA_LIMIT;
+// "Set?" reads the raw value: trimming first turns "   " into "" and quietly
+// runs the whole corpus instead of refusing the value.
 const limitSet = rawLimit !== undefined && rawLimit !== "";
-const limitNum = limitSet ? Number(rawLimit) : 0;
+const limitNum = limitSet ? Number(rawLimit.trim()) : 0;
 const CONCURRENCY = 4;
 
 function hostOf(url: string): string {

@@ -1,11 +1,7 @@
-// Structural corpus checks shared by ship-gate and the badcase backfill, so the
-// two plain-node consumers cannot drift on the vocabularies the corpus uses.
-// The TS originals live in packages/store: GOLDEN_FILE in eval/corpus-files.ts,
-// the schema, scope, dimension, stability and tolerate vocabularies in
-// eval/docs-golden.ts. A TS-side edit that leaves these behind fails
-// packages/store/test/eval-golden-vocab-parity.test.ts, which imports both sides
-// and compares values; ship-gate runs that test in its test step.
-// This module deliberately has no imports.
+// Structural corpus checks for eval-golden.json, shared by ship-gate and the
+// badcase backfill. The vocabularies' TS originals live in
+// packages/store/src/eval/docs-golden.ts (GOLDEN_FILE in eval/corpus-files.ts);
+// packages/store/test/eval-golden-vocab-parity.test.ts compares the two by value.
 export const GOLDEN_FILE = "eval-golden.json";
 export const GOLDEN_SCHEMA = "anysearch/docs-golden@1";
 export const GOLDEN_SCOPE_VALUES = ["stub", "live", "both"];
@@ -29,10 +25,25 @@ export function goldenShapeProblems(doc) {
   if (!doc || typeof doc !== "object" || Array.isArray(doc)) return ["root must be an object"];
   const problems = [];
   if (doc.schema !== GOLDEN_SCHEMA) problems.push("schema must be " + GOLDEN_SCHEMA);
-  if (!Array.isArray(doc.entries) || doc.entries.length === 0) {
+  if (!Array.isArray(doc.entries)) {
+    problems.push("entries must be an array");
+  } else if (doc.entries.length === 0) {
     problems.push("has no entries");
   } else if (!doc.entries.every((e) => e && typeof e === "object" && !Array.isArray(e))) {
     problems.push("entries must contain objects");
+  } else {
+    // readGoldenFile rejects a non-string or repeated id; without the same two
+    // checks a duplicated row passes this gate and throws when the executor
+    // opens the file, and ship-gate's anchor lookup silently takes the first.
+    const seen = new Set();
+    for (const e of doc.entries) {
+      if (typeof e.id !== "string" || e.id.length === 0) {
+        problems.push("entry id must be a non-empty string");
+        continue;
+      }
+      if (seen.has(e.id)) problems.push("duplicate id: " + e.id);
+      seen.add(e.id);
+    }
   }
   if (!doc.scopes || typeof doc.scopes !== "object" || Array.isArray(doc.scopes)) {
     problems.push("scopes must be an object");
@@ -43,10 +54,10 @@ export function goldenShapeProblems(doc) {
       if (!GOLDEN_SCOPE_VALUES.includes(scope)) problems.push("scope for " + id + " must be " + GOLDEN_SCOPE_VALUES.join("|"));
     }
   }
-  // The pairing readGoldenFile enforces and this module used to leave to it: a
-  // deleted row whose scope lingers (or a scope-less row) loads fine here but
-  // throws when the live executor opens the same file, so gate and executor
-  // disagree. Check the pairing wherever the shapes above are already sound.
+  // The pairing readGoldenFile enforces: a deleted row whose scope lingers (or a
+  // scope-less row) loads fine here but throws when the live executor opens the
+  // same file, so gate and executor would disagree. Checked once the shapes
+  // above are sound, because the pairing reads ids out of them.
   if (problems.length === 0) {
     const scopes = doc.scopes;
     const ids = new Set(doc.entries.map((e) => e.id));

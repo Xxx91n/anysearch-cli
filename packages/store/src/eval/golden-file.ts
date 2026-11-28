@@ -8,7 +8,8 @@ import {
   type GoldenScope,
 } from "./docs-golden";
 
-// Re-exported so the executors and tests keep one import site for the corpus.
+// Forwarded from the leaf for readers already on this module; the kernel stub
+// test goes to eval/corpus-files on purpose, so it does not pull the reader in.
 export { GOLDEN_FILE, isLiveScope, isStubScope } from "./corpus-files";
 
 // GoldenFile is DocsGoldenSet plus the entry-id -> stub|live|both sidecar map;

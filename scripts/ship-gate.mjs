@@ -532,13 +532,13 @@ function stepStaticAssertions() {
       fail(GOLDEN_FILE + ": invalid JSON: " + err.message);
     }
     // Shape checks live in scripts/golden-shape.mjs, shared with the backfill.
-    for (const problem of goldenShapeProblems(evalGolden)) fail(GOLDEN_FILE + " " + problem);
-    // The mirror vocabularies are compared value-by-value in
-    // packages/store/test/eval-golden-vocab-parity.test.ts, which imports both
-    // this module's source of truth and golden-shape.mjs and runs in step 3's
-    // turbo test. Comparing parsed values there beats reading TS as text here:
-    // a quote or layout change no longer reds the gate, and a value added on
-    // either side fails with a diff that names it.
+    // fail() exits, so report every problem in one call instead of stopping at
+    // the first one.
+    const shapeProblems = goldenShapeProblems(evalGolden);
+    if (shapeProblems.length > 0) fail(GOLDEN_FILE + " " + shapeProblems.join("; "));
+    // Vocabulary mirroring is pinned by value in
+    // packages/store/test/eval-golden-vocab-parity.test.ts, which runs in step 3;
+    // --quick skips that step, so a quick gate does not check it.
     // Anchor lookup covers every entry, not only the live slice: the c1 abstain
     // anchor lives in the stub lane.
     const ge = evalGolden.entries;

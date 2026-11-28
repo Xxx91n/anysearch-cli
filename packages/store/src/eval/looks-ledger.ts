@@ -50,16 +50,17 @@ export function emptyLooksLedger(): LooksLedger {
   return { schema: LOOKS_LEDGER_SCHEMA, looks: [] };
 }
 
-// A corpus the reader would accept. This decides whether the ledger's `golden`
-// block can be replaced, so ask the reader itself: a hand-rolled shape check
-// here accepted a corpus whose schema or scopes were wrong, dropped the block,
-// and left the next read throwing with the only copy already gone.
-function usableCorpus(file: string): boolean {
+// undefined when the reader accepts the corpus, else the reader's own reason.
+// This decides whether the ledger's `golden` block can be replaced, so ask the
+// reader itself: a hand-rolled shape check here accepted a corpus whose schema
+// or scopes were wrong, dropped the block, and left the next read throwing with
+// the only copy already gone.
+function corpusUnusableReason(file: string): string | undefined {
   try {
     readGoldenFile(file);
-    return true;
-  } catch {
-    return false;
+    return undefined;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
   }
 }
 
@@ -87,12 +88,13 @@ export function readLooksLedger(file: string): LooksLedger {
   let j = parsedRoot;
   if (parsedRoot.golden !== undefined) {
     const corpus = join(dirname(file), GOLDEN_FILE);
-    if (usableCorpus(corpus)) {
+    const problem = corpusUnusableReason(corpus);
+    if (problem === undefined) {
       const { golden: _stale, ...rest } = parsedRoot;
       j = rest;
-      writeStderr("[eval] ignoring a stale golden block in " + file + " — the corpus lives in " + corpus + "\n");
+      writeStderr("[eval] dropping a stale golden block in " + file + " — the corpus lives in " + corpus + ", so the next write of this ledger leaves the block out\n");
     } else {
-      writeStderr("[eval] keeping the golden block in " + file + " — " + corpus + " is missing or unreadable\n");
+      writeStderr("[eval] keeping the golden block in " + file + " — " + corpus + " cannot replace it: " + problem + "\n");
     }
   }
   const looks: LooksLedgerEntry[] = [];

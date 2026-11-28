@@ -47,7 +47,7 @@ import { buildRecoveryDigest, RECOVERY_DIGEST_TAG } from "./recovery-digest";
 import { appendMessageText, omitPartialAnswerFromSummary, prependMessageText, readMessageText } from "./message-text";
 import type { GateEnvelope } from "./sufficiency-gate";
 import { rewriteQuery, classifyQdf } from "./query-rewrite";
-import { isPositiveWholeInt } from "./engine";
+import { isPositiveWholeInt } from "./num";
 // #286: the block renderer, the exact-block remover and the recall cap are owned
 // by the store, because the rebuild path rebuilds the very same block strings to
 // strip them by exact match. `SUMMARY_INJECT_MAX_CHARS` is not imported here: every

@@ -14,6 +14,9 @@ import {
 } from "../preflight-plan.mjs";
 import { EXPECTED_ROOT_READERS } from "./preflight-root-readers.mjs";
 
+// The one row two tests below need by name, written once.
+const GOLDEN_READERS = ["@anysearch-cli/kernel", "@anysearch-cli/store"];
+
 // The same shape as the real workspace: four apps on top, four shared
 // packages below, embedding as a peer of store and the apps.
 const MANIFESTS = {
@@ -131,8 +134,8 @@ test("a root file runs the packages whose tests read it, and stops there", () =>
     [["domains/research.toml", "domains/default.toml"], ["@anysearch-cli/cli", "@anysearch-cli/kernel", "@anysearch-cli/store"]],
     [["eval-looks.json"], ["@anysearch-cli/store"]],
     [["eval-badcases.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
-    [["eval-golden.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
-    [["eval-golden.json", "eval-looks.coverage.json"], ["@anysearch-cli/kernel", "@anysearch-cli/store"]],
+    [["eval-golden.json"], GOLDEN_READERS],
+    [["eval-golden.json", "eval-looks.coverage.json"], GOLDEN_READERS],
     // Store's docs-golden test asserts this one resolves on disk; nothing reads
     // the prose, so store is the whole run.
     [["AGENTS.md"], ["@anysearch-cli/store"]],
@@ -182,12 +185,13 @@ test("a root file change next to a package change runs both", () => {
   );
 });
 
-test("docs next to a root file run the readers, not the suite", () => {
+test("a README beside a root file keeps the readers plan", () => {
   const plan = planPreflight(root, ["eval-golden.json", "README.md"]);
   assert.equal(plan.mode, "readers");
-  // Literal, not the mirror table: this is the assertion that pins "a corpus
-  // change runs kernel and store" on its own.
-  assert.deepEqual(plan.packages, ["@anysearch-cli/kernel", "@anysearch-cli/store"]);
+  // What this case adds is the extra path: a root file next to a README still
+  // takes the readers plan instead of degrading to the suite or to incremental.
+  // The reader list itself is pinned by the table above.
+  assert.deepEqual(plan.packages, GOLDEN_READERS);
 });
 
 test("a root file whose reader is gone stops the gate, never turns into a skip", () => {

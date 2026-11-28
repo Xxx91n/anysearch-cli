@@ -32,6 +32,11 @@ const BADCASES = join(ROOT, "eval-badcases.json");
 const GOLDEN = join(ROOT, GOLDEN_FILE);
 const COVERAGE = join(ROOT, "eval-looks.coverage.json");
 const DOCS_TOML = join(ROOT, "domains", "docs.toml");
+// The store validator the own-checks defer to; a test points this at a path that
+// cannot load to prove the run stops instead of writing an unvalidated row.
+const VALIDATOR_URL = process.env.ANS_BACKFILL_VALIDATOR
+  ? new URL(process.env.ANS_BACKFILL_VALIDATOR, import.meta.url)
+  : new URL("../packages/store/src/eval/docs-golden.ts", import.meta.url);
 
 function fail(msg) {
   console.error("badcase-backfill: " + msg);
@@ -61,8 +66,7 @@ const create = process.argv.includes("--new");
 if (!id || (!into && !create)) fail("usage: --id <docs-bcNNNN> (--into <docs-gNNNN> | --new)");
 
 const badcases = readJson(BADCASES, "eval-badcases.json");
-// JSON.parse("null") hands back null, and `.badcases` below would throw a bare
-// TypeError instead of this script's own diagnostic.
+// JSON.parse("null") hands back null; name that instead of a bare TypeError.
 if (!badcases || typeof badcases !== "object" || Array.isArray(badcases)) fail("eval-badcases.json root must be an object");
 if (!Array.isArray(badcases.badcases)) fail("eval-badcases.json: badcases must be an array");
 if (!badcases.badcases.every((b) => b && typeof b === "object" && !Array.isArray(b))) fail("eval-badcases.json: badcases must contain objects");
@@ -97,6 +101,10 @@ if (into) {
   if (target.question.trim() !== bc.question.trim()) fail("question mismatch — attach requires the same verbatim question");
   // An abstain observation attached to an answer row (or the reverse) would hang
   // the regression evidence on the opposite assertion, so refuse the mismatch.
+  // The verdict itself is checked first: two absent verdicts compare equal.
+  if (bc.expected.verdict !== "answer" && bc.expected.verdict !== "abstain") {
+    fail(id + " expected.verdict must be answer|abstain (got " + String(bc.expected.verdict) + ")");
+  }
   if (target.expected?.verdict !== bc.expected.verdict) {
     fail("verdict mismatch — badcase " + id + " expects " + bc.expected.verdict + ", target " + into + " expects " + String(target.expected?.verdict));
   }
@@ -170,9 +178,15 @@ if (into) {
   if (!(expected.verdict === "answer" && mustHit)) {
     fail("--new can only auto-scope an answer+mustHit* row (live); " + next + " needs the stub lane, which needs a kernel scenario fixture this script cannot invent — add the row and fixture by hand");
   }
+  // Judge the values that go into the row, not `?? []` stand-ins: a null list
+  // would pass that test and be written as null, which CI's validator rejects.
+  if (expected.mustHitUrls !== undefined && !Array.isArray(expected.mustHitUrls)) fail(id + " mustHitUrls must be an array");
+  if (expected.mustHitHosts !== undefined && !Array.isArray(expected.mustHitHosts)) fail(id + " mustHitHosts must be an array");
   const mustHitUrls = expected.mustHitUrls ?? [];
   const mustHitHosts = expected.mustHitHosts ?? [];
-  if (!Array.isArray(mustHitUrls) || !Array.isArray(mustHitHosts)) fail(id + " mustHitUrls/mustHitHosts must be arrays");
+  // Element type before the allowlist lookup, or [123] reports "outside
+  // urlAllowlist" and sends the reader to the wrong file.
+  if (mustHitHosts.some((h) => typeof h !== "string")) fail(id + " mustHitHosts must be string[]");
   // ship-gate only lets a byte-exact URL anchor sit on a controlled|frozen-spec
   // target; "external" is a legal stability_class but not a controllable one.
   if (mustHitUrls.length > 0) {
@@ -238,13 +252,11 @@ if (into) {
 async function realValidatorProblems(entry) {
   let validateDocsGoldenEntry;
   try {
-    ({ validateDocsGoldenEntry } = await import(new URL("../packages/store/src/eval/docs-golden.ts", import.meta.url)));
+    ({ validateDocsGoldenEntry } = await import(VALIDATOR_URL));
   } catch (err) {
-    // Older node cannot strip types (engines floor is 22.0.0; the default
-    // arrives in 22.18) and reports the .ts import itself as an unknown
-    // extension. Anything else means the validator could not run at all — a
-    // moved or renamed module, a missing dependency inside it — so fail
-    // instead of writing a row the authoritative check never saw.
+    // node < 22.18 cannot load the .ts validator and reports the import as an
+    // unknown extension, which reads as a pass unless it is said out loud. Any
+    // other error means the validator could not run at all, so throw.
     if (err?.code !== "ERR_UNKNOWN_FILE_EXTENSION") throw err;
     console.error("badcase-backfill: skipped the store validator — node " + process.version + " cannot load the TS module; only this script's own checks ran");
     return [];

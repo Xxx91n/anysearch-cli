@@ -3,7 +3,7 @@
 
 import type { Mode, ProviderErrorClass } from "@anysearch-cli/retriever";
 import { buildVerticalSpec, isPartialPool, verticalSpecReject } from "@anysearch-cli/retriever";
-import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, DEFAULT_REQUEST_TIMEOUT_MS, reportedDeadlineMs, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
+import { wireTaskBudget, isTaskBudgetRejectedError, DomainConstraintError, describeDomainFallback, resolveDomainConstraint, providerErrorHints, DEFAULT_REQUEST_TIMEOUT_MS, reportedDeadlineMs, envelopeArmLists, type CredentialSources, type DomainConfigPort } from "@anysearch-cli/kernel";
 import { resolveActiveDomain } from "@anysearch-cli/store/local-service";
 import { createPersistentEngine, domainSearchDirs } from "../db";
 import { currentCliTask } from "../cli-task-context";
@@ -270,8 +270,11 @@ export async function runSearch(args: string[]): Promise<number> {
       (span) => retriever.search({ query: queryClean, mode, maxResults: 10, ...(vertical ? { vertical } : {}), ...(providersSel?.length ? { providers: providersSel } : {}), ...(taskBudget ? { taskBudget } : {}), span }),
     );
 
+    // Same guard the MCP tools use: a missing arm list fails the call here
+    // instead of leaving the key out of --json.
+    const arms = envelopeArmLists(envelope.metadata);
     // Read once: the --json document and the human lines below all use it.
-    const cancelledProviders = envelope.metadata.providersCancelled;
+    const cancelledProviders = arms.cancelled;
     // A cut arm means the pool is shorter than the fanout that was asked.
     const partial = isPartialPool(cancelledProviders);
 
@@ -289,12 +292,12 @@ export async function runSearch(args: string[]): Promise<number> {
         results: envelope.results,
         // providersFailed exposed so install-smoke's fault leg names the failed
         // arm from a structured field, not a string match on human output.
-        providersFailed: envelope.metadata.providersFailed,
+        providersFailed: arms.failed,
         // Who was asked, and who we cut off — with providersFailed above, these
         // three answer "what happened to each arm". A source the domain config
         // never enabled, or ANS_PROVIDERS filtered out, is in none of them: it
         // never joins the fanout.
-        providersQueried: envelope.metadata.providersQueried,
+        providersQueried: arms.queried,
         providersCancelled: cancelledProviders,
         // True when at least one arm was cut, so a script does not have to read
         // three fields to notice the pool was shortened. Always present.

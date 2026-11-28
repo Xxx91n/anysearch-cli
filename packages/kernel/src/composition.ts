@@ -7,7 +7,8 @@
 
 import { TavilyProvider, AnySearchProvider, createExaProvider, createExaFetchProvider } from "@anysearch-cli/retriever/providers";
 import { redactSecrets, type FetchProvider, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
-import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine, isPositiveWholeInt } from "./engine";
+import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
+import { isPositiveWholeInt } from "./num";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
   ansAttributionRoot,
@@ -386,8 +387,8 @@ function resolveRequestTimeoutMs(raw?: number, capMs = EVAL_REQUEST_TIMEOUT_CAP_
 /**
  * The budget to report for one fanout: the wrapper's own value when it is a
  * positive whole number, else the result's copy under the same rule, else 4s.
- * Both are clamped to the engine's ceiling, so the report never promises more
- * than the engine waits.
+ * The clamp here is setTimeout's ceiling, not the engine's budget cap: a wrapper
+ * that reports two hours is reported as two hours.
  */
 export function reportedDeadlineMs(eng: Pick<CompositionResult, "requestTimeoutMs" | "retriever">): number {
   const retrieverMs = eng.retriever.requestTimeoutMs;

@@ -50,7 +50,7 @@ import { ENV_ALLOW_OVERRIDE, ENV_URL_ALLOWLIST, ansProjectHitlPath, ansProjectPi
 import type { RetrieverPort, SessionStorePort, DomainConfigPort, BudgetLedgerPort, Query, RetrievalObservationSink, TaskBudgetScope } from "./ports";
 import type { AgentEvent, SummaryRebuildReport } from "./runtime";
 import { MemoryPipeline } from "./memory-pipeline";
-import { isPositiveWholeInt } from "./engine";
+import { isPositiveWholeInt } from "./num";
 import { SufficiencyEvaluator } from "./sufficiency-gate";
 import { SEARCH_MODE_DESCRIPTION } from "./tool-schemas";
 import { BUILTIN_FETCH_TOOL, createFetchTool, type FetchStorePort } from "./fetch-tool";

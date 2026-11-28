@@ -10,35 +10,10 @@ import type { CompositionResult } from "@anysearch-cli/kernel";
 import type { ProviderErrorClass, SearchOutcome } from "@anysearch-cli/retriever";
 import { providerErrorHints } from "@anysearch-cli/kernel";
 
-export interface EnvelopeArmLists {
-  queried: string[];
-  cancelled: string[];
-  failed: string[];
-}
-
-/**
- * The three arm lists every fanout writes. A host that implements the public
- * RetrieverPort itself can leave one out, and an absent list is not neutral:
- * `failed: []` reads as "no arm failed", so a total outage would come back as a
- * success naming no failed providers, and `cancelled: []` would clear `partial`.
- * Name the missing field(s) and fail the call rather than invent that verdict.
- * The port's envelope contract requires all three; docs/mcp-server.md says so
- * for host implementers.
- */
-export function envelopeArmLists(metadata: unknown): EnvelopeArmLists {
-  const meta = metadata as {
-    providersQueried?: unknown;
-    providersCancelled?: unknown;
-    providersFailed?: unknown;
-  } | undefined;
-  const missing: string[] = [];
-  if (!Array.isArray(meta?.providersQueried)) missing.push("providersQueried");
-  if (!Array.isArray(meta?.providersCancelled)) missing.push("providersCancelled");
-  if (!Array.isArray(meta?.providersFailed)) missing.push("providersFailed");
-  if (missing.length > 0) throw new Error("retriever envelope metadata missing " + missing.join(", "));
-  const lists = meta as { providersQueried: string[]; providersCancelled: string[]; providersFailed: string[] };
-  return { queried: lists.providersQueried, cancelled: lists.providersCancelled, failed: lists.providersFailed };
-}
+// The arm-list guard is shared with the CLI, so both hosts refuse the same
+// envelope. docs/mcp-server.md states the contract for host implementers.
+export { envelopeArmLists } from "@anysearch-cli/kernel";
+export type { EnvelopeArmLists } from "@anysearch-cli/kernel";
 
 /** Execution-failure result: isError true, text content, no structuredContent. */
 export function toolFailure(text: string): CallToolResult {

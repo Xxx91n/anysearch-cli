@@ -16,9 +16,10 @@ export type SearchOutcome = (typeof SEARCH_OUTCOMES)[number];
  * engine records only which arms were cut. This judges a single fanout; a tool
  * that merges several rounds decides the call-level answer itself.
  */
-export function isPartialPool(providersCancelled: readonly string[] | undefined): boolean {
-  // A hand-built envelope may omit the list; absent means no arm was cut.
-  return (providersCancelled ?? []).length > 0;
+export function isPartialPool(providersCancelled: readonly string[]): boolean {
+  // The list is required: a hand-built envelope that omits it is refused at the
+  // host boundary (envelopeArmLists), not read here as "no arm was cut".
+  return providersCancelled.length > 0;
 }
 
 /**

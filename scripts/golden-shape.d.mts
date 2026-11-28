@@ -1,6 +1,6 @@
-// Types for the plain-node corpus checks so TypeScript callers (the parity test
-// in packages/store) can import the module and compare values instead of
-// reading the source text.
+// Types for scripts/golden-shape.mjs. The seven declarations mirror its exports
+// one for one: add or drop an export there and this file has to follow (the
+// values are pinned by the parity test, the export list is not).
 export declare const GOLDEN_FILE: string;
 export declare const GOLDEN_SCHEMA: string;
 export declare const GOLDEN_SCOPE_VALUES: readonly string[];

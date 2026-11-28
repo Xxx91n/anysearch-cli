@@ -178,13 +178,14 @@ async function main() {
   // stable "out of the measurable set" marker is scope absence + the tombstone
   // block; a stale scope would silently keep the cell selectable).
   const scopes: Record<string, string> = golden.scopes;
-  const SCOPES = new Set(["stub", "live", "both"]);
+  // The predicates are the vocabulary; a second literal here would drift.
+  const knownScope = (scope: string) => isLiveScope(scope) || isStubScope(scope);
   for (const e of entries) {
     if (e.tombstone !== undefined) {
       assert(scopes[e.id] === undefined, e.id + " tombstoned entry must not carry a scope (out of the measurable set by design)");
       continue;
     }
-    assert(SCOPES.has(scopes[e.id]), e.id + " scope must be explicit stub|live|both in golden.scopes (got " + scopes[e.id] + ")");
+    assert(knownScope(scopes[e.id]), e.id + " scope must be explicit stub|live|both in golden.scopes (got " + scopes[e.id] + ")");
   }
   const mustHit = (e: any) => (e.expected?.mustHitHosts?.length ?? 0) > 0 || (e.expected?.mustHitUrls?.length ?? 0) > 0;
   for (const e of entries) {

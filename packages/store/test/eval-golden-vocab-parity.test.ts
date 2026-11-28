@@ -53,3 +53,29 @@ assert(
   list(shape.GOLDEN_DIMENSION_VALUES.intent) === list(DOCS_GOLDEN_INTENTS),
   "intent vocabulary mirror drifted",
 );
+
+// scripts/golden-shape.d.mts is a hand-written second copy of these types and
+// nothing else reads it, so pin the export list and each export's kind here: a
+// name added, dropped or reshaped in the .mjs without the .d.mts following fails
+// this test instead of leaving a lying type behind.
+const kindOf = (value: unknown): string => {
+  if (typeof value === "function") return "function";
+  if (Array.isArray(value)) return value.every((v) => typeof v === "string") ? "string[]" : "array";
+  return typeof value;
+};
+const shapeKinds = Object.entries(shape)
+  .map(([name, value]) => name + "=" + kindOf(value))
+  .sort()
+  .join(",");
+const declaredKinds = [
+  "GOLDEN_DIMENSION_VALUES=object",
+  "GOLDEN_FILE=string",
+  "GOLDEN_SCHEMA=string",
+  "GOLDEN_SCOPE_VALUES=string[]",
+  "GOLDEN_STABILITY_CLASSES=string[]",
+  "GOLDEN_TOLERATED_SEGMENTS=string[]",
+  "goldenShapeProblems=function",
+]
+  .sort()
+  .join(",");
+assert(shapeKinds === declaredKinds, "golden-shape.mjs exports drifted from golden-shape.d.mts: " + shapeKinds);

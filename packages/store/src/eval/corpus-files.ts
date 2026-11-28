@@ -1,8 +1,6 @@
-// Corpus file names and the scope predicates live here, in a leaf module: the
-// look ledger's stale-block notice and kernel's stub executor test import this
-// file, and a value import of the vocabulary would drag the 550-line corpus
-// reader into both. The predicates therefore spell the vocabulary out and a
-// store test pins which value each one claims.
+// The corpus file name and the scope predicates, in a leaf module so the kernel
+// stub test can import them without the store barrel. A store test pins which
+// value each predicate claims.
 import type { GoldenScope } from "./docs-golden";
 
 export const GOLDEN_FILE = "eval-golden.json";

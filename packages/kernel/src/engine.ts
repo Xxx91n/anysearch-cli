@@ -12,6 +12,7 @@ import type { BudgetLedgerPort, ResumeAnchorsPort } from "./ports";
 import { attachAttribution, applyJudgeEscalation, type JudgeFn } from "./attribution";
 import type { AttributionCalibration } from "./calibrate";
 import { TaskBudgetRejectedError } from "./budget-error";
+import { isPositiveWholeInt } from "./num";
 
 // Sufficiency gate config: minimum quality thresholds for a search result.
 // atomcode research: min angles (providers) / min fetches (results) / min domains / cross-engine verify.
@@ -37,12 +38,6 @@ export const DEFAULT_GATE: SufficiencyGate = {
 const DEFAULT_REQUEST_TIMEOUT_MS = 4000;
 const MAX_REQUEST_TIMEOUT_MS = 2_147_483_647;
 export { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS };
-
-// The shape a request deadline and an archive row id share: a positive whole
-// number. One predicate so a rule change lands everywhere it applies.
-export function isPositiveWholeInt(n: unknown): n is number {
-  return typeof n === "number" && Number.isInteger(n) && n > 0;
-}
 
 // Extract domain from URL for sufficiency gate domain counting.
 function extractDomain(url: string): string {
