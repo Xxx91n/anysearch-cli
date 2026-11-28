@@ -109,10 +109,9 @@ function sseToolCall(name, args, preamble) {
 }
 
 function classify(body) {
-  // 只认当前真的会发出来的提示词。整理只认“材料在上”这句开头；PI 自己的上下文摘要
-  // 不是整理，混进整理分支就会拿整理那句话去回它。
+  // 只认当前真的会发出来的整理提示词。PI 自己的上下文摘要不是整理，它以前被算进这里，
+  // 假端点就会拿整理那句话去回它。
   if (body.includes("The materials are above")) return "consolidate";
-  if (body.includes("You are a memory adjudicator")) return "adjudicate";
   if (body.includes("You are a context summarization assistant")) return "ctxsummary";
   // 已经拿到过工具结果的轮次，不能再要搜索：请求历史里还留着原来那句话，
   // 只看文字就会一直循环下去。
@@ -195,7 +194,6 @@ const endpoint = createServer(async (req, res) => {
   if (role === "consolidate") {
     return res.end(sseText("<quotes>\n[1] acme hours [@0] \"" + FACT + "\"\n</quotes>\n<conclusion>" + FACT + "</conclusion>"));
   }
-  if (role === "adjudicate") return res.end(sseText("compress"));
   if (role === "ctxsummary") return res.end(sseText("CONDENSED-HISTORY"));
   // 回最新一轮的问题。后面那次请求如果带着这句话，就说明会话记录真的接上了；
   // 写死一句固定回答不行，因为全新会话也会出现同一个常量。
