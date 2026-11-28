@@ -385,8 +385,11 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
   }
 
   const betaVerify = stagedVerify([CORRECTION, CORRECTION], { hold: alphaCorrection(alpha, alphaNotice) });
+  // The plan-time reply is a plain string (no <quotes>); only the re-merge is
+  // shaped. Its quotes are the only ones this cluster ever produced, so the
+  // report must carry them (a re-merge is not a second cluster).
   const betaSum = stagedSummarize(EMAIL_NOTICE, BETA_EMAIL_FIRST_MERGED, {
-    reMerge: M1_FINAL,
+    reMerge: "<quotes>M1-RE-MERGE-QUOTE</quotes><conclusion>" + M1_FINAL + "</conclusion>",
     onReMerge: async () => {
       const live = liveRows(db)[0]!;
       assert(live.content === A4_MERGED,
@@ -411,6 +414,8 @@ function alphaCorrection(alpha: SqliteSessionStore, alphaNotice: number):
   const res = repB.resolvedCollisions[0]!;
   assert(res.resolution === "re-merged" && res.newId === live.id && res.targetContent === A4_MERGED,
     "M1: the report names the re-merge and the version it targeted");
+  assert(repB.quotes.length === 1 && repB.quotes[0]!.quotes === "M1-RE-MERGE-QUOTE",
+    "M1: the re-merge's quotes reach the report (got " + JSON.stringify(repB.quotes) + ")");
   // The re-merge is a model call like any other: it must read the page bodies,
   // not the report-side snippets. The report trims evidence for size, and if
   // that trimmed copy were the one stored on the pending collision, the merge

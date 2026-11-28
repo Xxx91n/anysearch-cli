@@ -1444,6 +1444,18 @@ export async function consolidateMemoryRun(
   // write lock; only the collected ops run inside BEGIN IMMEDIATE. Same op order and counters,
   // so the dry-run exact-prediction contract is unchanged (Bacon P2).
   const writes: Array<() => void> = [];
+  // One cluster can hit the merge fallback more than once (the main UPDATE path,
+  // then a collision re-merge). Keep one quote entry per cluster: the primary
+  // summarizer's quotes win, and a later fallback must not duplicate. Declared
+  // outside `plan` because the collision resolution phase records a re-merge's
+  // quotes too.
+  const quotedClusters = new Set<number>();
+  const recordQuotes = (cluster: number, quotes: string | null | undefined): void => {
+    if (!quotes || quotedClusters.has(cluster)) return;
+    quotedClusters.add(cluster);
+    report.quotes.push({ cluster, quotes });
+  };
+
   const plan = async (): Promise<void> => {
     // Cluster scan INCLUDES superseded rows (valid_until NOT NULL): same-entity writes soft-close
     // the prior version immediately, so episodic history *is* the closed-row set.
@@ -1515,15 +1527,6 @@ export async function consolidateMemoryRun(
     // feed and quote reports use it so a per-material line can be matched to
     // the prompt it travelled in.
     let clusterOrdinal = 0;
-    // One cluster can hit the merge fallback more than once (the main UPDATE
-    // path, then a collision re-merge). Keep one quote entry per cluster: the
-    // primary summarizer's quotes win, and a later fallback must not duplicate.
-    const quotedClusters = new Set<number>();
-    const recordQuotes = (cluster: number, quotes: string | null | undefined): void => {
-      if (!quotes || quotedClusters.has(cluster)) return;
-      quotedClusters.add(cluster);
-      report.quotes.push({ cluster, quotes });
-    };
 
     // D6: one place builds the refusal the caller gets back, so the
     // single-evidence and batch paths cannot drift in shape. What is missing is

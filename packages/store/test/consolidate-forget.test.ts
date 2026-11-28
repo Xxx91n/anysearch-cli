@@ -272,6 +272,29 @@ assert(JSON.parse(sem[1].src).length === 3, "UPDATE unions source episode ids");
   bare.close();
 }
 
+// A reply that is only a <quotes> block states no conclusion: nothing is
+// written, and it is reported as noConclusion, not as a missing model. The
+// quoted page text must not become the distilled fact.
+{
+  const qDb = join(dir, "no-conclusion.db");
+  const seed = new SqliteSessionStore(qDb, { consolidateSummarize: async () => SUMMARY_C });
+  for (let i = 1; i <= 3; i++) {
+    const ls = await seed.createSession("eval");
+    await seed.adjudicateMemory(ls.id, [
+      { url: "https://ex.com/omicron/" + i, title: "Omicron note v" + i, snippet: "Omicron is served by Pi, revision " + i, source: "exa", evidence: 0.9, entity: "Omicron" },
+    ]);
+  }
+  const quotesOnly = new SqliteSessionStore(qDb, {
+    consolidateSummarize: async () => '<quotes>[1] "Omicron is served by Pi."</quotes>',
+  });
+  const repQuotes = await quotesOnly.consolidateMemory();
+  assert(repQuotes.noConclusion === 1 && repQuotes.add === 0 && repQuotes.update === 0,
+    "a quotes-only reply writes nothing and counts as noConclusion (got " + repQuotes.noConclusion + ")");
+  assert(repQuotes.llmUnavailable === 0, "a reply without a conclusion is not a model failure");
+  seed.close();
+  quotesOnly.close();
+}
+
 // --- D5 forget: reversible archive (D7-4) ---
 const seedRw = new Database(dbPath);
 const ins = seedRw.prepare(
