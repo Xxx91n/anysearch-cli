@@ -142,43 +142,227 @@ function expectFail(t, mutate, pattern, args = ["--id", "docs-bc0001", "--new"],
 // the script must print. Cases that take non-default argv, rewrite several
 // files, or delete a file stay as their own tests below.
 const REJECTS = [
-  ["--new rejects a host outside the allowlist", "eval-badcases.json", (b) => { b.badcases[0].expected.mustHitHosts = ["evil.example"]; }, /outside domains\/docs\.toml urlAllowlist/],
-  ["--new rejects mustHitPaths without negative pins", "eval-badcases.json", (b) => { delete b.badcases[0].expected.mustNotHitPaths; }, /requires mustNotHitPaths/],
-  ["--new rejects a non-http mustHitUrl", "eval-badcases.json", (b) => { b.badcases[0].expected.mustHitUrls = ["ftp://docs.example.com/install"]; }, /must be http\(s\)/],
-  ["--new rejects a question shorter than 8 characters", "eval-badcases.json", (b) => { b.badcases[0].question = "short"; }, /at least 8 characters/],
-  ["--new rejects a dimension tag outside the vocabulary", "eval-badcases.json", (b) => { b.badcases[0].dimensions.push("intents:factoid"); }, /outside the eight-dimension vocabulary/],
-  ["--new rejects missing intent and lang tags", "eval-badcases.json", (b) => { b.badcases[0].dimensions = ["intent:howto"]; }, /dimensions lack 'lang:en'/],
-  ["--new rejects expected.vertical", "eval-badcases.json", (b) => { b.badcases[0].expected.vertical = {}; }, /carries expected\.vertical/],
-  ["--new rejects empty mustNotHitPaths", "eval-badcases.json", (b) => { b.badcases[0].expected.mustNotHitPaths = []; }, /mustNotHitPaths must be a non-empty string\[\]/],
-  ["--new rejects a mustHitUrl host outside the allowlist", "eval-badcases.json", (b) => { b.badcases[0].expected.mustHitUrls = ["https://evil.example/install"]; }, /mustHitUrl host evil\.example outside/],
-  ["--new rejects a bad evidence.runAt", "eval-badcases.json", (b) => { b.badcases[0].evidence.runAt = "2026/11/27"; }, /evidence\.runAt must be the real ISO date/],
-  ["--new rejects entry values that are not objects", "eval-golden.json", (g) => { g.entries.push(null); }, /entries must contain objects/],
-  ["--new rejects a provenance type other than internal-dogfood", "eval-badcases.json", (b) => { b.badcases[0].provenance.type = "external"; }, /only writes internal-dogfood provenance/],
-  ["--new rejects a stability_class outside the vocabulary", "eval-badcases.json", (b) => { b.badcases[0].stability_class = "whatever"; }, /stability_class must be controlled\|frozen-spec\|external/],
-  ["--new rejects mustHitUrls without a stability_class", "eval-badcases.json", (b) => { b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"]; delete b.badcases[0].stability_class; }, /no stability_class/],
-  ["--new rejects a missing evidence.runAt", "eval-badcases.json", (b) => { delete b.badcases[0].evidence.runAt; }, /evidence\.runAt must be the real ISO date/],
-  ["--new rejects a badcase that is not open", "eval-badcases.json", (b) => { b.badcases[0].status = "promoted"; }, /is not open \(status=promoted\)/],
-  ["--new rejects a badcase with no observed block", "eval-badcases.json", (b) => { delete b.badcases[0].observed; }, /has no observed block/],
-  ["--new rejects a badcase with no evidence.command", "eval-badcases.json", (b) => { delete b.badcases[0].evidence.command; }, /has no evidence\.command/],
-  ["--new rejects a non-docs domain", "eval-badcases.json", (b) => { b.badcases[0].domain = "vert"; }, /only creates docs-domain rows/],
-  ["an out-of-range golden scope is rejected", "eval-golden.json", (g) => { g.scopes["docs-g0001"] = "sometimes"; }, /scope for docs-g0001 must be stub\|live\|both/],
-  ["--new rejects a row the auto-scope cannot build (not answer+mustHit*)", "eval-badcases.json", (b) => { delete b.badcases[0].expected.mustHitHosts; }, /can only auto-scope an answer\+mustHit\*/],
-  ["a golden schema other than anysearch/docs-golden@1 is rejected", "eval-golden.json", (g) => { g.schema = "anysearch/docs-golden@9"; }, /schema must be anysearch\/docs-golden@1/],
-  ["an empty golden entries list is rejected", "eval-golden.json", (g) => { g.entries = []; }, /has no entries/],
-  ["an empty golden scopes map is rejected", "eval-golden.json", (g) => { g.scopes = {}; }, /scopes must not be empty/],
-  ["coverage dimensions that are not an array are rejected", "eval-looks.coverage.json", (c) => { c.dimensions = {}; }, /dimensions must be an array/],
-  ["--new rejects a badcase with no domain", "eval-badcases.json", (b) => { delete b.badcases[0].domain; }, /has no domain/],
-  ["--new rejects a badcase with no expected block", "eval-badcases.json", (b) => { delete b.badcases[0].expected; }, /has no expected block/],
-  ["--new rejects a mustHitPaths pattern that is not absolute", "eval-badcases.json", (b) => { b.badcases[0].expected.mustHitPaths = [{ path: "install", tolerate: [] }]; }, /must start with \//],
-  ["--new rejects a tolerate class outside locale|version|dated", "eval-badcases.json", (b) => { b.badcases[0].expected.mustHitPaths = [{ path: "/install", tolerate: ["locale", "draft"] }]; }, /tolerate outside locale\|version\|dated/],
-  ["--new rejects an unparseable mustHitUrl", "eval-badcases.json", (b) => { b.badcases[0].expected.mustHitUrls = ["https://"]; }, /mustHitUrl unparseable/],
-  ["--new rejects a mustHitUrl on an external-controllability row", "eval-badcases.json", (b) => { b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"]; b.badcases[0].stability_class = "external"; }, /only accepts controlled\|frozen-spec/],
-  ["a non-array badcases field is reported, not a TypeError", "eval-badcases.json", (b) => { b.badcases = {}; }, /badcases must be an array/],
+  {
+    name: "--new rejects a host outside the allowlist",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitHosts = ["evil.example"]; },
+    pattern: /outside domains\/docs\.toml urlAllowlist/,
+  },
+  {
+    name: "--new rejects mustHitPaths without negative pins",
+    file: "eval-badcases.json",
+    edit: (b) => { delete b.badcases[0].expected.mustNotHitPaths; },
+    pattern: /requires mustNotHitPaths/,
+  },
+  {
+    name: "--new rejects a non-http mustHitUrl",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitUrls = ["ftp://docs.example.com/install"]; },
+    pattern: /must be http\(s\)/,
+  },
+  {
+    name: "--new rejects a question shorter than 8 characters",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].question = "short"; },
+    pattern: /at least 8 characters/,
+  },
+  {
+    name: "--new rejects a dimension tag outside the vocabulary",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].dimensions.push("intents:factoid"); },
+    pattern: /outside the eight-dimension vocabulary/,
+  },
+  {
+    name: "--new rejects missing intent and lang tags",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].dimensions = ["intent:howto"]; },
+    pattern: /dimensions lack 'lang:en'/,
+  },
+  {
+    name: "--new rejects expected.vertical",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.vertical = {}; },
+    pattern: /carries expected\.vertical/,
+  },
+  {
+    name: "--new rejects empty mustNotHitPaths",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustNotHitPaths = []; },
+    pattern: /mustNotHitPaths must be a non-empty string\[\]/,
+  },
+  {
+    name: "--new rejects a mustHitUrl host outside the allowlist",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitUrls = ["https://evil.example/install"]; },
+    pattern: /mustHitUrl host evil\.example outside/,
+  },
+  {
+    name: "--new rejects a bad evidence.runAt",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].evidence.runAt = "2026/11/27"; },
+    pattern: /evidence\.runAt must be the real ISO date/,
+  },
+  {
+    name: "--new rejects entry values that are not objects",
+    file: "eval-golden.json",
+    edit: (g) => { g.entries.push(null); },
+    pattern: /entries must contain objects/,
+  },
+  {
+    name: "--new rejects a provenance type other than internal-dogfood",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].provenance.type = "external"; },
+    pattern: /only writes internal-dogfood provenance/,
+  },
+  {
+    name: "--new rejects a stability_class outside the vocabulary",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].stability_class = "whatever"; },
+    pattern: /stability_class must be controlled\|frozen-spec\|external/,
+  },
+  {
+    name: "--new rejects mustHitUrls without a stability_class",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"]; delete b.badcases[0].stability_class; },
+    pattern: /no stability_class/,
+  },
+  {
+    name: "--new rejects a missing evidence.runAt",
+    file: "eval-badcases.json",
+    edit: (b) => { delete b.badcases[0].evidence.runAt; },
+    pattern: /evidence\.runAt must be the real ISO date/,
+  },
+  {
+    name: "--new rejects a badcase that is not open",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].status = "promoted"; },
+    pattern: /is not open \(status=promoted\)/,
+  },
+  {
+    name: "--new rejects a badcase with no observed block",
+    file: "eval-badcases.json",
+    edit: (b) => { delete b.badcases[0].observed; },
+    pattern: /has no observed block/,
+  },
+  {
+    name: "--new rejects a badcase with no evidence.command",
+    file: "eval-badcases.json",
+    edit: (b) => { delete b.badcases[0].evidence.command; },
+    pattern: /has no evidence\.command/,
+  },
+  {
+    name: "--new rejects a non-docs domain",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].domain = "vert"; },
+    pattern: /only creates docs-domain rows/,
+  },
+  {
+    name: "an out-of-range golden scope is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.scopes["docs-g0001"] = "sometimes"; },
+    pattern: /scope for docs-g0001 must be stub\|live\|both/,
+  },
+  {
+    name: "--new rejects a row the auto-scope cannot build (not answer+mustHit*)",
+    file: "eval-badcases.json",
+    edit: (b) => { delete b.badcases[0].expected.mustHitHosts; },
+    pattern: /can only auto-scope an answer\+mustHit\*/,
+  },
+  {
+    name: "a golden schema other than anysearch/docs-golden@1 is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.schema = "anysearch/docs-golden@9"; },
+    pattern: /schema must be anysearch\/docs-golden@1/,
+  },
+  {
+    name: "an empty golden entries list is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.entries = []; },
+    pattern: /has no entries/,
+  },
+  {
+    name: "an empty golden scopes map is rejected",
+    file: "eval-golden.json",
+    edit: (g) => { g.scopes = {}; },
+    pattern: /scopes must not be empty/,
+  },
+  {
+    name: "coverage dimensions that are not an array are rejected",
+    file: "eval-looks.coverage.json",
+    edit: (c) => { c.dimensions = {}; },
+    pattern: /dimensions must be an array/,
+  },
+  {
+    name: "--new rejects a badcase with no domain",
+    file: "eval-badcases.json",
+    edit: (b) => { delete b.badcases[0].domain; },
+    pattern: /has no domain/,
+  },
+  {
+    name: "--new rejects a badcase with no expected block",
+    file: "eval-badcases.json",
+    edit: (b) => { delete b.badcases[0].expected; },
+    pattern: /has no expected block/,
+  },
+  {
+    name: "--new rejects a mustHitPaths pattern that is not absolute",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitPaths = [{ path: "install", tolerate: [] }]; },
+    pattern: /must start with \//,
+  },
+  {
+    name: "--new rejects a tolerate class outside locale|version|dated",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitPaths = [{ path: "/install", tolerate: ["locale", "draft"] }]; },
+    pattern: /tolerate outside locale\|version\|dated/,
+  },
+  {
+    name: "--new rejects an unparseable mustHitUrl",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitUrls = ["https://"]; },
+    pattern: /mustHitUrl unparseable/,
+  },
+  {
+    name: "--new rejects a mustHitUrl on an external-controllability row",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"]; b.badcases[0].stability_class = "external"; },
+    pattern: /only accepts controlled\|frozen-spec/,
+  },
+  {
+    name: "a non-array badcases field is reported, not a TypeError",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases = {}; },
+    pattern: /badcases must be an array/,
+  },
+  {
+    name: "--new rejects dimensions that are not an array",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].dimensions = {}; },
+    pattern: /dimensions must be a string\[\]/,
+  },
+  {
+    name: "--new rejects mustHitPaths that are not an array",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected.mustHitPaths = "/install"; },
+    pattern: /mustHitPaths must be \{path,tolerate\}\[\]/,
+  },
+  {
+    name: "--new rejects an expected block that is an array",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases[0].expected = []; },
+    pattern: /has no expected block/,
+  },
+  {
+    name: "a badcases array holding a non-object is reported, not a TypeError",
+    file: "eval-badcases.json",
+    edit: (b) => { b.badcases.push(null); },
+    pattern: /badcases must contain objects/,
+  },
 ];
 
-for (const [name, file, mutate, pattern] of REJECTS) {
+for (const { name, file, edit, pattern } of REJECTS) {
   test(name, (t) => {
-    expectFail(t, (dir) => { editJson(join(dir, file), mutate); }, pattern);
+    expectFail(t, (dir) => { editJson(join(dir, file), edit); }, pattern);
   });
 }
 
@@ -207,8 +391,8 @@ test("--new persists a URL anchor with its stability_class", (t) => {
   const dir = tree(t);
   editJson(join(dir, "eval-badcases.json"), (b) => {
     b.badcases[0].expected.mustHitUrls = ["https://docs.example.com/install"];
-    // frozen-spec, not the fixture's own "controlled": the entry must carry the
-    // badcase's value, not whatever the base fixture happens to hold.
+    // frozen-spec rather than the fixture's default controlled, so the entry
+    // proves it took the badcase's value.
     b.badcases[0].stability_class = "frozen-spec";
   });
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
@@ -226,6 +410,13 @@ test("a null coverage dimension row does not crash the recount", (t) => {
   editJson(join(dir, "eval-looks.coverage.json"), (c) => { c.dimensions.push(null); });
   const r = run(dir, ["--id", "docs-bc0001", "--new"]);
   assert.equal(r.status, 0, r.stderr);
+  const cov = JSON.parse(readFileSync(join(dir, "eval-looks.coverage.json"), "utf8"));
+  const dim = (name) => cov.dimensions.find((d) => d && d.dimension === name);
+  assert.equal(dim("intent")?.count, 2, "the intent recount still lands");
+  assert.deepEqual(dim("intent")?.classes, { howto: 2 });
+  assert.equal(dim("lang")?.count, 2, "the lang recount still lands");
+  assert.deepEqual(dim("lang")?.classes, { en: 2 });
+  assert.equal(cov.dimensions.at(-1), null, "the null row rides through untouched");
 });
 
 test("--new rejects a question already in the golden corpus", (t) => {
