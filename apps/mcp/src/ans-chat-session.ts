@@ -544,14 +544,17 @@ export function buildAnsChatConsolidateResult(
       ? "\nno conclusion: " + report.noConclusion +
         " cluster(s) answered without one (empty <conclusion>, or only a quote block) — nothing was written"
       : "") +
-    // Every counter above is counted per cluster independently: one cluster can
-    // show up under more than one of them, so their sum is not a cluster count.
+    // These three are per-cluster and independent: one cluster can appear under
+    // more than one of them. add/update/skip stay exclusive and the material
+    // counters count rows, so this note names its counters instead of saying
+    // "these counts" for the whole summary.
     ([
       (report.quotesMissing ?? 0) > 0,
       (report.quotesMalformed ?? 0) > 0,
       (report.noConclusion ?? 0) > 0,
     ].filter(Boolean).length > 1
-      ? "\nnote: these counts are independent — one cluster can appear under more than one of them; do not add them up"
+      ? "\nnote: quotesMissing / quotesMalformed / no conclusion are counted per cluster," +
+        " so one cluster can appear under more than one of them; do not add them up"
       : "");
   // #261 (D6): one readable line per refused correction, so a content-only
   // proxy still sees the old knowledge, the candidate, the sources, the
