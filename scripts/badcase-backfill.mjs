@@ -82,6 +82,11 @@ for (const problem of goldenShapeProblems(golden)) fail(GOLDEN_FILE + " " + prob
 const cov = readJson(COVERAGE, "eval-looks.coverage.json");
 if (!cov || typeof cov !== "object" || Array.isArray(cov)) fail("eval-looks.coverage.json root must be an object");
 if (!Array.isArray(cov.dimensions)) fail("eval-looks.coverage.json: dimensions must be an array");
+// A row that is not an object cannot be covered or deferred; rejecting it here
+// keeps the script from writing a manifest the store validator would refuse.
+if (!cov.dimensions.every((d) => d && typeof d === "object" && !Array.isArray(d))) {
+  fail("eval-looks.coverage.json: dimensions must contain objects");
+}
 
 if (into) {
   const target = golden.entries.find((e) => e.id === into);
