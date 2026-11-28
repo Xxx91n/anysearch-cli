@@ -286,8 +286,8 @@ export async function runChat(argv: string[]): Promise<number> {
         domainsDirs: engine.domainsDirs,
         // CLI is the place that decides TTY; kernel decides isInteractive itself.
         interactive,
-        // #612: only the interactive CLI can really ask a human. The prompt
-        // also re-checks the TTY, so a redirected stdin still refuses.
+        // Only an interactive CLI can really ask a human; the prompt re-checks
+        // the TTY, so a redirected stdin still refuses.
         ...(interactive ? { confirmFetchTrust: askFetchTrust } : {}),
         model: session.model,
         // #113: real window for the L0 watermark; undefined for an unconfigured

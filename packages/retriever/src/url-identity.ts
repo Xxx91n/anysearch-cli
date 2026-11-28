@@ -104,10 +104,9 @@ export function normalizeTrustDomain(raw: string): string | undefined {
   if (!/^[a-z]{2,63}$/.test(labels[labels.length - 1]!)) return undefined;
   const parsed = parseWebUrl("https://" + host + "/");
   if (!parsed) return undefined;
+  // The rest of the URL is already known from the checks above; this one guards
+  // against the parser rewriting the host (a relaxed rule above would need more).
   if (parsed.hostname.replace(/\.$/, "") !== host) return undefined;
-  if (parsed.port || parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
-    return undefined;
-  }
   return host;
 }
 

@@ -90,7 +90,7 @@ async function main() {
       allow: string[] = [],
       deny: string[] = [],
       ledger?: BudgetLedgerPort,
-      confirmTrust?: (request: { domain: string; urls: readonly string[] }) => Promise<boolean>,
+      confirmTrust?: (request: { domain: string; urls: readonly string[] }, signal?: AbortSignal) => Promise<boolean>,
       storePort: FetchStorePort = fetchStore,
     ) =>
       createFetchTool({
@@ -773,9 +773,30 @@ async function main() {
       });
       assert(rawText(second).includes("没有同意") && asked === 1,
         "a declined host is not asked twice in the same run");
-      assert(rawText(second).includes("连续 2 次整批网址都没被放行"),
-        "a trust refusal counts toward the rejected-batch stop");
+      assert(!rawText(second).includes("整批网址都没被放行"),
+        "a trust refusal does not count toward the rejected-batch stop");
       assert(!store.hasFetchTicket(session.id, "tofu", "docs.no.example"), "a decline writes no ticket");
+
+      // A decline must not block the rest of the run: a URL the user pasted is
+      // still readable, and a different host can still be asked about.
+      const pasted = envelope(await tool.execute("t25m2", { handles: ["example.com/user-pasted"] }));
+      assert(pasted.pages.length === 1 && !rawText(first).includes("这轮抓页已经停了"),
+        "a trust refusal does not stop the run");
+      const noTicket = await tool.execute("t25m3", { handles: ["https://docs.other.example/page"] });
+      assert(rawText(noTicket).includes("还搜不到的话") && !rawText(noTicket).includes("别再带 requestTrustFor"),
+        "a host nobody answered still invites a trust request");
+    }
+
+    {
+      // The run must count a real policy refusal, but not the human's answer.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      let asked = 0;
+      const tool = makeTool(provider, [], [], undefined, async () => { asked++; return false; });
+      await tool.execute("t25r1", { handles: ["https://docs.deny2.example/a"], requestTrustFor: "docs.deny2.example" });
+      const again = await tool.execute("t25r2", { handles: ["https://docs.deny2.example/b"] });
+      assert(rawText(again).includes("信任已经问过了") && !rawText(again).includes("还搜不到的话"),
+        "an answered host is not invited to ask again");
+      assert(asked === 1, "an answered host prompts exactly once");
     }
 
     {
@@ -798,6 +819,25 @@ async function main() {
       assert(rawText(second).includes("别再问了") && asked === 1,
         "a retry after a failed write does not prompt the user again");
       assert(provider.calls.length === 0, "neither call reads a page");
+    }
+
+    {
+      // Ctrl-C must end the prompt wait instead of leaving it stuck.
+      const provider = new FakeProvider((urls) => pageEnvelope(urls));
+      const controller = new AbortController();
+      let received: AbortSignal | undefined;
+      const tool = makeTool(provider, [], [], undefined, (_request, signal) => {
+        received = signal;
+        return new Promise<boolean>((resolve) => {
+          signal?.addEventListener("abort", () => resolve(false), { once: true });
+        });
+      });
+      const pending = tool.execute("t25s1", { handles: ["https://docs.abort.example/a"], requestTrustFor: "docs.abort.example" }, controller.signal);
+      assert(received !== undefined && received === controller.signal, "the prompt receives the caller's abort signal");
+      controller.abort();
+      const result = await pending;
+      assert(rawText(result).includes("没有同意"), "an aborted prompt counts as a decline");
+      assert(provider.calls.length === 0, "an aborted prompt reads no page");
     }
 
     store.close();

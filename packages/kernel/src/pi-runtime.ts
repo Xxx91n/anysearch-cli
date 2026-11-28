@@ -62,20 +62,20 @@ export function isInteractive(): boolean {
   return Boolean(process.stdin.isTTY);
 }
 
-// TTY y/N prompt; deny-first default on EOF/error. No timeout — waits for input
-// (ponytail: add clock timeout if HITL UX reports stuck prompts).
-async function askYesNo(question: string): Promise<boolean> {
-  const readline = await import("node:readline");
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+// TTY y/N prompt; deny-first default on EOF/error/abort. No timeout — waits for
+// input (ponytail: add clock timeout if HITL UX reports stuck prompts).
+async function askYesNo(question: string, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return false;
   try {
-    const answer: string = await new Promise((resolve) => {
-      rl.question(question, resolve);
-    });
-    return /^y(es)?$/i.test(answer.trim());
+    const readline = await import("node:readline");
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    const answer = await new Promise<string | null>((resolve) => {
+      rl.question(question, (text) => resolve(text));
+      signal?.addEventListener("abort", () => resolve(null), { once: true });
+    }).finally(() => rl.close());
+    return answer === null ? false : /^y(es)?$/i.test(answer.trim());
   } catch {
     return false;
-  } finally {
-    rl.close();
   }
 }
 
@@ -97,10 +97,11 @@ export function fetchTrustPrompt(request: FetchTrustRequest): string {
 }
 
 // Session TOFU prompt. Only an interactive CLI calls it; it still re-checks the
-// TTY, so a redirected stdin refuses instead of waiting on nobody.
-export async function askFetchTrust(request: FetchTrustRequest): Promise<boolean> {
+// TTY, so a redirected stdin refuses instead of waiting on nobody. Abort counts
+// as "no", so Ctrl-C ends the wait instead of leaving it stuck.
+export async function askFetchTrust(request: FetchTrustRequest, signal?: AbortSignal): Promise<boolean> {
   if (!isInteractive()) return false;
-  return askYesNo(fetchTrustPrompt(request));
+  return askYesNo(fetchTrustPrompt(request), signal);
 }
 
 // Headless deny path: queue the blocked URL for `ans hitl review` recovery.
@@ -475,12 +476,8 @@ export interface PiAgentRuntimeOptions {
   /** #113: REAL model context window (LlmSession.contextWindow); undefined = unknown. */
   contextWindow?: number;
   interactive?: boolean; // wiring grants TTY-ask eligibility (headless/MCP omit -> deny-first)
-  /**
-   * #612: the session TOFU prompt. The fetch tool calls it only when
-   * `interactive` is also true; leaving it out keeps headless/MCP from ever
-   * asking and turns a trust request into an in-band refusal.
-   */
-  confirmFetchTrust?: (request: FetchTrustRequest) => Promise<boolean>;
+  /** Session TOFU prompt. Only the interactive CLI passes it; omitting it turns a trust request into an in-band refusal. */
+  confirmFetchTrust?: (request: FetchTrustRequest, signal?: AbortSignal) => Promise<boolean>;
   // caller observation span — retrieval audit events land
   // inside the caller's span events_json (ans_chat / third retrieval surface).
   span?: RetrievalObservationSink;

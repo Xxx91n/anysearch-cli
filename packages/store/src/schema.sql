@@ -185,7 +185,7 @@ CREATE TABLE IF NOT EXISTS retrieval_chunk_vectors (
 
 -- Handles a model may turn into a page read in one session.
 -- search stores archive row ids; user stores URL identities plus an http: marker;
--- tofu stores a bare host the user trusted for this session (#612).
+-- tofu stores a bare host the user trusted for this session.
 -- Tickets cascade with their session.
 CREATE TABLE IF NOT EXISTS fetch_tickets (
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

@@ -37,6 +37,8 @@ export interface FetchRejectContext {
   host?: string;
   /** True when an interactive CLI can ask the user to trust a site this session. */
   trustAvailable?: boolean;
+  /** True when this host was already asked and refused, or its ticket could not be written. */
+  trustRefused?: boolean;
 }
 
 export type FetchTicketSource = FetchTicketKind;
@@ -48,9 +50,11 @@ export function fetchRejectMessage(reason: FetchRejectReason, context: FetchReje
       const site = context.host
         ? "先做站点限定搜索：在 search 的查询里写 `site:" + context.host + " 关键词`，"
         : "先按标题或站点搜索，";
-      const trust = context.trustAvailable
-        ? "还搜不到的话，带 requestTrustFor: \"" + (context.host ?? "域名") + "\" 再调一次，用户会看清网址后决定信不信任这个网站；"
-        : "当前是非交互模式，不能弹确认；让用户把链接贴进对话，";
+      const trust = context.trustRefused
+        ? "这个主机的信任已经问过了，别再带 requestTrustFor；让用户把网页正文贴进来，或者换一个站点。"
+        : context.trustAvailable
+          ? "还搜不到的话，带 requestTrustFor: \"" + (context.host ?? "域名") + "\" 再调一次，用户会看清网址后决定信不信任这个网站；"
+          : "当前是非交互模式，不能弹确认；让用户把链接贴进对话，";
       return "这个网址不在本会话的搜索结果或用户消息里，抓不了。" + site + "搜到了用 m: 句柄读。" + trust + "不要换 URL 写法重试。";
     }
     case "stale_handle":

@@ -90,9 +90,9 @@ export interface FetchToolOptions {
   /**
    * Present only when the host can really ask a human (interactive CLI on a
    * TTY). Headless and MCP omit it, so a trust request is a refusal, not a
-   * hung prompt.
+   * hung prompt. `signal` aborts the wait, so Ctrl-C does not leave the prompt stuck.
    */
-  confirmTrust?: (request: FetchTrustRequest) => Promise<boolean>;
+  confirmTrust?: (request: FetchTrustRequest, signal?: AbortSignal) => Promise<boolean>;
 }
 
 interface CachedRead {
@@ -118,7 +118,15 @@ interface Target {
   title?: string;
 }
 
-/** Per-question page reads: cached URLs, new pages, and the two stop streaks. */
+/**
+ * Per-question page reads: cached URLs, new pages, and the two stop streaks.
+ *
+ * A trust question is not a rejected batch: the model followed the documented
+ * escape hatch and a human decided. Counting it would stop the run after
+ * "no_ticket, then ask, user says no", which also blocks reading ordinary
+ * search handles the user still wants. So trust refusals never touch
+ * `rejectedStreak`, and asking clears the earlier no_ticket.
+ */
 class FetchRunState {
   pagesRead = 0;
   emptyStreak = 0;
@@ -161,7 +169,7 @@ class FetchRunState {
     return false;
   }
 
-  noteAdmittedBatch(): void {
+  resetRejectedStreak(): void {
     this.rejectedStreak = 0;
   }
 
@@ -245,7 +253,7 @@ function resolveTicket(
   sessionId: string,
   policy: FetchPolicy,
   span: RetrievalObservationSink | undefined,
-  trustAvailable: boolean,
+  trustFor: (host: string) => { trustAvailable: boolean; trustRefused: boolean },
 ): { ok: true; target: Target } | { ok: false; rejection: Rejection } {
   const raw = handle.trim();
   if (!raw) {
@@ -298,7 +306,7 @@ function resolveTicket(
           rejection: {
             handle,
             reason: "no_ticket",
-            message: fetchRejectMessage("no_ticket", { host: address.host, trustAvailable }),
+            message: fetchRejectMessage("no_ticket", { host: address.host, ...trustFor(address.host) }),
           },
         };
       }
@@ -334,6 +342,11 @@ function resolveTicket(
   return { ok: true, target: { identity, requestUrl, ...(title ? { title } : {}) } };
 }
 
+/**
+ * One refusal shape for the trust path: log the denial and return the message.
+ * `counts` decides whether this failure also feeds the two-rejected-batches stop.
+ * A trust question the user already answered does not (see rejectTrustSettled).
+ */
 function rejectTrust(
   options: FetchToolOptions,
   state: FetchRunState,
@@ -342,27 +355,33 @@ function rejectTrust(
   handle: string,
   host?: string,
   port?: string,
+  counts = true,
 ): ReturnType<typeof textResult> {
   reportDenial(options.span, { handle, source: "tofu", reason, ...(host ? { host } : {}), ...(port ? { port } : {}) });
-  const stoppedNow = state.noteRejectedBatch();
+  const stoppedNow = counts ? state.noteRejectedBatch() : false;
   return textResult(stoppedNow ? message + "\n" + REJECTED_STOP_MESSAGE : message, {
     rejected: [{ handle, reason }],
     softStopped: stoppedNow,
   });
 }
 
-/** One refusal shape for a ticket that the user agreed to but the store could not write. */
-function rejectTrustWriteFailed(
+/**
+ * Reject a host the user already answered for (declined, or the ticket could not
+ * be written). The question is settled, so this path never counts toward the
+ * rejected-batch stop and never asks again.
+ */
+function rejectTrustSettled(
   options: FetchToolOptions,
   state: FetchRunState,
+  reason: "trust_declined" | "trust_write_failed",
   domain: string,
   host: string,
 ): ReturnType<typeof textResult> {
-  state.failedTrust.add(host);
+  (reason === "trust_declined" ? state.declinedTrust : state.failedTrust).add(host);
   return rejectTrust(
     options, state,
-    fetchRejectMessage("trust_write_failed", { host }),
-    "trust_write_failed", domain, host,
+    fetchRejectMessage(reason, { host }),
+    reason, domain, host, undefined, false,
   );
 }
 
@@ -379,6 +398,7 @@ async function handleTrustRequest(
   handles: readonly string[],
   options: FetchToolOptions,
   state: FetchRunState,
+  signal?: AbortSignal,
 ): Promise<ReturnType<typeof textResult> | undefined> {
   if (typeof raw !== "string") return textResult(TRUST_DOMAIN_FORMAT);
   const domain = normalizeTrustDomain(raw);
@@ -409,34 +429,27 @@ async function handleTrustRequest(
     return rejectTrust(options, state, fetchRejectMessage("trust_unavailable"), "trust_unavailable", domain, address.host);
   }
   if (state.failedTrust.has(address.host)) {
-    return rejectTrustWriteFailed(options, state, domain, address.host);
+    return rejectTrustSettled(options, state, "trust_write_failed", domain, address.host);
   }
   if (state.declinedTrust.has(address.host)) {
-    return rejectTrust(
-      options, state,
-      fetchRejectMessage("trust_declined", { host: address.host }),
-      "trust_declined", domain, address.host,
-    );
+    return rejectTrustSettled(options, state, "trust_declined", domain, address.host);
   }
+  // The model followed the documented escape hatch and a human is about to
+  // decide. The earlier no_ticket is answered, not repeated.
+  state.resetRejectedStreak();
   let granted = false;
   try {
-    granted = await options.confirmTrust({ domain: address.host, urls });
+    granted = await options.confirmTrust({ domain: address.host, urls }, signal);
   } catch {
     granted = false;
   }
   if (!granted) {
-    state.declinedTrust.add(address.host);
-    return rejectTrust(
-      options, state,
-      fetchRejectMessage("trust_declined", { host: address.host }),
-      "trust_declined", domain, address.host,
-    );
+    return rejectTrustSettled(options, state, "trust_declined", domain, address.host);
   }
   try {
     await options.store.saveFetchTickets(options.sessionId, "tofu", [address.host]);
   } catch {
-    // Remember it, so a retry does not ask the same user again.
-    return rejectTrustWriteFailed(options, state, domain, address.host);
+    return rejectTrustSettled(options, state, "trust_write_failed", domain, address.host);
   }
   options.span?.addEvent("fetch.trust", {
     "fetch.host": address.host,
@@ -668,7 +681,7 @@ export function createFetchTool(options: FetchToolOptions): AgentTool {
         : FETCH_LIMITS.maxCharacters;
 
       if (record.requestTrustFor !== undefined) {
-        const handled = await handleTrustRequest(record.requestTrustFor, handles, options, state);
+        const handled = await handleTrustRequest(record.requestTrustFor, handles, options, state, signal);
         if (handled) return handled;
       }
 
@@ -677,7 +690,10 @@ export function createFetchTool(options: FetchToolOptions): AgentTool {
       const admitted: Target[] = [];
       const rejected: Rejection[] = [];
       for (const handle of handles) {
-        const resolved = resolveTicket(handle, options.store, options.sessionId, policy, options.span, trustAvailable);
+        const resolved = resolveTicket(handle, options.store, options.sessionId, policy, options.span, (host) => ({
+          trustAvailable,
+          trustRefused: state.declinedTrust.has(host) || state.failedTrust.has(host),
+        }));
         if (resolved.ok) admitted.push(resolved.target);
         else rejected.push(resolved.rejection);
       }
@@ -694,7 +710,7 @@ export function createFetchTool(options: FetchToolOptions): AgentTool {
           { rejected: rejectedForOutput.map((r) => ({ handle: r.handle, reason: r.reason })), softStopped: stoppedNow },
         );
       }
-      state.noteAdmittedBatch();
+      state.resetRejectedStreak();
 
       // A repeated spelling of the same page is one read, not two.
       const byIdentity = new Map<string, Target>();

@@ -167,6 +167,12 @@ assert(fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailabl
   "a headless no-ticket refusal says it cannot prompt");
 assert(!fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: false }).includes("requestTrustFor"),
   "a headless refusal does not suggest a parameter that cannot work");
+assert(fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: true, trustRefused: true })
+  .includes("信任已经问过了"),
+  "an answered host is not invited to ask again");
+assert(!fetchRejectMessage("no_ticket", { host: "docs.example.com", trustAvailable: true, trustRefused: true })
+  .includes("还搜不到的话"),
+  "an answered host drops the requestTrustFor suggestion entirely");
 assert(fetchRejectMessage("trust_declined", { host: "docs.example.com" }).includes("docs.example.com"),
   "a declined trust refusal names the domain");
 assert(fetchRejectMessage("trust_write_failed", { host: "docs.example.com" }).includes("docs.example.com")
