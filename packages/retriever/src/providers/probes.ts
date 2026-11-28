@@ -13,7 +13,7 @@
 // 三家回包的确切形状（含坏 key 那几种）钉在 packages/retriever/test/provider-probes.test.ts 的夹具里。
 import { createParser, type EventSourceMessage } from "eventsource-parser";
 import { classifyProviderError, type ProviderErrorClass } from "../contract";
-import { PROVIDER_FACTS, resolveAnySearchEndpoint, type UndetectableClass } from "./provider-facts";
+import { MCP_CLIENT_VERSION, PROVIDER_FACTS, resolveAnySearchEndpoint, type UndetectableClass } from "./provider-facts";
 
 /** 一次探针请求多久算超时。服务器回了响应头再卡住，也在这一条时限里。 */
 const PROBE_TIMEOUT_MS = 10_000;
@@ -241,8 +241,8 @@ export async function probeAnySearch(input: ProbeInput): Promise<ProbeOutcome> {
       params: {
         protocolVersion: facts.mcpProtocolVersion,
         capabilities: {},
-        // 跟适配器发的 clientInfo 一致（那边也是写死的 0.2.0）：探针要量的就是产品那条路。
-        clientInfo: { name: "anysearch-cli-doctor", version: "0.2.0" },
+        // 跟适配器共用同一个版本号，探针要量的就是产品那条路。
+        clientInfo: { name: "anysearch-cli-doctor", version: MCP_CLIENT_VERSION },
       },
     }), 1, undetectable);
     const protocolVersion = typeof handshake.protocolVersion === "string" ? handshake.protocolVersion : undefined;

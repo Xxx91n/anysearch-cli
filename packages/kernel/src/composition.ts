@@ -6,7 +6,7 @@
 // decision 4A: loads domain from domains/<name>.toml convention directory.
 
 import { TavilyProvider, AnySearchProvider, createExaProvider, createExaFetchProvider, createTavilyFetchProvider, createAnySearchFetchProvider } from "@anysearch-cli/retriever/providers";
-import { redactSecrets, type FetchProvider, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
+import { redactSecrets, writeStderrDiagnostic, type FetchProvider, type SearchProvider, type SearchRequest } from "@anysearch-cli/retriever";
 import { DEFAULT_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, RetroaererdEngine } from "./engine";
 import type { RetrieverPort, DomainConfigPort, SessionStorePort, BudgetLedgerPort } from "./ports";
 import {
@@ -102,24 +102,8 @@ function trimResolvedKeys(creds: CredentialSource): CredentialSource {
 
 // Best-effort diagnostic: a closed/broken stderr (e.g. the MCP parent closed
 // the pipe) must not turn the fail-open engine build into a process crash —
-// both synchronous write throws and asynchronous stream errors are absorbed.
+// handled by writeStderrDiagnostic from @anysearch-cli/retriever.
 // The providerBuildErrors record remains the durable trace in that case.
-function writeProviderDiagnostic(message: string): void {
-  const stderr = process.stderr;
-  const swallow = () => {};
-  stderr.once("error", swallow);
-  try {
-    // On async write failure Node invokes the callback with the error BEFORE
-    // emitting 'error' — the listener must survive until the event fires, so
-    // it is removed only on a clean write (a lingering once-listener after a
-    // failed write is harmless: it self-removes on the swallowed event).
-    stderr.write(message, (error) => {
-      if (!error) stderr.off("error", swallow);
-    });
-  } catch {
-    stderr.off("error", swallow);
-  }
-}
 
 /**
  * Which of the two things a provider-construction throw means, for callers that
@@ -157,7 +141,7 @@ function buildArm<T>(
       ? "permanent: missing/invalid credential — set the provider's API key env"
       : "unexpected construction fault";
     if (providerBuildErrors) providerBuildErrors[id] = message;
-    writeProviderDiagnostic("[anysearch] " + label + " " + id + " construction failed: " + message + "\n");
+    writeStderrDiagnostic("[anysearch] " + label + " " + id + " construction failed: " + message + "\n");
     return undefined;
   }
 }
@@ -181,7 +165,7 @@ function buildFetchProviders(ids: string[], creds: CredentialSource): FetchProvi
     // 域里写了读页这边没有的 id（打错，或者这家只有搜索）：说一句，别让配置看着开了
     // 却读不了页。搜索侧能不能建是另一回事，那个侧有自己的表。
     if (!Object.hasOwn(FETCH_PROVIDER_CONSTRUCTORS, id)) {
-      writeProviderDiagnostic(
+      writeStderrDiagnostic(
         "[anysearch] 读页没有信息源 id \"" + id + "\"：检查是不是打错了，或者这家只有搜索\n",
       );
     }
@@ -488,7 +472,7 @@ export function createEngine(
       for (const warning of creds?.warnings ?? []) {
         // Same rule as a thrown fault: the sentence is useful, so it is kept,
         // but only after anything key-shaped has been removed.
-        writeProviderDiagnostic("[anysearch] " + redactSecrets(warning) + "\n");
+        writeStderrDiagnostic("[anysearch] " + redactSecrets(warning) + "\n");
       }
       const resolved: CredentialSources = {
         status: "resolved",
@@ -524,7 +508,7 @@ export function createEngine(
       // rule as buildArm above).
       const reason = classifyCredentialFault(e);
       credentialSources = { status: "failed", error: reason };
-      writeProviderDiagnostic(
+      writeStderrDiagnostic(
         "[anysearch] search credentials could not be resolved: " + reason +
         (fromEnvironment
           ? " — falling back to environment variables only\n"

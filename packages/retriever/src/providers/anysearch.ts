@@ -3,7 +3,7 @@
 //
 // tools/call search 的入参是 {query, max_results (最多 10), domain, sub_domain,
 // sub_domain_params}；回包的文字部分是一段 markdown（## Search Results (N results,
-// Tms) 加 ### N. title / - **URL** u / 摘要行），结构部分若是未来版本带上来就优先读。
+// Tms) 加 ### N. 标题 / - **URL**: <地址> / 摘要行），结构部分若是未来版本带上来就优先读。
 // result.isError:true（例如 invalid_api_key）直接让这条臂失败：不静默返回 0 条。
 //
 // 端点与协议版本都在 PROVIDER_FACTS.anysearch 那一格，适配器、探针都从那里取。
@@ -136,6 +136,13 @@ const RESULT_HEADER = /##\s+Search Results/;
 /** 搜索回包：结构部分按搜索结果定型（content / isError 都在同一份里）。 */
 type SearchToolResult = McpToolResult<{ results?: StructuredSearchItem[] }>;
 
+function upstreamTextSuffix(raw: string): string {
+  const shown = redactSecrets(raw, { keepPaths: false })
+    .replace(KEY_FIELD_GLOBAL, "api_key=[redacted]")
+    .slice(0, 200);
+  return " [upstream text: " + (shown || "(no text)") + "]";
+}
+
 // 回包一律先过这一关：isError、200 但形状不对（没有「## Search Results」头，
 // 结构部分也不是数组）都抛错，这条臂降级，不静默返回 0 条。Content-Type 的
 // 检查在传输那一层（anysearch-mcp.ts 的 post），这里拿到的已经是解析过的消息。
@@ -150,11 +157,8 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
     // below is for the human reading the error, and the declared class is what
     // the engine records.
     const cls = failure?.cls ?? (classifier === "unknown" ? "permanent-protocol" : classifier);
-    const shown = redactSecrets(full, { keepPaths: false })
-      .replace(KEY_FIELD_GLOBAL, "api_key=[redacted]")
-      .slice(0, 200);
     const head = (failure ? failure.prefix : "isError") + " " + providerErrorMarker(cls);
-    throw withProviderErrorClass(new Error("AnySearch MCP tools/call " + head + " [upstream text: " + (shown || "(no text)") + "]"), cls);
+    throw withProviderErrorClass(new Error("AnySearch MCP tools/call " + head + upstreamTextSuffix(full)), cls);
   }
   const sc = r.structuredContent;
   if (sc && Array.isArray(sc.results)) {
@@ -163,8 +167,9 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
   const md = toolResultText(r);
   // 有没有字、怎么分类都看松拼接那一份：这条路上游常常不标 type（匿名配额墙就是 HTTP 200、
   // 正文里带话、没有结果体），只挑 type 会把整段挑空，最后误报成 permanent-protocol。
+  // md 是 loose 的子集，loose 空了 md 一定也是空的。
   const loose = toolResultErrorText(r);
-  if (!md.trim() && !loose.trim()) throw new Error("AnySearch MCP tools/call returned no text content");
+  if (!loose.trim()) throw new Error("AnySearch MCP tools/call returned no text content");
   // 门槛看两路：md 里没结果头时，再看不挑 type 的那份有没有。两份拼法不同：
   // 解析得用保留换行的，空格拼的会把 markdown 行结构压平。
   let envelopeText = "";
@@ -176,10 +181,16 @@ function mapToolsCallResult(result: Record<string, unknown>): { results: Normali
     // 认得出的话当成协议坏，整条臂白退场。
     const { failure, classifier } = readReply(loose);
     if (failure) {
-      throw withProviderErrorClass(new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls)), failure.cls);
+      throw withProviderErrorClass(
+        new Error("AnySearch MCP tools/call " + failure.prefix + " " + providerErrorMarker(failure.cls) + upstreamTextSuffix(loose)),
+        failure.cls,
+      );
     }
     if (classifier !== "unknown") {
-      throw withProviderErrorClass(new Error("AnySearch MCP tools/call " + providerErrorMarker(classifier)), classifier);
+      throw withProviderErrorClass(
+        new Error("AnySearch MCP tools/call " + providerErrorMarker(classifier) + upstreamTextSuffix(loose)),
+        classifier,
+      );
     }
     // 两边都认不出（把工具清单当成搜索答复的那类回包）：当形状坏。
     throw new Error("AnySearch MCP tools/call malformed text (no '## Search Results' header)");

@@ -24,16 +24,16 @@ class FakeProvider implements FetchProvider {
   readonly maxUrlsPerCall: number;
   readonly calls: string[][] = [];
   constructor(
-    private readonly handler: (urls: string[]) => FetchEnvelope | Promise<FetchEnvelope>,
+    private readonly handler: (urls: string[], signal: AbortSignal) => FetchEnvelope | Promise<FetchEnvelope>,
     id = "exa",
     maxUrlsPerCall = 100,
   ) {
     this.id = id;
     this.maxUrlsPerCall = maxUrlsPerCall;
   }
-  async fetch(req: FetchRequest): Promise<FetchEnvelope> {
+  async fetch(req: FetchRequest, signal: AbortSignal): Promise<FetchEnvelope> {
     this.calls.push(req.urls);
-    return this.handler(req.urls);
+    return this.handler(req.urls, signal);
   }
 }
 
@@ -588,12 +588,13 @@ async function main() {
       const provider = new FakeProvider(() => { throw new Error("provider down"); }, "down", 5);
       const tool = makeTool(provider, ["allowed.example"]);
       const first = await tool.execute("t24k", { handles: ["https://allowed.example/down"] });
-      assert(rawText(first).includes("没有回包"), "an upstream outage names the provider, not empty content");
-      await tool.execute("t24l", { handles: ["https://allowed.example/down"] });
-      const third = await tool.execute("t24m", { handles: ["https://allowed.example/down"] });
+      assert(rawText(first).includes("都退场了") && !rawText(first).includes("稍后再试"),
+        "when the last arm dies on this call, the notice stops telling the model to retry");
+      await tool.execute("t24l", { handles: ["allowed.example/down"] });
+      const third = await tool.execute("t24m", { handles: ["allowed.example/down"] });
       const text = rawText(third);
       assert(text.includes("都退场了"),
-        "once every arm is dead the notice stops telling the model another try would fetch");
+        "once every arm is dead the notice still says every arm retired");
       assert(!text.includes("稍后再试"), "and it does not ask for a retry that would send nothing");
       assert(!text.includes("连续 2 次没拿到新内容"),
         "an upstream outage does not trip the empty-batch stop");
@@ -793,6 +794,62 @@ async function main() {
       assert(body.pages.length === 3 && body.failures.length === 0, "all three pages end up read");
       assert(body.pages.find((page) => page.url === "https://allowed.example/t1")?.provider === "anysearch",
         "the page read before the fault keeps naming its arm");
+    }
+
+    // ---- 7n. tool's own deadline does not retire the arm (#610) ----------
+    {
+      await tickets("user", ["allowed.example/slow-wall", "allowed.example/fast-next"]);
+      let attempt = 0;
+      const slowThenFast = new FakeProvider(async (urls, signal) => {
+        attempt++;
+        if (attempt === 1) {
+          await new Promise<void>((_, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        }
+        return {
+          provider: "exa",
+          pages: urls.map((url) => ({ url, text: "exa recovered" })),
+          failures: [],
+        };
+      }, "exa", 5);
+      const backup = new FakeProvider((urls) => ({
+        provider: "tavily",
+        pages: urls.map((url) => ({ url, text: "tavily backup" })),
+        failures: [],
+      }), "tavily", 5);
+      const tool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [slowThenFast, backup],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+        callTimeoutMs: 25,
+      });
+      const first = await tool.execute("t25h1", { handles: ["https://allowed.example/slow-wall"] });
+      assert(envelope(first).pages[0]?.provider === "tavily",
+        "a timed-out URL falls back to the next arm");
+      const second = await tool.execute("t25h2", { handles: ["https://allowed.example/fast-next"] });
+      assert(slowThenFast.calls.length === 2 && envelope(second).pages[0]?.provider === "exa",
+        "the timed-out arm is not retired and handles the next call in the same run");
+
+      // Single-arm timeout keeps the arm alive, so the notice still invites a retry.
+      await tickets("user", ["allowed.example/slow-only"]);
+      const slowOnly = new FakeProvider(async (_urls, signal) => {
+        await new Promise<void>((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+        return pageEnvelope([]);
+      }, "exa", 5);
+      const singleTool = createFetchTool({
+        store: fetchStore,
+        sessionId: session.id,
+        providers: [slowOnly],
+        policy: () => ({ allow: ["allowed.example"], deny: [] }),
+        callTimeoutMs: 25,
+      });
+      const timedOutOnly = await singleTool.execute("t25h3", { handles: ["https://allowed.example/slow-only"] });
+      assert(rawText(timedOutOnly).includes("没有回包") && !rawText(timedOutOnly).includes("都退场了"),
+        "a single-arm timeout keeps PROVIDER_NO_REPLY_MESSAGE because the arm is still alive");
     }
 
     // ---- 8. parameter errors are ordinary tool errors ----------------------

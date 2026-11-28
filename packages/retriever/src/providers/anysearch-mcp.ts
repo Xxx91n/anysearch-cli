@@ -7,26 +7,12 @@
 // `/mcp` 并提示一次（这个适配器只走 MCP）。
 
 import { createParser } from "eventsource-parser";
-import { oneLineFault, waitSecondsFromHeader } from "../fetch-contract";
-import { ANYSEARCH_LEGACY_REST_SUFFIX, PROVIDER_FACTS, resolveAnySearchEndpoint } from "./provider-facts";
+import { oneLineFault } from "../fetch-contract";
+import { waitSecondsFromHeader } from "../http-headers";
+import { writeStderrDiagnostic } from "../stderr";
+import { ANYSEARCH_LEGACY_REST_SUFFIX, MCP_CLIENT_VERSION, PROVIDER_FACTS, resolveAnySearchEndpoint } from "./provider-facts";
 
 let endpointRewriteWarned = false;
-
-// 打一行提示，但 stderr 关掉/断掉时不能把建臂带塌：写失败时错误是异步发 'error' 事件的
-// （不是同步抛），没人接就是未捕获异常、进程直接没了；同步抛也一起挡住。
-function writeDiagnostic(message: string): void {
-  const stderr = process.stderr;
-  const swallow = () => { };
-  stderr.once("error", swallow);
-  try {
-    stderr.write(message, (error) => {
-      // 写成功才摘监听：失败时 Node 先回调再发 'error'，摘早了就没人接。
-      if (!error) stderr.off("error", swallow);
-    });
-  } catch {
-    stderr.off("error", swallow);
-  }
-}
 
 // 端点写成 REST 搜索尾巴的，换成 /mcp 形式，提示一次；空串算没配，退回表里那一格。
 // 提示里不打地址：端点可能带 userinfo。
@@ -34,7 +20,7 @@ function normalizeEndpoint(raw: string | undefined): string {
   const { endpoint, rewritten } = resolveAnySearchEndpoint(raw);
   if (rewritten && !endpointRewriteWarned) {
     endpointRewriteWarned = true;
-    writeDiagnostic(
+    writeStderrDiagnostic(
       "[anysearch] 端点写成了 " + ANYSEARCH_LEGACY_REST_SUFFIX +
       "（这个适配器只走 MCP），已改用 /mcp 形式\n",
     );
@@ -110,7 +96,7 @@ export function toolResultBodyText(reply: McpToolResult | undefined): string {
 // 等到工具那 20 秒墙，本来能读完的网址全推给下一家。
 async function readSseJsonRpc(resp: Response, id: number, method: string): Promise<JsonRpcMessage> {
   const reader = resp.body?.getReader();
-  if (!reader) throw new Error("AnySearch MCP " + method + " SSE reply carried no body");
+  if (!reader) throw new Error("AnySearch MCP " + method + " SSE reply carried no body (malformed reply)");
   const seen: { reply?: JsonRpcMessage; failure?: JsonRpcMessage } = {};
   const decoder = new TextDecoder();
   const parser = createParser({
@@ -236,7 +222,7 @@ export class AnySearchMcpClient {
       const res = await this.rpc("initialize", {
         protocolVersion: PROVIDER_FACTS.anysearch.mcpProtocolVersion,
         capabilities: {},
-        clientInfo: { name: "anysearch-cli", version: "0.2.0" },
+        clientInfo: { name: "anysearch-cli", version: MCP_CLIENT_VERSION },
       }, signal);
       const negotiated = res["protocolVersion"];
       if (typeof negotiated === "string" && negotiated) this.protocolVersion = negotiated;

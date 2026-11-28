@@ -60,7 +60,7 @@ const ALL_ARMS_RETIRED_MESSAGE = "本轮的抓页源都退场了（配额、鉴�
 const PARAMETER_ERROR = `handles 要给 1–${FETCH_LIMITS.maxUrlsPerCall} 个（m:<行号> 或用户贴过的网址），不能有空串；maxCharacters 在 1–${FETCH_LIMITS.maxCharacters} 之间。`;
 const TRUST_GRANTED = "已信任这个主机，本会话内有效。现在重新调用 fetch，handles 用同样的网址，就能读了；这次请求没有读页。";
 const NO_FETCH_SOURCE_MESSAGE = "没有可用的抓取信息源";
-const EMPTY_BODY_MESSAGE = "正文清完是空的";
+const EMPTY_BODY_MESSAGE = "过完净化还是空的";
 const FETCH_TIMEOUT_MS = 20_000;
 
 /**
@@ -95,6 +95,8 @@ export interface FetchToolOptions {
    * hung prompt. `signal` aborts the wait, so Ctrl-C does not leave the prompt stuck.
    */
   confirmTrust?: (request: FetchTrustRequest, signal?: AbortSignal) => Promise<boolean>;
+  /** 每次上游请求的超时上限（毫秒），默认 20 秒；测试可以调小，不用干等。 */
+  callTimeoutMs?: number;
 }
 
 interface CachedRead {
@@ -618,7 +620,7 @@ async function runProviders(
         }
       }
 
-      const deadline = AbortSignal.timeout(FETCH_TIMEOUT_MS);
+      const deadline = AbortSignal.timeout(options.callTimeoutMs ?? FETCH_TIMEOUT_MS);
       const callSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
       let envelope: FetchEnvelope;
       try {
@@ -629,8 +631,11 @@ async function runProviders(
       } catch (error) {
         settleReserved(reserved);
         if (signal?.aborted) throw error;
+        const timedOut = deadline.aborted;
         const text = providerErrorText(error);
-        const cls: ProviderErrorClass = providerErrorClassOf(error) ?? classifyProviderError(text);
+        const cls: ProviderErrorClass = timedOut
+          ? "transient"
+          : (providerErrorClassOf(error) ?? classifyProviderError(text));
         const message = redactSecrets(text, { keepPaths: false }).slice(0, 300);
         for (const entry of chunk) {
           entry.attempts.push({ provider: provider.id, class: cls });
@@ -638,6 +643,11 @@ async function runProviders(
           entry.lastMessage = message;
         }
         state.noteCall(provider.id);
+        if (timedOut) {
+          // 工具自己那道超时墙响了只是这批网址慢，不算这家坏：不拉黑本轮，
+          // 这批网址留在 pending 交给下一家，剩下的分片继续由这家读。
+          continue;
+        }
         // This arm is down. Skip its remaining chunks and leave every URL for
         // the next arm instead of spending calls against the same failure.
         state.deadProviders.add(provider.id);
@@ -853,9 +863,6 @@ export function createFetchTool(options: FetchToolOptions): AgentTool {
       }
 
       let batch: FetchBatch = { pages: [], failures: [], budgetStopped: false, gotAnyResponse: true, unread: [] };
-      // 这一批开始前就全退场了？那这一轮后面的调用一次请求都不会发，提示不能劝模型重试。
-      const armsRetiredBeforeCall = options.providers.length > 0
-        && options.providers.every((provider) => state.deadProviders.has(provider.id));
       if (toRead.length > 0) {
         if (options.providers.length === 0) {
           const cls: ProviderErrorClass = "permanent-protocol";
@@ -966,11 +973,15 @@ export function createFetchTool(options: FetchToolOptions): AgentTool {
         state.emptyStreak = 0;
       }
 
+      // 跑完这一批再看是不是全军覆没：最后一家正好在这次退场时，当次就告诉模型别再试，
+      // 不然给一句「稍后再试」，模型只会白跑一次不发请求的空调用。
+      const allArmsRetired = options.providers.length > 0
+        && options.providers.every((provider) => state.deadProviders.has(provider.id));
       let notice: string | undefined;
       if (batch.budgetStopped) notice = BUDGET_STOP_MESSAGE;
       else if (pages.length === 0 && skipped.length > 0) notice = PAGE_BUDGET_MESSAGE;
       else if (newPageCount === 0 && !batch.gotAnyResponse && failures.length > 0) {
-        notice = armsRetiredBeforeCall ? ALL_ARMS_RETIRED_MESSAGE : PROVIDER_NO_REPLY_MESSAGE;
+        notice = allArmsRetired ? ALL_ARMS_RETIRED_MESSAGE : PROVIDER_NO_REPLY_MESSAGE;
       }
 
       const payload = {

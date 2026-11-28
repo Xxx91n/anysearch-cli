@@ -26,7 +26,7 @@ export const FETCH_EMPTY_BODY_MESSAGE = "该网址没有返回正文";
  * 分类器答「这个请求要不要重试」，这里答「换一家还有没有意义」。
  */
 export const FETCH_FINAL_PAGE_FAULT =
-  /(?:HTTP\s*|status(?:Code)?\s*[=:]\s*)(?:404|410)\b|\b(?:404|410)\s+(?:not\s+found|gone)\b|no such host|invalid url|unsupported (?:url|scheme)|ENOTFOUND/i;
+  /(?:HTTP\s*|\bstatus(?:Code)?\s*[:=]?\s*)(?:404|410)\b|\b(?:404|410)\s+(?:not\s+found|gone)\b|no such host|invalid url|unsupported (?:url|scheme)|ENOTFOUND/i;
 
 /**
  * 说的是一家而不是这一页的失败类：配额、403（key 死了或整站挡了）、免费额度墙、
@@ -121,25 +121,10 @@ export interface FetchProvider {
  * 工具给每次上游调用套的那道墙（和调用方的取消并在一起）到点时，signal 的原因
  * 叫这个名字；调用方自己取消带的是别的原因。适配器靠它分清「这一页慢了」和
  * 「调用方不要了」：前者还能把已读的页带回去，后者必须往上抛。
- */export function isCallDeadlineAbort(signal: AbortSignal): boolean {
+ */
+export function isCallDeadlineAbort(signal: AbortSignal): boolean {
   const reason = signal.reason as { name?: string } | undefined;
   return signal.aborted && reason?.name === "TimeoutError";
-}
-
-/**
- * 上游给的等待秒数（`retry-after` 头）：秒数或 HTTP 日期都认，别的写法当没有、不猜。
- * 挂在错误对象的 `retryAfter` 上，`providerErrorText` 会把它写回错误串，引擎据此告诉
- * 用户要等多久。读页适配器和 Exa 免费臂共用这一份。
- */
-export function waitSecondsFromHeader(resp: Response): number | undefined {
-  const raw = resp.headers.get("retry-after")?.trim();
-  if (!raw) return undefined;
-  const seconds = Number(raw);
-  if (Number.isFinite(seconds) && seconds > 0) return seconds;
-  const at = Date.parse(raw);
-  if (!Number.isFinite(at)) return undefined;
-  const delta = Math.ceil((at - Date.now()) / 1000);
-  return delta > 0 ? delta : undefined;
 }
 
 /**

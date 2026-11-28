@@ -8,6 +8,7 @@
 // ponytail: no test framework, assert-based demo (same style as pre-).
 
 import { AnySearchProvider } from "../src/providers/anysearch";
+import { MCP_CLIENT_VERSION } from "../src/providers/provider-facts";
 import { classifyProviderError, providerErrorClassOf } from "../src/contract";
 
 let passed = 0, failed = 0;
@@ -405,16 +406,12 @@ async function main() {
   assert(classifyProviderError("AnySearch MCP tools/call SSE stream carried no reply for id 1") === "permanent-protocol",
     "a stream without a matching reply is permanent-protocol");
 
-  // 14. nit: clientInfo.version drift-guard — the initialize literal
-  // must track packages/retriever/package.json version (hard-pinned to package.json version).
-  // The handshake lives in anysearch-mcp.ts since #610, so the guard reads it there.
+  // 14. clientInfo.version drift-guard: shared MCP_CLIENT_VERSION (used by
+  // anysearch-mcp.ts and probes.ts) tracks packages/retriever/package.json.
   {
     const { readFileSync } = await import("node:fs");
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-    const src = readFileSync(new URL("../src/providers/anysearch-mcp.ts", import.meta.url), "utf8");
-    const m = /clientInfo: { name: "anysearch-cli", version: "([^"]+)" }/.exec(src);
-    assert(!!m, "clientInfo.version literal locatable in source");
-    assert(m![1] === pkg.version, "clientInfo.version matches package.json version (" + pkg.version + ")");
+    assert(MCP_CLIENT_VERSION === pkg.version, "MCP_CLIENT_VERSION matches package.json version (" + pkg.version + ")");
   }
 
   // 15. / defer-r84 closure: ANYSEARCH_ENDPOINT="" behaves as unset
@@ -746,6 +743,8 @@ async function main() {
       try { await p.search(REQ, SIG); } catch (e) { err = e; }
       assert(providerErrorClassOf(err) === "quota-exhausted",
         "a 200 + quota wording wall reads as quota-exhausted, not protocol drift (got " + String(err).slice(0, 100) + ")");
+      assert(String(err).includes("[upstream text:") && String(err).includes("今日额度已"),
+        "a 200 wall keeps the redacted upstream text");
     } finally { f.restore(); }
   }
 
@@ -797,14 +796,11 @@ async function main() {
       const body = init?.body ? JSON.parse(init.body) : undefined;
       if (body?.method === "tools/call") {
         const frame = new TextEncoder().encode(
-          "event: message
-data: " + JSON.stringify({
+          "event: message\ndata: " + JSON.stringify({
             jsonrpc: "2.0",
             id: body.id,
             result: { content: [{ type: "text", text: MD }] },
-          }) + "
-
-",
+          }) + "\n\n",
         );
         const stream = new ReadableStream({
           start(controller) { controller.enqueue(frame); /* 故意不 close：模拟服务端留着流 */ },

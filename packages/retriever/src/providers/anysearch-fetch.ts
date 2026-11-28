@@ -29,6 +29,9 @@ function titleOf(reply: McpToolResult<ExtractStructured>): string {
   return typeof title === "string" ? title.trim() : "";
 }
 
+/** 免费额度墙的原文一般就一两百字；卡个上限免得误伤正常长文。 */
+const FREE_WALL_MAX_CHARS = 600;
+
 function readExtractReply(
   url: string,
   reply: McpToolResult<ExtractStructured>,
@@ -54,13 +57,13 @@ function readExtractReply(
     if (typeof structured === "string") return pageFault(url, "");
     throw new Error("AnySearch MCP tools/call extract malformed reply (no structuredContent.content and no text)");
   }
-  // 文字部分当正文之前先认一下：没配 key 时那道配额墙回的是 HTTP 200 + 正文里一段
-  // 「已经给你自动开了账号」之类的话、没有正文段；当正文收下的话，墙的原文就进资料库。
-  // 这条道只认「免费额度用完」这一种：回包并不是 isError，正文里出现「403」「额度」
-  // 这种字眼说明不了这家坏了（讲 HTTP 错误的文章满地都是），鉴权类的失败由上面
-  // isError 那条道负责。墙本身也就一两百字，再加一道长度上限，免得长文误伤。
+  // 没配 key 撞到免费额度墙时，上游回的是 HTTP 200（不是 isError）+ 一段自动建号/发 key
+  // 的短提示、没有 structuredContent.content。只认共享分类器判出的 `free-quota-exhausted`
+  // （跟搜索臂共用 contract.ts 里的 PROVISIONING_REPLY_TEXT）且字数不超过上限，免得把墙
+  // 原文当正文存进库，也不会把正常文章里出现的 403 或普通配额字眼误判成整家坏——鉴权和
+  // 普通配额由上面的 isError 负责。
   const cls = classifyProviderError(fallback);
-  if (cls === "free-quota-exhausted" && fallback.length <= 600) return pageFault(url, fallback);
+  if (cls === "free-quota-exhausted" && fallback.length <= FREE_WALL_MAX_CHARS) return pageFault(url, fallback);
   return { url, ...(title ? { title } : {}), text: fallback.slice(0, maxCharacters) };
 }
 

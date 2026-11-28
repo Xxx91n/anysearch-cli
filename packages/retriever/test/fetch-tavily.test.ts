@@ -275,6 +275,69 @@ async function main() {
     assert(message.includes("daily_cap_reached"), "a keyless cap surfaces to the tool, which classifies it");
   }
 
+  // ---- SDK timeout turns into retryable page failures, not a dead arm -----
+  {
+    const calls: ExtractCall[] = [];
+    const provider = new TavilyFetchProvider(clientOf(calls, () => {
+      throw new Error("Request timed out after 15000ms");
+    }));
+    const envelope = await provider.fetch(
+      { urls: ["https://example.com/slow1", "https://example.com/slow2"], maxCharacters: 4000 },
+      SIG,
+    );
+    assert(envelope.pages.length === 0 && envelope.failures.length === 2,
+      "an SDK timeout yields a page failure for every URL in the batch");
+    assert(envelope.failures.every((f) => f.errorClass === "transient" && f.retryable === true && f.armFault !== true),
+      "an SDK timeout stays a retryable transient page fault without retiring the arm");
+  }
+
+  // ---- FETCH_FINAL_PAGE_FAULT covers 410, status 404, DNS and bad schemes -
+  {
+    const calls: ExtractCall[] = [];
+    const provider = new TavilyFetchProvider(clientOf(calls, () => ({
+      results: [],
+      failedResults: [
+        { url: "https://example.com/g1", error: "410 Gone" },
+        { url: "https://example.com/g2", error: "upstream returned status 404" },
+        { url: "https://example.com/g3", error: "dial tcp: no such host" },
+        { url: "https://example.com/g4", error: "getaddrinfo ENOTFOUND nope.invalid" },
+        { url: "https://example.com/g5", error: "unsupported scheme ftp" },
+        { url: "https://example.com/g6", error: "invalid url" },
+        { url: "https://example.com/r1", error: "content not found" },
+        { url: "https://example.com/404-guide", error: "failed to extract /404-guide" },
+      ],
+    })));
+    const envelope = await provider.fetch(
+      {
+        urls: [
+          "https://example.com/g1",
+          "https://example.com/g2",
+          "https://example.com/g3",
+          "https://example.com/g4",
+          "https://example.com/g5",
+          "https://example.com/g6",
+          "https://example.com/r1",
+          "https://example.com/404-guide",
+        ],
+        maxCharacters: 4000,
+      },
+      SIG,
+    );
+    const byUrl = new Map(envelope.failures.map((f) => [f.url, f]));
+    for (const u of [
+      "https://example.com/g1",
+      "https://example.com/g2",
+      "https://example.com/g3",
+      "https://example.com/g4",
+      "https://example.com/g5",
+      "https://example.com/g6",
+    ]) {
+      assert(byUrl.get(u)?.retryable === false, "final page fault is not retryable (" + u + ")");
+    }
+    assert(byUrl.get("https://example.com/r1")?.retryable === true, "content not found stays retryable");
+    assert(byUrl.get("https://example.com/404-guide")?.retryable === true, "404 in path stays retryable");
+  }
+
   // ---- factory: a blank key still builds the keyless arm ------------------
   {
     const free = createTavilyFetchProvider("");

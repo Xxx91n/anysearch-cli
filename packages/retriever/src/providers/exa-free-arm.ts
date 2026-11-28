@@ -2,7 +2,7 @@
 // Search and page-read adapters share this; each parses the text itself.
 
 import { createParser, type EventSourceMessage } from "eventsource-parser";
-import { waitSecondsFromHeader } from "../fetch-contract";
+import { waitSecondsFromHeader } from "../http-headers";
 import { PROVIDER_FACTS } from "./provider-facts";
 
 const FREE_ARM = PROVIDER_FACTS.exa.freeArm;
@@ -18,8 +18,6 @@ interface McpToolResult {
   content?: Array<{ type?: string; text?: string }>;
   isError?: boolean;
 }
-
-// 等待秒数的读法在 fetch-contract 里（waitSecondsFromHeader），AnySearch 读页臂也用同一份。
 
 // 非 2xx：状态码和正文前 300 字进错误串。
 function httpFailure(resp: Response, body: string): Error {

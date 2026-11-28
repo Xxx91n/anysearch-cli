@@ -257,8 +257,7 @@ async function main() {
       "# B",
       "URL: https://example.com/b",
       "body b",
-    ].join("
-");
+    ].join("\n");
     const reading = parseExaFetchReply(text, ["https://example.com/a", "https://example.com/b"]);
     const urls = reading.pages.map((page) => page.url).sort();
     assert(urls.length === 2, "a document whose URL came back with a trailing slash is still matched");

@@ -6,6 +6,7 @@ export * from "./rrf";
 export * from "./fusion-registry";
 export * from "./content-trust";
 export * from "./redact";
+export * from "./stderr";
 export * from "./url-identity";
 
 export type * from "./attribution";
