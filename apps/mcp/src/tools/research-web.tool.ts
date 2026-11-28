@@ -15,6 +15,7 @@ import { beginToolBudget, toolBudgetStop, toolDomainStop } from "./task-budget.j
 import { withMcpTask } from "../mcp-task.js";
 import {
   allProvidersFailedText,
+  envelopeArmLists,
   isInterrupted,
   outcomeOf,
   providerFailureMetadata,
@@ -101,25 +102,13 @@ export function registerResearchWeb(server: McpServer, eng: CompositionResult): 
             lastRoundSufficiency = envelope.metadata?.sufficiency as unknown as Record<string, unknown> | undefined;
             lastEnvelope = envelope;
 
-            // The contract declares these three arm lists, but the port is
-            // public: a host-built envelope can arrive without them, and the
-            // TypeError would surface as "Cannot read properties of undefined"
-            // with the provider context already lost.
-            const meta = envelope.metadata as
-              | { providersQueried?: string[]; providersCancelled?: string[]; providersFailed?: string[] }
-              | undefined;
-            if (!Array.isArray(meta?.providersQueried) || !Array.isArray(meta.providersCancelled) || !Array.isArray(meta.providersFailed)) {
-              throw new Error("retriever envelope metadata missing providersQueried/providersCancelled/providersFailed");
-            }
-            const queriedProviders = meta.providersQueried;
-            const cancelledProviders = meta.providersCancelled;
+            const { queried: queriedProviders, cancelled: cancelledProviders, failed: roundFailed } = envelopeArmLists(envelope.metadata);
             // Overwritten every round: the last completed round wins, the same
             // round abstain and sufficiency describe.
             lastRoundQueried = queriedProviders;
             lastRoundCancelled = cancelledProviders;
             partial = partial || isPartialPool(cancelledProviders);
             lastRoundProviderElapsedMs = envelope.metadata?.providerElapsedMs ?? {};
-            const roundFailed = meta.providersFailed;
             for (const id of roundFailed) failedProviders.add(id);
             Object.assign(providerErrorClasses, envelope.metadata?.providerErrorClasses ?? {});
             // Follows each arm's latest failure: overwrite when it gave a number,

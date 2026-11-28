@@ -10,6 +10,33 @@ import type { CompositionResult } from "@anysearch-cli/kernel";
 import type { ProviderErrorClass, SearchOutcome } from "@anysearch-cli/retriever";
 import { providerErrorHints } from "@anysearch-cli/kernel";
 
+export interface EnvelopeArmLists {
+  queried: string[];
+  cancelled: string[];
+  failed: string[];
+}
+
+/**
+ * The three arm lists every fanout writes. The RetrieverPort is public, so a
+ * host-built envelope can arrive without them; name the missing ones here
+ * instead of letting a TypeError surface as "Cannot read properties of ..."
+ * with the provider context already lost.
+ */
+export function envelopeArmLists(metadata: unknown): EnvelopeArmLists {
+  const meta = metadata as {
+    providersQueried?: unknown;
+    providersCancelled?: unknown;
+    providersFailed?: unknown;
+  } | undefined;
+  const missing: string[] = [];
+  if (!Array.isArray(meta?.providersQueried)) missing.push("providersQueried");
+  if (!Array.isArray(meta?.providersCancelled)) missing.push("providersCancelled");
+  if (!Array.isArray(meta?.providersFailed)) missing.push("providersFailed");
+  if (missing.length > 0) throw new Error("retriever envelope metadata missing " + missing.join(", "));
+  const lists = meta as { providersQueried: string[]; providersCancelled: string[]; providersFailed: string[] };
+  return { queried: lists.providersQueried, cancelled: lists.providersCancelled, failed: lists.providersFailed };
+}
+
 /** Execution-failure result: isError true, text content, no structuredContent. */
 export function toolFailure(text: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text }] };
