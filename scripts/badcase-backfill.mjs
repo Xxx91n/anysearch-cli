@@ -16,13 +16,14 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
+import { GOLDEN_FILE, goldenShapeProblems } from "./golden-shape.mjs";
 
 // Tests point ANS_BACKFILL_ROOT at a temp fixture tree.
 const ROOT = process.env.ANS_BACKFILL_ROOT
   ? resolve(process.env.ANS_BACKFILL_ROOT)
   : resolve(fileURLToPath(new URL("..", import.meta.url)));
 const BADCASES = join(ROOT, "eval-badcases.json");
-const GOLDEN = join(ROOT, "eval-golden.json");
+const GOLDEN = join(ROOT, GOLDEN_FILE);
 const COVERAGE = join(ROOT, "eval-looks.coverage.json");
 const DOCS_TOML = join(ROOT, "domains", "docs.toml");
 // Keep this vocabulary in sync with DOCS_GOLDEN_DIMENSION_VALUES in
@@ -70,6 +71,7 @@ const badcases = readJson(BADCASES, "eval-badcases.json");
 // TypeError instead of this script's own diagnostic.
 if (!badcases || typeof badcases !== "object" || Array.isArray(badcases)) fail("eval-badcases.json root must be an object");
 if (!Array.isArray(badcases.badcases)) fail("eval-badcases.json: badcases must be an array");
+if (!badcases.badcases.every((b) => b && typeof b === "object" && !Array.isArray(b))) fail("eval-badcases.json: badcases must contain objects");
 const bc = badcases.badcases.find((b) => b.id === id);
 if (!bc) fail("badcase not found: " + id);
 if (bc.status !== "open") fail("badcase " + id + " is not open (status=" + bc.status + ")");
@@ -80,20 +82,9 @@ if (typeof bc.question !== "string" || bc.question.trim().length < 8) fail(id + 
 if (typeof bc.domain !== "string" || bc.domain.length === 0) fail(id + " has no domain — record it on the badcase before backfill");
 if (!bc.expected || typeof bc.expected !== "object" || Array.isArray(bc.expected)) fail(id + " has no expected block");
 
-const golden = readJson(GOLDEN, "eval-golden.json");
-// Root before schema: a null or array root is a broken file, not a wrong
-// schema value.
-if (!golden || typeof golden !== "object" || Array.isArray(golden)) fail("eval-golden.json root must be an object");
-// Keep this schema literal in sync with DOCS_GOLDEN_SCHEMA in
-// packages/store/src/eval/docs-golden.ts; this script runs as plain node.
-if (golden.schema !== "anysearch/docs-golden@1") fail("eval-golden.json schema must be anysearch/docs-golden@1");
-if (!Array.isArray(golden.entries) || golden.entries.length === 0) fail("eval-golden.json has no entries");
-if (!golden.entries.every((e) => e && typeof e === "object" && !Array.isArray(e))) fail("eval-golden.json entries must contain objects");
-if (!golden.scopes || typeof golden.scopes !== "object" || Array.isArray(golden.scopes)) fail("eval-golden.json has no scopes object");
-if (Object.keys(golden.scopes).length === 0) fail("eval-golden.json scopes must not be empty");
-for (const [gid, scope] of Object.entries(golden.scopes)) {
-  if (!["stub", "live", "both"].includes(scope)) fail("eval-golden.json scope for " + gid + " must be stub|live|both");
-}
+const golden = readJson(GOLDEN, GOLDEN_FILE);
+// Shape checks live in scripts/golden-shape.mjs, shared with ship-gate.
+for (const problem of goldenShapeProblems(golden)) fail(GOLDEN_FILE + " " + problem);
 const cov = readJson(COVERAGE, "eval-looks.coverage.json");
 if (!cov || typeof cov !== "object" || Array.isArray(cov)) fail("eval-looks.coverage.json root must be an object");
 if (!Array.isArray(cov.dimensions)) fail("eval-looks.coverage.json: dimensions must be an array");

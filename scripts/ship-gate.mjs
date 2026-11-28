@@ -28,6 +28,7 @@ import { verifyInstalledProduct } from "./verify-installed-product.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { readGainLedger, writeGainLedger, applyTier, applyResolution, mustFail, WARN_STREAK_LIMIT } from "./gain-ledger.mjs";
 import { evalIntegrityCheck, SHIP_OVERRIDE_REASON_CODES } from "./eval-integrity-contract.mjs";
+import { GOLDEN_FILE, goldenShapeProblems } from "./golden-shape.mjs";
 import { checkQuarantineRatchet } from "./quarantine-ratchet.mjs";
 import { discoverAllLocalActions, classifyLocalUsesRef, resolveYaml } from "./check-workflows.mjs";
 import { LANES } from "./ci-changes.mjs";
@@ -520,30 +521,20 @@ function stepStaticAssertions() {
     if (!mcpSrc.includes("abstain")) fail("MCP search_web missing abstain structuredContent");
     let evalGoldenText;
     try {
-      evalGoldenText = fs.readFileSync(path.join(ROOT, "eval-golden.json"), "utf8");
+      evalGoldenText = fs.readFileSync(path.join(ROOT, GOLDEN_FILE), "utf8");
     } catch (err) {
-      fail("eval-golden.json: cannot read: " + (err.code ?? err.message));
+      fail(GOLDEN_FILE + ": cannot read: " + (err.code ?? err.message));
     }
     let evalGolden;
     try {
       evalGolden = JSON.parse(evalGoldenText);
     } catch (err) {
-      fail("eval-golden.json: invalid JSON: " + err.message);
+      fail(GOLDEN_FILE + ": invalid JSON: " + err.message);
     }
-    if (!evalGolden || typeof evalGolden !== "object" || Array.isArray(evalGolden)) fail("eval-golden.json: root must be an object");
-    // Keep this schema literal in sync with DOCS_GOLDEN_SCHEMA in
-    // packages/store/src/eval/docs-golden.ts; this gate runs as plain node.
-    if (evalGolden.schema !== "anysearch/docs-golden@1") fail("eval-golden.json schema must be anysearch/docs-golden@1");
-    if (!Array.isArray(evalGolden.entries) || evalGolden.entries.length === 0) fail("eval-golden.json: entries must be a non-empty array");
-    if (!evalGolden.entries.every((e) => e && typeof e === "object" && !Array.isArray(e))) fail("eval-golden.json: entries must contain objects");
-    if (!evalGolden.scopes || typeof evalGolden.scopes !== "object" || Array.isArray(evalGolden.scopes) || Object.keys(evalGolden.scopes).length === 0) fail("eval-golden.json: scopes must be a non-empty object");
-    for (const [gid, scope] of Object.entries(evalGolden.scopes)) {
-      if (!["stub", "live", "both"].includes(scope)) fail("eval-golden.json: scope for " + gid + " must be stub|live|both");
-    }
-    // Anchor search covers every entry, not only the live slice: the c1 abstain
-    // anchor lives in the stub lane, so filtering by scope would drop a real
-    // anchor. Scope completeness (every live row has a scope, tombstones have
-    // none) is readGoldenFile's job, not this structural check's.
+    // Shape checks live in scripts/golden-shape.mjs, shared with the backfill.
+    for (const problem of goldenShapeProblems(evalGolden)) fail(GOLDEN_FILE + " " + problem);
+    // Anchor lookup covers every entry, not only the live slice: the c1 abstain
+    // anchor lives in the stub lane.
     const ge = evalGolden.entries;
     if (!ge.some((e) => e.domain === "docs" && e.expected?.verdict === "abstain"))
       fail("c1: no docs-domain abstain golden entry");
