@@ -321,7 +321,10 @@ const readStale = () => {
 // No corpus beside the ledger: the block is the only copy left, so it stays.
 {
   const { ledger: kept, lines: keptErr } = readStale();
-  assert.deepEqual((kept as Record<string, unknown>).golden, { scopes: {}, entries: [] }, "a golden block stays when no corpus sits beside the ledger");
+  assert(
+    JSON.stringify((kept as Record<string, unknown>).golden) === JSON.stringify({ scopes: {}, entries: [] }),
+    "a golden block stays when no corpus sits beside the ledger",
+  );
   assert(keptErr.some((line) => line.includes(staleTmp) && line.includes("keeping")), "keeping it is reported on stderr, naming the file");
   assert((kept as Record<string, unknown>).schema_version === 1, "keeping golden keeps schema_version");
 }
